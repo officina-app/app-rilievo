@@ -355,7 +355,7 @@ const state = {
   // --- entita' del rilievo
   points:      [],   // {x,y,label,note,photo}
   segments:    [],   // {a,b}  indici in points[]
-  ambienti:    [],   // {indices,name,h,area,volume,color}
+  ambienti:    [],   // {indices,name,h,color,lo}   superficie e volume: sempre ricalcolati (ambNet)
   openings:    [],   // {type,segIdx,t,width,hb,h0,spessore,label}  hb = altezza bucatura, spessore = profondita' nicchia
   pilastri:    [],   // {x,y,w,h,label,ancora}
   scale:       [],   // {x,y,w,h,ax,sgn,n,pedata,alzata,label}  ax = asse di salita, sgn = verso, n gradini
@@ -866,7 +866,7 @@ function ambMenuAction(action) {
       {label:'Altezza netta (m)', id:'h',    value:amb.h.toFixed(2),  type:'number'},
     ], 'Superficie '+ambNet(amb).toFixed(2)+' m²', v => {
       const hh = parseFloat(v.h); saveHistory();
-      amb.name = v.name || amb.name; if (isFinite(hh) && hh>0) amb.h = hh; amb.volume = amb.area*amb.h;
+      amb.name = v.name || amb.name; if (isFinite(hh) && hh>0) amb.h = hh;
       commit('Ambiente aggiornato.');
     });
   }
@@ -1474,7 +1474,7 @@ function checkClosedPolygon(lastIdx) {
     const h = parseFloat(v.h); if (!isFinite(h)||h<=0) return;
     state.ambienti.push({
       indices: cycle, name: v.name || 'Ambiente '+(state.ambienti.length+1),
-      h, area, volume: area*h, color: AMB_COLORS[state.ambienti.length%AMB_COLORS.length]
+      h, color: AMB_COLORS[state.ambienti.length%AMB_COLORS.length]
     });
     commit('Ambiente registrato: '+area.toFixed(2)+' m², '+(area*h).toFixed(2)+' m³.');
   });
@@ -2344,6 +2344,7 @@ function restore(o) {
   state.pointCounter    = o.pointCounter    || state.points.length;
   state.scale.forEach(stairFix);
   legacyConvert(o);
+  state.ambienti.forEach(a => { delete a.area; delete a.volume; });   // superficie e volume si ricalcolano sempre (ambNet)
   state.sel=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.pending=null; state.cand=null; state.circles=[];
 }
 // progetti delle versioni precedenti: le Stanze (rettangoli) diventano 4 punti, 4 muri e un ambiente,
@@ -2354,7 +2355,7 @@ function legacyConvert(o) {
     [[r.x,r.y],[r.x+r.w,r.y],[r.x+r.w,r.y-r.h],[r.x,r.y-r.h]].forEach(([x,y]) => state.points.push({x, y, label:nextLabel(), note:'', photo:null}));
     for (let k=0;k<4;k++) state.segments.push({a:b+k, b:b+(k+1)%4});
     const h = +r.altezza || 2.70, n = state.ambienti.length;
-    state.ambienti.push({ indices:[b,b+1,b+2,b+3], name:r.name || 'Ambiente '+(n+1), h, area:r.w*r.h, volume:r.w*r.h*h, color:r.color || AMB_COLORS[n%AMB_COLORS.length] });
+    state.ambienti.push({ indices:[b,b+1,b+2,b+3], name:r.name || 'Ambiente '+(n+1), h, color:r.color || AMB_COLORS[n%AMB_COLORS.length] });
   });
   (o.notes||[]).forEach(nt => { if (nt.text) state.labels.push({x:nt.x, y:nt.y, text:String(nt.text).replace(/\s*\n\s*/g,' - ')}); });
 }
@@ -3577,9 +3578,9 @@ function wallsApply() {
   P.nodes.forEach(n => state.points.push({x:n.x, y:n.y, label:nextLabel(), note:'', photo:null}));
   P.segs.forEach(([a,b],k) => { if (!segExists(base+a, base+b)) state.segments.push(k>=(P.extStart??1e9) ? {a:base+a, b:base+b, layer:'MURI_EST'} : {a:base+a, b:base+b}); });
   (P.rooms||[]).forEach(r => {
-    const idx = r.ring.map(id => base+id), area = Math.abs(shoelace(idx.map(i => state.points[i])));
+    const idx = r.ring.map(id => base+id);
     const n = state.ambienti.length;
-    state.ambienti.push({ indices:idx, name:'Ambiente '+(n+1), h:2.70, area, volume:area*2.70, color:AMB_COLORS[n%AMB_COLORS.length] });
+    state.ambienti.push({ indices:idx, name:'Ambiente '+(n+1), h:2.70, color:AMB_COLORS[n%AMB_COLORS.length] });
   });
   const nR = (P.rooms||[]).length;
   state.wallsPrev = null; $id('walls-panel').classList.remove('show'); $id('base-panel').classList.remove('show');   // piu' spazio per lavorare; si riapre da File
@@ -3649,8 +3650,8 @@ else { flagSaved('nuovo rilievo'); draw(); }
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '1.07';
-const APP_NOTE = ["Annulla dopo uno spostamento (punto, quota, etichetta, serramento, pilastro, scala): ora torna indietro al primo tocco", "Export PDF e JPG: dei serramenti resta solo il nome, senza la distanza dall'estremo del muro", "Barra di stato in basso: il nome dello strumento attivo è in italiano", "Codice alleggerito; le Stanze e le Note dei progetti salvati con le versioni vecchie diventano ambienti ed etichette all'apertura"];
+const APP_VERSION = '1.08';
+const APP_NOTE = ["Il progetto salvato non contiene più superficie e volume fissi degli ambienti: vengono sempre ricalcolati dai muri attuali, come già a video e negli export"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {
