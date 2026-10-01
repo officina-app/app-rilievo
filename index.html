@@ -356,27 +356,26 @@ const state = {
   points:      [],   // {x,y,label,note,photo}
   segments:    [],   // {a,b}  indici in points[]
   ambienti:    [],   // {indices,name,h,area,volume,color}
-  rooms:       [],   // {x,y,w,h,name,altezza,area,volume,color}   x,y = angolo alto-sx
   openings:    [],   // {type,segIdx,t,width,hb,h0,spessore,label}  hb = altezza bucatura, spessore = profondita' nicchia
   pilastri:    [],   // {x,y,w,h,label,ancora}
   scale:       [],   // {x,y,w,h,ax,sgn,n,pedata,alzata,label}  ax = asse di salita, sgn = verso, n gradini
   labels:      [],   // {x,y,text}
-  notes:       [],   // {x,y,text}
   pencilLines: [],   // {pts:[{x,y}]}
   history:     [],
 
   // --- vista
-  panX:0, panY:0, zoom:150, mapRotation:0,
+  panX:0, panY:0, zoom:150,
 
   // --- stato interazione
-  sel:            null,   // {kind:'point'|'opening'|'room'|'pilastro'|'scala', idx}
+  sel:            null,   // {kind:'point'|'opening'|'pilastro'|'scala'|..., idx}
   pending:        null,   // {pts:[{x,y}]} scelta fra intersezioni ①②
   connectFrom:    null,
   trilStep:0, trilPoints:[], circles:[], cand:null,   // cand = punti proposti sull'incrocio con i muri
   wallOrigin:null, wallPreview:null, wallSnapAngle:null, wallSnapPoint:null,
   openingType:null, openingDrag:null,
   openingCounters:{F:0,PF:0,P:0}, pilastroCounter:0, scalaCounter:0, pointCounter:0,
-  rectDraw:null,          // {x0,y0,x1,y1} anteprima Stanza / Scala
+  rectDraw:null,          // {x0,y0,x1,y1} anteprima Scala
+  dragSnap:null,          // stato prima di un trascinamento, per l'Annulla
   drag:null,              // {kind,idx,...} trascinamento generico
   measureFrom:null, hoverScala:null, stairResize:null, exp:null,   // exp = selezione della zona da esportare
   measureShow:null,       // {ax,ay,bx,by,d}: ultima misura, tratteggio temporaneo fino alla prossima azione
@@ -670,25 +669,13 @@ function evtPos(e) {
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 
-function w2s(wx, wy) {
-  const rad = state.mapRotation * Math.PI / 180;
-  const rx  = wx * Math.cos(rad) - wy * Math.sin(rad);
-  const ry  = wx * Math.sin(rad) + wy * Math.cos(rad);
-  return { x: state.panX + rx * state.zoom, y: state.panY - ry * state.zoom };
-}
-function s2w(sx, sy) {
-  const dx  = (sx - state.panX) / state.zoom;
-  const dy  = -(sy - state.panY) / state.zoom;
-  const rad = -state.mapRotation * Math.PI / 180;
-  return { x: dx*Math.cos(rad) - dy*Math.sin(rad), y: dx*Math.sin(rad) + dy*Math.cos(rad) };
-}
-
-function setRotation(deg) { state.mapRotation = 0; draw(); }
+// mondo (metri, Y in alto) <-> schermo (px, Y in basso)
+function w2s(wx, wy) { return { x: state.panX + wx*state.zoom, y: state.panY - wy*state.zoom }; }
+function s2w(sx, sy) { return { x: (sx - state.panX)/state.zoom, y: -(sy - state.panY)/state.zoom }; }
 
 // ═══════════════════════════════════════════════════════════
-//  HIT TEST   (tutti in coordinate schermo, tranne i rettangoli
-//              che si testano in coordinate mondo: così restano
-//              corretti anche con la mappa ruotata)
+//  HIT TEST   (in coordinate schermo, tranne i rettangoli
+//              che si testano in coordinate mondo)
 // ═══════════════════════════════════════════════════════════
 function hitPoint(sx, sy) {
   for (let i = state.points.length-1; i >= 0; i--) {
@@ -721,16 +708,8 @@ function hitOpening(sx, sy) {
 function inRectWorld(wx, wy, r) {
   return wx >= r.x && wx <= r.x + r.w && wy <= r.y && wy >= r.y - r.h;
 }
-function hitRoom(sx, sy)     { const w = s2w(sx,sy); for (let i=state.rooms.length-1;i>=0;i--)    if (inRectWorld(w.x,w.y,state.rooms[i]))    return i; return null; }
 function hitPilastro(sx, sy) { const w = s2w(sx,sy); for (let i=state.pilastri.length-1;i>=0;i--) if (inRectWorld(w.x,w.y,state.pilastri[i])) return i; return null; }
 function hitScala(sx, sy)    { const w = s2w(sx,sy); for (let i=state.scale.length-1;i>=0;i--)    if (inRectWorld(w.x,w.y,state.scale[i]))    return i; return null; }
-function hitNote(sx, sy) {
-  for (let i=state.notes.length-1;i>=0;i--) {
-    const b = noteBox(state.notes[i]);
-    if (sx>=b.x && sx<=b.x+b.w && sy>=b.y && sy<=b.y+b.h) return i;
-  }
-  return null;
-}
 function hitLabel(sx, sy) {
   ctx.font = 'bold 13px Segoe UI';
   for (let i=state.labels.length-1;i>=0;i--) {
@@ -776,7 +755,6 @@ function draw() {
   drawGrid();
   drawUnderlay();
   drawWallsPrev();
-  drawRooms();
   drawScale();
   drawAmbienti();
   drawPencil();
@@ -789,7 +767,6 @@ function draw() {
   drawRectPreview();
   drawMeasure();
   drawLabels();
-  drawNotes();
   drawPoints();
   drawPending();
   drawSelBox();
@@ -829,43 +806,6 @@ function rectPath(r) {
 }
 function rectCenter(r) { return w2s(r.x + r.w/2, r.y - r.h/2); }
 
-function drawRooms() {
-  state.rooms.forEach((r,i) => {
-    const p  = rectPath(r);
-    const on = isSel('room',i);
-    ctx.fillStyle = r.color+'28'; ctx.fill();
-    ctx.strokeStyle = on ? '#ffe066' : r.color; ctx.lineWidth = on ? 3 : 2; ctx.stroke();
-
-    // quote sui 4 lati, spinte fuori dal perimetro
-    const c = rectCenter(r);
-    quoteSide(p[0], p[1], c, r.w);
-    quoteSide(p[2], p[3], c, r.w);
-    quoteSide(p[1], p[2], c, r.h);
-    quoteSide(p[3], p[0], c, r.h);
-
-    ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillStyle='#fff';    ctx.font='bold 13px Segoe UI'; ctx.fillText(r.name, c.x, c.y-15);
-    ctx.fillStyle='#ffe066'; ctx.font='bold 12px Segoe UI'; ctx.fillText(r.area.toFixed(2)+' m²', c.x, c.y);
-    ctx.fillStyle='#fff';    ctx.font='bold 12px Segoe UI'; ctx.fillText('H. '+Number(r.altezza).toFixed(2)+' m', c.x, c.y+15);
-    ctx.fillStyle='#aaddff'; ctx.font='11px Segoe UI';      ctx.fillText(r.volume.toFixed(2)+' m³', c.x, c.y+30);
-  });
-}
-
-// etichetta di quota sul lato P1-P2, spostata verso l'esterno rispetto al centro C
-function quoteSide(p1, p2, c, val) {
-  const mx=(p1.x+p2.x)/2, my=(p1.y+p2.y)/2;
-  let nx = mx-c.x, ny = my-c.y;
-  const n = Math.hypot(nx,ny) || 1;
-  nx = nx/n*16; ny = ny/n*16;
-  let ang = Math.atan2(p2.y-p1.y, p2.x-p1.x);
-  if (ang >  Math.PI/2) ang -= Math.PI;
-  if (ang < -Math.PI/2) ang += Math.PI;
-  ctx.save(); ctx.translate(mx+nx, my+ny); ctx.rotate(ang);
-  ctx.fillStyle='#ffe066'; ctx.font='bold 11px Segoe UI';
-  ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText(val.toFixed(2)+' m', 0, 0);
-  ctx.restore();
-}
 
 function drawPilastri() {
   state.pilastri.forEach((r,i) => {
@@ -1006,15 +946,14 @@ function drawOpenings() {
     }
     ctx.restore();
 
-    // quota: distanza dall'estremo A, sempre in orizzontale, spostabile; la linea di richiamo la segue
+    // nome e, solo a video, distanza dall'estremo A (serve a collocarlo, non in stampa); spostabile, la linea di richiamo la segue
     const q = openingQuotaPos(i);
     ctx.save();
     ctx.strokeStyle = on ? '#fff' : (PRINT ? C.lead : '#888'); ctx.lineWidth=prLw(1, 0.13); ctx.setLineDash([3,3]);
-    ctx.beginPath(); ctx.moveTo(p.sx,p.sy); ctx.lineTo(q.x, q.y+prU(14)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(p.sx,p.sy); ctx.lineTo(q.x, PRINT ? q.y : q.y+14); ctx.stroke(); ctx.setLineDash([]);
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillStyle=col; ctx.font=prFont(11, 2, true); ctx.fillText(op.label, q.x, q.y-prU(7));
-    ctx.fillStyle = PRINT ? C.quota : '#ccc'; ctx.font=prFont(10, 1.8);
-    ctx.fillText((PRINT ? '' : p.A.label+'→ ')+(op.t*segLen).toFixed(2)+' m', q.x, q.y+prU(6));
+    if (!PRINT) { ctx.fillStyle='#ccc'; ctx.font='10px Segoe UI'; ctx.fillText(p.A.label+'→ '+(op.t*segLen).toFixed(2)+' m', q.x, q.y+6); }
     ctx.restore();
   });
 }
@@ -1099,24 +1038,6 @@ function drawLabels() {
   });
 }
 
-function noteBox(n) {
-  ctx.font='12px Segoe UI';
-  const s = w2s(n.x,n.y);
-  const lines = n.text.split('\n');
-  const w = Math.max(40, ...lines.map(l => ctx.measureText(l).width)) + 20;
-  return { x:s.x, y:s.y, w, h: lines.length*16 + 14, lines };
-}
-function drawNotes() {
-  state.notes.forEach(n => {
-    const b = noteBox(n);
-    ctx.fillStyle='rgba(22,33,62,0.92)'; ctx.strokeStyle='#ffe066'; ctx.lineWidth=1.5;
-    ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(b.x,b.y,b.w,b.h,5); else ctx.rect(b.x,b.y,b.w,b.h);
-    ctx.fill(); ctx.stroke();
-    ctx.fillStyle='#ffe066'; ctx.font='12px Segoe UI'; ctx.textAlign='left'; ctx.textBaseline='top';
-    b.lines.forEach((l,i) => ctx.fillText(l, b.x+10, b.y+7+i*16));
-  });
-}
 
 function drawPoints() {
   state.points.forEach((p,i) => {
@@ -1219,7 +1140,7 @@ function setTool(t) {
   hideAllMenus();
   markTool(t);
   document.getElementById('snap-indicator').style.display='none';
-  document.getElementById('sb-tool').textContent = t;
+  document.getElementById('sb-tool').textContent = t==='select' ? 'Seleziona' : (TOOL_NAME[t] || t);
   setTip(TIPS[t] || '');
   draw();
 }
@@ -1289,13 +1210,6 @@ function resetWall() {
   document.getElementById('snap-indicator').style.display='none'; draw();
 }
 
-// ═══════════════════════════════════════════════════════════
-//  RETTANGOLI (Scala)
-// ═══════════════════════════════════════════════════════════
-function normRect(r) {
-  return { x: Math.min(r.x0,r.x1), y: Math.max(r.y0,r.y1),
-           w: Math.abs(r.x1-r.x0), h: Math.abs(r.y1-r.y0) };
-}
 
 function finishStair() {
   const r = state.rectDraw; state.rectDraw = null;
@@ -1704,34 +1618,18 @@ function entityMenuAction(action) {
   if (action==='delete') {
     if (s.kind==='segment') { segMenuAction('delete'); return; }
     saveHistory();
-    if (s.kind==='room')     state.rooms.splice(s.idx,1);
     if (s.kind==='pilastro') state.pilastri.splice(s.idx,1);
     if (s.kind==='scala')    state.scale.splice(s.idx,1);
     if (s.kind==='ambiente') state.ambienti.splice(s.idx,1);
     if (s.kind==='pencil')   state.pencilLines.splice(s.idx,1);
     if (s.kind==='label')    state.labels.splice(s.idx,1);
-    if (s.kind==='note')     state.notes.splice(s.idx,1);
     state.sel=null; commit('Entità eliminata.'); return;
   }
   if (action!=='edit') return;
 
-  if (s.kind==='room') {
-    const r = state.rooms[s.idx]; if (!r) return;
-    askDialog('Modifica '+r.name, [
-      {label:'Nome',              id:'name', value:r.name,           type:'text'},
-      {label:'Larghezza (m)',     id:'w',    value:r.w.toFixed(2),   type:'number'},
-      {label:'Profondità (m)',    id:'h',    value:r.h.toFixed(2),   type:'number'},
-      {label:'Altezza netta (m)', id:'alt',  value:r.altezza.toFixed(2), type:'number'},
-    ], '', v => {
-      const w=parseFloat(v.w)||r.w, h=parseFloat(v.h)||r.h, a=parseFloat(v.alt)||r.altezza;
-      saveHistory();
-      Object.assign(r, {name:v.name||r.name, w, h, altezza:a, area:w*h, volume:w*h*a});
-      commit('Stanza aggiornata.');
-    });
-  }
-  if (s.kind==='label' || s.kind==='note') {
-    const arr = s.kind==='label' ? state.labels : state.notes, it = arr[s.idx]; if (!it) return;
-    askDialog('Modifica testo', [{label:'Testo', id:'t', value:it.text, type:s.kind==='note'?'textarea':'text'}], '', v => {
+  if (s.kind==='label') {
+    const it = state.labels[s.idx]; if (!it) return;
+    askDialog('Modifica testo', [{label:'Testo', id:'t', value:it.text, type:'text'}], '', v => {
       const t=(v.t||'').trim(); if (!t) return; saveHistory(); it.text=t; commit('Testo aggiornato.');
     });
   }
@@ -1919,12 +1817,10 @@ function handleClick(sx, sy, clientX, clientY) {
       showMenu('context-menu', clientX+8, clientY+8); return;
     }
     const li = hitLabel(sx,sy); if (li!==null) { state.sel={kind:'label',idx:li}; draw(); showMenu('entity-context', clientX+8, clientY+8); return; }
-    const ni = hitNote(sx,sy);  if (ni!==null) { state.sel={kind:'note',idx:ni};  draw(); showMenu('entity-context', clientX+8, clientY+8); return; }
     const oqi = hitOpeningQuota(sx,sy); if (oqi!==null) { state.sel={kind:'opening',idx:oqi}; draw(); showMenu('opening-context', clientX+8, clientY+8); return; }
     const gqi = hitQuota(sx,sy);   if (gqi!==null) { state.sel={kind:'quota',idx:gqi}; draw(); showMenu('quota-context', clientX+8, clientY+8); return; }
     const qi = hitPilastro(sx,sy); if (qi!==null) { state.sel={kind:'pilastro',idx:qi}; draw(); showMenu('entity-context', clientX+8, clientY+8); return; }
     const ci = hitScala(sx,sy);    if (ci!==null) { state.sel={kind:'scala',idx:ci};    draw(); showMenu('entity-context', clientX+8, clientY+8); return; }
-    const ri = hitRoom(sx,sy);     if (ri!==null) { state.sel={kind:'room',idx:ri};     draw(); showMenu('entity-context', clientX+8, clientY+8); return; }
     const mi = hitPencil(sx,sy);   if (mi!==null) { state.sel={kind:'pencil',idx:mi};   draw(); showMenu('entity-context', clientX+8, clientY+8); return; }
     const gi = hitSegment(sx,sy);  if (gi!==null) { state.sel={kind:'segment',idx:gi,t:segmentT(gi,sx,sy)}; draw(); showMenu('seg-context', clientX+8, clientY+8); return; }
     const ai = hitAmbiente(sx,sy); if (ai!==null) { state.sel={kind:'ambiente',idx:ai}; draw(); showMenu('amb-context', clientX+8, clientY+8); return; }
@@ -2055,16 +1951,8 @@ function handleDoubleClick(sx, sy) {
     });
     return;
   }
-  const ni = hitNote(sx,sy);
-  if (ni!==null) {
-    askDialog('Modifica nota', [{label:'Testo', id:'t', value:state.notes[ni].text, type:'textarea'}], '', v => {
-      saveHistory(); state.notes[ni].text = v.t; commit('Nota aggiornata.');
-    });
-    return;
-  }
   const qi = hitPilastro(sx,sy); if (qi!==null) { state.sel={kind:'pilastro',idx:qi}; entityMenuAction('edit'); return; }
   const ci = hitScala(sx,sy);    if (ci!==null) { state.sel={kind:'scala',idx:ci};    entityMenuAction('edit'); return; }
-  const ri = hitRoom(sx,sy);     if (ri!==null) { state.sel={kind:'room',idx:ri};     entityMenuAction('edit'); return; }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2131,8 +2019,6 @@ canvas.addEventListener('pointerdown', e => {
       if (oq!==null) { const c=openingQuotaPos(oq); state.drag={kind:'opq', idx:oq, c0:c, p0:{x:sx,y:sy}}; return; }
       const li = hitLabel(sx,sy);
       if (li!==null) { const w=s2w(sx,sy); state.drag={kind:'label', idx:li, ox:w.x-state.labels[li].x, oy:w.y-state.labels[li].y}; return; }
-      const ni = hitNote(sx,sy);
-      if (ni!==null) { const w=s2w(sx,sy); state.drag={kind:'note', idx:ni, ox:w.x-state.notes[ni].x, oy:w.y-state.notes[ni].y}; return; }
       const gq = hitQuota(sx,sy);
       if (gq!==null) { const q=quotaInfo(gq); state.drag={kind:'quota', idx:gq, c0:{x:q.cx,y:q.cy}, p0:{x:sx,y:sy}}; return; }
       const al = hitAmbLabel(sx,sy);
@@ -2141,8 +2027,6 @@ canvas.addEventListener('pointerdown', e => {
       if (qi!==null) { const w=s2w(sx,sy); state.drag={kind:'pilastro', idx:qi, ox:w.x-state.pilastri[qi].x, oy:w.y-state.pilastri[qi].y}; return; }
       const ci = hitScala(sx,sy);
       if (ci!==null) { const w=s2w(sx,sy); state.drag={kind:'scala', idx:ci, ox:w.x-state.scale[ci].x, oy:w.y-state.scale[ci].y}; return; }
-      const ri = hitRoom(sx,sy);
-      if (ri!==null) { const w=s2w(sx,sy); state.drag={kind:'room', idx:ri, ox:w.x-state.rooms[ri].x, oy:w.y-state.rooms[ri].y}; return; }
       state.selBox={x0:sx,y0:sy,x1:sx,y1:sy,keep}; state.selSet=new Set();   // vuoto: riquadro di selezione
       return;
     }
@@ -2205,6 +2089,7 @@ canvas.addEventListener('pointermove', e => {
     draw(); return;
   }
   if (state.openingDrag) {
+    dragSnap();
     const op = state.openings[state.openingDrag.idx];
     op.t = segmentT(op.segIdx, sx, sy);
     const len = segLength(op.segIdx);
@@ -2216,6 +2101,7 @@ canvas.addEventListener('pointermove', e => {
   if (state.drag) {
     const w = s2w(sx,sy);
     const d = state.drag;
+    if (d.kind!=='multi' && d.kind!=='base') dragSnap();      // 'multi' salva gia' alla pressione, la base non entra nell'annulla
     if (d.kind==='point')    { state.points[d.idx].x=w.x;    state.points[d.idx].y=w.y; }
     if (d.kind==='multi')    { const dx=w.x-d.x0, dy=w.y-d.y0;
       d.pts.forEach(p => { state.points[p.i].x=p.x+dx; state.points[p.i].y=p.y+dy; });
@@ -2234,8 +2120,6 @@ canvas.addEventListener('pointermove', e => {
       if (cw) { const c = s2w(d.c0.x+sx-d.p0.x, d.c0.y+sy-d.p0.y); state.ambienti[d.idx].lo = {x:c.x-cw.x, y:c.y-cw.y}; }
     }
     if (d.kind==='label')    { state.labels[d.idx].x=w.x-d.ox; state.labels[d.idx].y=w.y-d.oy; }
-    if (d.kind==='note')     { state.notes[d.idx].x=w.x-d.ox;  state.notes[d.idx].y=w.y-d.oy; }
-    if (d.kind==='room')     { state.rooms[d.idx].x=w.x-d.ox;  state.rooms[d.idx].y=w.y-d.oy; }
     if (d.kind==='pilastro') { state.pilastri[d.idx].x=w.x-d.ox; state.pilastri[d.idx].y=w.y-d.oy; }
     if (d.kind==='scala')    { state.scale[d.idx].x=w.x-d.ox;  state.scale[d.idx].y=w.y-d.oy; }
     draw(); return;
@@ -2254,11 +2138,10 @@ function endPointer(e) {
   state.pinchMid=null;
   state.pinchDist = null;
   // fine di uno zoom a due dita: non e' un clic, la selezione resta com'e'
-  if (state.pinchUsed) { state.pinchUsed=false; state.drag=null; state.selBox=null; endPan(); draw(); return; }
+  if (state.pinchUsed) { state.pinchUsed=false; state.drag=null; state.selBox=null; dragEnd(true); endPan(); draw(); return; }
   if (state.exp) { state.exp.drag=null; endPan(); draw(); return; }
 
   const {x:sx, y:sy} = evtPos(e);
-  const wasPanning = state.isPanning;
   endPan();
 
   if (state.pencilCurrent) {
@@ -2284,7 +2167,7 @@ function endPointer(e) {
   if (state.openingResize) { hideTooltip(); state.openingResize=null; persist(); draw(); return; }
   if (state.openingDrag) {
     hideTooltip();
-    if (state.moved) { saveHistory(); persist(); }
+    dragEnd(state.moved); if (state.moved) persist();
     state.openingDrag=null;
     if (!state.moved) handleClick(sx, sy, e.clientX, e.clientY);
     draw(); return;
@@ -2292,14 +2175,21 @@ function endPointer(e) {
   if (state.drag && (state.drag.kind==='multi' || state.drag.kind==='base')) { state.drag=null; persist(); draw(); return; }
   if (state.drag) {
     const wasMoved = state.moved;
-    state.drag=null;
-    if (wasMoved) { saveHistory(); persist(); draw(); }
+    state.drag=null; dragEnd(wasMoved);
+    if (wasMoved) { persist(); draw(); }
     else handleClick(sx, sy, e.clientX, e.clientY);
     return;
   }
   if (state.tool==='wall' && state.wallOrigin!==null && state.wallPreview && state.moved) { finishWall(); return; }
-  if (!state.moved && !wasPanning) handleClick(sx, sy, e.clientX, e.clientY);
-  else if (!state.moved) handleClick(sx, sy, e.clientX, e.clientY);
+  if (!state.moved) handleClick(sx, sy, e.clientX, e.clientY);
+}
+
+// annulla dei trascinamenti: la foto dello stato si prende al primo movimento, PRIMA di spostare,
+// e va nella storia solo se il trascinamento e' stato vero (non un clic)
+function dragSnap() { if (!state.dragSnap) state.dragSnap = snapshot(); }
+function dragEnd(keep) {
+  if (keep && state.dragSnap) { state.history.push(state.dragSnap); if (state.history.length>60) state.history.shift(); }
+  state.dragSnap = null;
 }
 
 canvas.addEventListener('dblclick', e => { const p=evtPos(e); handleDoubleClick(p.x,p.y); });
@@ -2395,16 +2285,13 @@ function doZoom(f, sx, sy) {
   state.zoom = Math.min(Math.max(state.zoom*f, 4), 2000);
   const after = s2w(sx,sy);
   // sposto la vista in modo che il punto sotto il cursore resti fermo
-  const rad = state.mapRotation*Math.PI/180;
-  const dx = after.x-before.x, dy = after.y-before.y;
-  state.panX += (dx*Math.cos(rad) - dy*Math.sin(rad)) * state.zoom;
-  state.panY -= (dx*Math.sin(rad) + dy*Math.cos(rad)) * state.zoom;
+  state.panX += (after.x-before.x) * state.zoom;
+  state.panY -= (after.y-before.y) * state.zoom;
   draw(); updateZoomLabel();
 }
 function centerView() {
   const all = [
     ...state.points,
-    ...state.rooms.flatMap(r => [{x:r.x,y:r.y},{x:r.x+r.w,y:r.y-r.h}]),
     ...state.pilastri.flatMap(r => [{x:r.x,y:r.y},{x:r.x+r.w,y:r.y-r.h}]),
     ...state.scale.flatMap(r => [{x:r.x,y:r.y},{x:r.x+r.w,y:r.y-r.h}]),
   ];
@@ -2412,7 +2299,6 @@ function centerView() {
   const xs=all.map(p=>p.x), ys=all.map(p=>p.y);
   const minX=Math.min(...xs), maxX=Math.max(...xs), minY=Math.min(...ys), maxY=Math.max(...ys);
   const sw=Math.max(maxX-minX, 0.5), sh=Math.max(maxY-minY, 0.5);
-  state.mapRotation=0; setRotation(0);
   state.zoom = Math.min((W-90)/sw, (H-90)/sh);
   state.zoom = Math.min(Math.max(state.zoom, 4), 2000);
   state.panX = W/2 - ((minX+maxX)/2)*state.zoom;
@@ -2429,8 +2315,8 @@ function clearAll() {
   hideAllMenus();
   if (!confirm('Cancellare tutto il disegno? L\'operazione è annullabile con ↩ Annulla.')) return;
   saveHistory();
-  state.points=[]; state.segments=[]; state.ambienti=[]; state.rooms=[]; state.openings=[];
-  state.pilastri=[]; state.scale=[]; state.labels=[]; state.notes=[]; state.pencilLines=[];
+  state.points=[]; state.segments=[]; state.ambienti=[]; state.openings=[];
+  state.pilastri=[]; state.scale=[]; state.labels=[]; state.pencilLines=[];
   state.openingCounters={F:0,PF:0,P:0}; state.pilastroCounter=0; state.scalaCounter=0; state.pointCounter=0;
   state.sel=null; state.selSet=null; state.selOpen=null; state.selSeg=null;
   commit('Disegno azzerato.');
@@ -2439,7 +2325,7 @@ function clearAll() {
 // ═══════════════════════════════════════════════════════════
 //  UNDO + SALVATAGGIO AUTOMATICO
 // ═══════════════════════════════════════════════════════════
-const SNAP_KEYS = ['points','segments','ambienti','rooms','openings','pilastri','scale','labels','notes','pencilLines'];
+const SNAP_KEYS = ['points','segments','ambienti','openings','pilastri','scale','labels','pencilLines'];
 
 function snapshot() {
   const o = {};
@@ -2457,7 +2343,20 @@ function restore(o) {
   state.scalaCounter    = o.scalaCounter    || 0;
   state.pointCounter    = o.pointCounter    || state.points.length;
   state.scale.forEach(stairFix);
+  legacyConvert(o);
   state.sel=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.pending=null; state.cand=null; state.circles=[];
+}
+// progetti delle versioni precedenti: le Stanze (rettangoli) diventano 4 punti, 4 muri e un ambiente,
+// le Note diventano etichette (gli a capo diventano " - ")
+function legacyConvert(o) {
+  (o.rooms||[]).forEach(r => {
+    const b = state.points.length;
+    [[r.x,r.y],[r.x+r.w,r.y],[r.x+r.w,r.y-r.h],[r.x,r.y-r.h]].forEach(([x,y]) => state.points.push({x, y, label:nextLabel(), note:'', photo:null}));
+    for (let k=0;k<4;k++) state.segments.push({a:b+k, b:b+(k+1)%4});
+    const h = +r.altezza || 2.70, n = state.ambienti.length;
+    state.ambienti.push({ indices:[b,b+1,b+2,b+3], name:r.name || 'Ambiente '+(n+1), h, area:r.w*r.h, volume:r.w*r.h*h, color:r.color || AMB_COLORS[n%AMB_COLORS.length] });
+  });
+  (o.notes||[]).forEach(nt => { if (nt.text) state.labels.push({x:nt.x, y:nt.y, text:String(nt.text).replace(/\s*\n\s*/g,' - ')}); });
 }
 function saveHistory() {
   state.history.push(snapshot());
@@ -2467,7 +2366,7 @@ function undo() {
   hideAllMenus();
   if (!state.history.length) { setTip('Niente da annullare.'); return; }
   restore(state.history.pop());
-  commitNoHistory('Annullato.');
+  commit('Annullato.');
 }
 // commit = aggiorna barra di stato, ridisegna e salva
 function commit(msg){
@@ -2475,7 +2374,6 @@ function commit(msg){
   if (state.tool!=='select' && state.tool!=='point' && !(state.tool==='wall' && state.wallOrigin!==null)) setTool('select');
   updateStatus(); draw(); persist(); if (msg) setTip(msg);
 }
-function commitNoHistory(msg){ commit(msg); }
 
 let _persistTimer=null;
 function persist() {
@@ -2657,11 +2555,11 @@ function renderExport(E, den, orient) {
   c2.setTransform(k,0,0,k,0,0);
   const Wl = pw/k, Hl = ph/k, zl = (1000/den)*mm/k, footL = 18*mm/k, areaH = Hl-footL;
   const cxw = (E.x0+E.x1)/2, cyw = (E.y0+E.y1)/2;
-  const sv = { ctx, W, H, panX:state.panX, panY:state.panY, zoom:state.zoom, rot:state.mapRotation, C, PRINT,
+  const sv = { ctx, W, H, panX:state.panX, panY:state.panY, zoom:state.zoom, C, PRINT,
                sel:state.sel, selSeg:state.selSeg, selSet:state.selSet, selOpen:state.selOpen, selPen:state.selPen, hov:state.hoverScala };
   try {
     ctx = c2; W = Wl; H = Hl; C = COL_PRINT; PRINT = true;
-    state.zoom = zl; state.mapRotation = 0;
+    state.zoom = zl;
     state.panX = Wl/2 - cxw*zl; state.panY = areaH/2 + cyw*zl;
     state.sel = null; state.selSeg = null; state.selSet = null; state.selOpen = null; state.selPen = null; state.hoverScala = null;
     const a = w2s(E.x0,E.y0), b = w2s(E.x1,E.y1);
@@ -2671,7 +2569,7 @@ function renderExport(E, den, orient) {
     drawScaleBar(den, Hl);
   } finally {
     ctx = sv.ctx; W = sv.W; H = sv.H; C = sv.C; PRINT = sv.PRINT;
-    state.panX = sv.panX; state.panY = sv.panY; state.zoom = sv.zoom; state.mapRotation = sv.rot;
+    state.panX = sv.panX; state.panY = sv.panY; state.zoom = sv.zoom;
     state.sel = sv.sel; state.selSeg = sv.selSeg; state.selSet = sv.selSet; state.selOpen = sv.selOpen; state.selPen = sv.selPen; state.hoverScala = sv.hov;
   }
   return cv;
@@ -2756,7 +2654,7 @@ function exportDXF() {
   const g = (code, val) => { L.push(String(code)); L.push(String(val)); };
   const n = v => (Math.round(v*10000)/10000).toFixed(4);
 
-  const LAYERS = [['MURI',7],['MURI_EST',1],['STANZE',3],['QUOTE',2],['SERRAMENTI',5],
+  const LAYERS = [['MURI',7],['MURI_EST',1],['QUOTE',2],['SERRAMENTI',5],
                   ['AMBIENTI',4],['PILASTRI',8],['SCALE',6],['SCALE_TESTO',8],['ETICHETTE',1],['MATITA',30]];
 
   // --- HEADER
@@ -2814,16 +2712,6 @@ function exportDXF() {
            Math.hypot(B.x-A.x,B.y-A.y).toFixed(2)+' m', true);
   });
 
-  // stanze
-  state.rooms.forEach(r => {
-    rect('STANZE', r);
-    text('STANZE', r.x+r.w/2, r.y-r.h/2, 0.16, r.name, true);
-    text('STANZE', r.x+r.w/2, r.y-r.h/2-0.22, 0.12,
-         r.area.toFixed(2)+' mq  h='+r.altezza.toFixed(2)+' m  '+r.volume.toFixed(2)+' mc', true);
-    text('QUOTE',  r.x+r.w/2, r.y+0.10, 0.12, r.w.toFixed(2)+' m', true);
-    text('QUOTE',  r.x-0.35,  r.y-r.h/2, 0.12, r.h.toFixed(2)+' m', true);
-  });
-
   // ambienti da poligono
   state.ambienti.forEach(a => {
     const pts = a.indices.map(i=>state.points[i]).filter(Boolean);
@@ -2879,9 +2767,8 @@ function exportDXF() {
          'pedata '+Math.round(c.pedata*100)+' cm  alzata '+Math.round(c.alzata*100)+' cm  H '+stairHeight(c).toFixed(2)+' m ('+c.n+' gradini)', true);
   });
 
-  // etichette e note (i nomi dei punti non si esportano)
+  // etichette e note dei punti (i nomi dei punti non si esportano)
   state.labels.forEach(l => text('ETICHETTE', l.x, l.y, 0.15, l.text));
-  state.notes.forEach(nt => text('ETICHETTE', nt.x, nt.y, 0.12, nt.text));
   state.points.forEach(p => {
     if (p.note)  text('ETICHETTE', p.x+0.06, p.y-0.14, 0.08, 'NOTA: '+p.note);
     if (p.photo) text('ETICHETTE', p.x+0.06, p.y-0.26, 0.08, '[FOTO]');
@@ -2973,15 +2860,9 @@ document.getElementById('dialog-overlay').addEventListener('keydown', e => {
 });
 
 // ═══════════════════════════════════════════════════════════
-//  ESTRAZIONE MURI DA IMMAGINE BINARIA (planimetria catastale)
-//  Ingresso: maschera 0/1 (1 = tratto scuro), dimensioni, m/px.
-//  Uscita:   {nodes:[{x,y}], segs:[[a,b]]} in pixel dell'immagine.
-//  Passi: pulizia componenti piccole -> ispessimento (unisce i doppi
-//  tratti dei muri) -> scheletro -> grafo -> potatura -> semplifica
-//  -> raddrizzamento ortogonale -> giunzioni a T.
+//  MASCHERE BINARIE (planimetria catastale): pulizia, dilatazione,
+//  erosione, semplificazione. Servono al ricalco per ambienti.
 // ═══════════════════════════════════════════════════════════
-const WALL_DEFAULTS = { minDimM:0.8, closeM:0.03, spurM:0.10, simplM:0.06, orthoDeg:4, groupM:2.0, mergeM:0.03, tjoinM:0.05, openings:true, stairs:true,
-                        minSegM:0.25, lineTolM:0.05, gapM:0.20, spur2M:0.30, clutter:true, clutterN:10 };
 
 function wxRemoveSmall(mask, w, h, minPx) {
   const lab = new Int32Array(w*h), out = new Uint8Array(w*h);
@@ -3008,17 +2889,6 @@ function wxRemoveSmall(mask, w, h, minPx) {
   return out;
 }
 
-// contorno dei tratti: una banda piena (muro nero) diventa due bordi, una linea sottile resta com'e'
-function wxOutline(mask, w, h) {
-  const out=new Uint8Array(w*h);
-  for (let y=0;y<h;y++) for (let x=0;x<w;x++) {
-    const i=y*w+x; if (!mask[i]) continue;
-    let inner = x>0&&y>0&&x<w-1&&y<h-1;
-    if (inner) for (let dy=-1;dy<=1&&inner;dy++) for (let dx=-1;dx<=1;dx++) if (!mask[i+dy*w+dx]) { inner=false; break; }
-    if (!inner) out[i]=1;
-  }
-  return out;
-}
 
 // distanza euclidea (al quadrato) dal pixel spento piu' vicino allo 0 -> dal pixel acceso piu' vicino
 function wxDilate(mask, w, h, r) {
@@ -3048,34 +2918,6 @@ function wxDilate(mask, w, h, r) {
   return out;
 }
 
-// Zhang-Suen; ritorna un array con bordo di 1px azzerato
-function wxThin(mask, w, h) {
-  const s = mask.slice();
-  for (let x=0;x<w;x++){ s[x]=0; s[(h-1)*w+x]=0; }
-  for (let y=0;y<h;y++){ s[y*w]=0; s[y*w+w-1]=0; }
-  let changed=true;
-  const del=[];
-  while (changed) {
-    changed=false;
-    for (let pass=0;pass<2;pass++) {
-      del.length=0;
-      for (let y=1;y<h-1;y++) for (let x=1;x<w-1;x++) {
-        const i=y*w+x; if (!s[i]) continue;
-        const p2=s[i-w],p3=s[i-w+1],p4=s[i+1],p5=s[i+w+1],p6=s[i+w],p7=s[i+w-1],p8=s[i-1],p9=s[i-w-1];
-        const B=p2+p3+p4+p5+p6+p7+p8+p9;
-        if (B<2||B>6) continue;
-        const A=(!p2&&p3)+(!p3&&p4)+(!p4&&p5)+(!p5&&p6)+(!p6&&p7)+(!p7&&p8)+(!p8&&p9)+(!p9&&p2);
-        if (A!==1) continue;
-        if (pass===0) { if (p2&&p4&&p6) continue; if (p4&&p6&&p8) continue; }
-        else          { if (p2&&p4&&p8) continue; if (p2&&p6&&p8) continue; }
-        del.push(i);
-      }
-      if (del.length) { changed=true; for (const i of del) s[i]=0; }
-    }
-  }
-  return s;
-}
-
 
 function wxErode(mask, w, h, r) {
   const inv=new Uint8Array(w*h); for (let i=0;i<w*h;i++) inv[i]=mask[i]?0:1;
@@ -3083,166 +2925,6 @@ function wxErode(mask, w, h, r) {
   return inv;
 }
 
-// ── bucature nei muri disegnati a banda piena: interruzione della banda, con il muro che riprende
-//    dall'altra parte. Riempie la bucatura (muro continuo), cancella davanzali e segni esterni,
-//    restituisce la bucatura: F se nel vano c'e' una linea lungo il muro (vetro/davanzale), P se no.
-function wxBandOpenings(clean, w, h, mpp) {
-  const px=m=>m/mpp, rb=Math.max(1.5, px(0.035));
-  const B=wxDilate(wxErode(clean,w,h,rb),w,h,rb);
-  for (let i=0;i<w*h;i++) if (!clean[i]) B[i]=0;                     // solo tratti spessi (bande)
-  const gmin=px(0.45), gmax=px(3.0), tmin=Math.max(3,px(0.07)), tmax=px(0.70);
-  const tol=Math.max(2,Math.round(px(0.04))), dj=Math.max(3,Math.round(px(0.12)));
-  const minRun=Math.max(4,Math.round(px(0.10)));                    // macchie e segni piu' corti non chiudono la bucatura
-  let sx=0,sy=0,sn=0; for (let y=0;y<h;y+=2) for (let x=0;x<w;x+=2) if (B[y*w+x]) { sx+=x; sy+=y; sn++; }
-  const cen={x:sn?sx/sn:w/2, y:sn?sy/sn:h/2};
-  const found=[], jobs=[];
-  for (const dir of ['H','V']) {
-    const NR=dir==='H'?h:w, NA=dir==='H'?w:h;
-    const at = dir==='H' ? (i,j)=>(i>=0&&j>=0&&i<w&&j<h)?B[j*w+i]:0 : (i,j)=>(i>=0&&j>=0&&i<h&&j<w)?B[i*w+j]:0;
-    const atC = dir==='H' ? (i,j)=>(i>=0&&j>=0&&i<w&&j<h)?clean[j*w+i]:0 : (i,j)=>(i>=0&&j>=0&&i<h&&j<w)?clean[i*w+j]:0;
-    let active=[]; const groups=[];
-    for (let j=0;j<NR;j++) {
-      const gaps=[]; let last=-1, rs=-1;
-      for (let i=0;i<=NA;i++) {
-        const on = i<NA && at(i,j);
-        if (on && rs<0) rs=i;
-        if (!on && rs>=0) {
-          if (i-rs>=minRun) { if (last>=0) { const g=rs-last-1; if (g>=gmin && g<=gmax) gaps.push([last,rs]); } last=i-1; }
-          rs=-1;
-        }
-      }
-      const next=[];
-      for (const [a,b] of gaps) {
-        let g=active.find(q=>!q.used && Math.abs(q.a-a)<=3 && Math.abs(q.b-b)<=3);
-        if (g) { g.j1=j; g.a=a; g.b=b; g.aMin=Math.min(g.aMin,a); g.aMax=Math.max(g.aMax,a); g.bMin=Math.min(g.bMin,b); g.bMax=Math.max(g.bMax,b); g.sa+=a; g.sb+=b; g.n++; }
-        else g={j0:j,j1:j,a,b,aMin:a,aMax:a,bMin:b,bMax:b,sa:a,sb:b,n:1};
-        g.used=true; next.push(g);
-      }
-      active.forEach(q=>{ if (!q.used) groups.push(q); });
-      next.forEach(q=>q.used=false); active=next;
-    }
-    groups.push(...active);
-    for (const g of groups) {
-      if (g.j1-g.j0+1<2 || g.bMin-g.aMax-1<gmin) continue;
-      const mid=Math.round((g.j0+g.j1)/2);
-      const ext=i=>{ if (!at(i,mid)) return null; let lo=mid, hi=mid; while (at(i,lo-1)) lo--; while (at(i,hi+1)) hi++; return [lo,hi]; };
-      const EL=ext(g.aMin-dj), ER=ext(g.bMax+dj); if (!EL||!ER) continue;           // il muro c'e' da tutti e due i lati
-      const okE=E=>E[1]-E[0]+1>=tmin && E[1]-E[0]+1<=tmax && E[0]<=g.j0+tol && E[1]>=g.j1-tol;
-      const sL=okE(EL), sR=okE(ER); if (!sL&&!sR) continue;                          // almeno un lato e' un muro nella stessa direzione
-      const f0=Math.min(sL?EL[0]:1e9, sR?ER[0]:1e9), f1=Math.max(sL?EL[1]:-1e9, sR?ER[1]:-1e9);
-      if (g.j1-g.j0+1 < 0.3*(f1-f0+1)) continue;
-      if (jobs.some(q=>q.dir===dir && Math.min(q.bMax,g.bMax)-Math.max(q.aMin,g.aMin)>0.5*(g.bMax-g.aMin) && Math.min(q.f1,f1)-Math.max(q.f0,f0)>=0)) continue;
-      const wd=g.bMin-g.aMax-1;
-      let glass=false;
-      for (let j=f0;j<=f1 && !glass;j++) { let c=0; for (let i=g.aMax+1;i<g.bMin;i++) if (atC(i,j)) c++; if (c>=0.5*wd) glass=true; }
-      if (!glass) continue;                                                           // le porte interne non servono
-      const c=dir==='H'?cen.y:cen.x, face=Math.abs(f0-c)<=Math.abs(f1-c)?f0:f1;
-      const al=(g.sa+g.sb)/(2*g.n), wpx=(g.sb-g.sa)/g.n-1;
-      found.push(dir==='H' ? {x:al, y:face, dx:1, dy:0, wpx, type:glass?'F':'P'} : {x:face, y:al, dx:0, dy:1, wpx, type:glass?'F':'P'});
-      jobs.push({dir, aMin:g.aMin, aMax:g.aMax, bMin:g.bMin, bMax:g.bMax, f0, f1});
-    }
-  }
-  const e=Math.round(px(0.30)), m=Math.round(px(0.12));
-  for (const q of jobs) {
-    const set=(i,j,v)=>{ const x=q.dir==='H'?i:j, y=q.dir==='H'?j:i; if (x>=0&&y>=0&&x<w&&y<h) { if (v) clean[y*w+x]=1; else if (!B[y*w+x]) clean[y*w+x]=0; } };
-    for (let j=q.f0;j<=q.f1;j++) for (let i=q.aMin+1;i<q.bMax;i++) set(i,j,1);                                   // muro continuo
-    for (let i=q.aMax-m;i<=q.bMin+m;i++) { for (let j=q.f0-e;j<q.f0;j++) set(i,j,0); for (let j=q.f1+1;j<=q.f1+e;j++) set(i,j,0); }  // davanzali e segni
-  }
-  return found;
-}
-
-// scheletro -> grafo {nodes:[{x,y}], edges:[{a,b,pts:[{x,y}]}]}
-function wxSkeletonGraph(s, w, h) {
-  const N8=[[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
-  const deg=new Uint8Array(w*h);
-  for (let y=1;y<h-1;y++) for (let x=1;x<w-1;x++) {
-    const i=y*w+x; if (!s[i]) continue;
-    let n=0; for (const [dx,dy] of N8) if (s[i+dy*w+dx]) n++;
-    deg[i]=n;
-  }
-  const cl=new Int32Array(w*h).fill(-1);            // cluster dei pixel nodo
-  const nodes=[];
-  for (let i=0;i<w*h;i++) {
-    if (!s[i] || cl[i]>=0) continue;
-    if (deg[i]===2 || deg[i]===0) continue;
-    const id=nodes.length, st=[i]; cl[i]=id; let sx=0,sy=0,c=0;
-    while (st.length) {
-      const p=st.pop(); const px=p%w, py=(p-px)/w; sx+=px; sy+=py; c++;
-      for (const [dx,dy] of N8) {
-        const q=p+dy*w+dx;
-        if (s[q] && cl[q]<0 && deg[q]!==2 && deg[q]!==0) { cl[q]=id; st.push(q); }
-      }
-    }
-    nodes.push({x:sx/c, y:sy/c});
-  }
-  const vis=new Uint8Array(w*h), edges=[];
-  function walk(startNode, p0, first) {
-    const pts=[{x:nodes[startNode].x,y:nodes[startNode].y}];
-    let prev=p0, cur=first;
-    while (true) {
-      if (cl[cur]>=0) { pts.push({x:nodes[cl[cur]].x,y:nodes[cl[cur]].y}); return {a:startNode,b:cl[cur],pts}; }
-      vis[cur]=1; pts.push({x:cur%w, y:(cur-cur%w)/w});
-      let nxt=-1;
-      for (const [dx,dy] of N8) { const q=cur+dy*w+dx; if (s[q] && q!==prev && !vis[q]) { nxt=q; break; } }
-      if (nxt<0) {                                   // ricongiungimento su pixel gia' visto: chiudo sul nodo di partenza
-        pts.push({x:nodes[startNode].x,y:nodes[startNode].y}); return {a:startNode,b:startNode,pts};
-      }
-      prev=cur; cur=nxt;
-    }
-  }
-  for (let i=0;i<w*h;i++) {
-    if (!s[i] || cl[i]<0) continue;
-    for (const [dx,dy] of N8) {
-      const q=i+dy*w+dx;
-      if (s[q] && cl[q]<0 && !vis[q]) edges.push(walk(cl[i], i, q));
-    }
-  }
-  // anelli senza nodi (rettangolo chiuso perfetto)
-  for (let i=0;i<w*h;i++) {
-    if (!s[i] || cl[i]>=0 || vis[i]) continue;
-    const id=nodes.length; nodes.push({x:i%w, y:(i-i%w)/w}); cl[i]=id;
-    let first=-1; for (const [dx,dy] of N8) { const q=i+dy*w+dx; if (s[q] && !vis[q]) { first=q; break; } }
-    if (first<0) continue;
-    const e=walk(id,i,first); if (e.pts.length>3) edges.push(e);
-  }
-  return {nodes, edges};
-}
-
-function wxLen(pts){ let L=0; for (let i=1;i<pts.length;i++) L+=Math.hypot(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y); return L; }
-
-function wxPrune(g, spurPx) {
-  for (let iter=0; iter<4; iter++) {
-    const deg=new Int32Array(g.nodes.length);
-    g.edges.forEach(e => { deg[e.a]++; deg[e.b]++; });
-    const before=g.edges.length;
-    g.edges=g.edges.filter(e => {
-      if (e.a===e.b) return wxLen(e.pts) > spurPx;
-      const spur = (deg[e.a]===1 && deg[e.b]>=3) || (deg[e.b]===1 && deg[e.a]>=3);
-      return !(spur && wxLen(e.pts) < spurPx);
-    });
-    wxContract(g);
-    if (g.edges.length===before) break;
-  }
-}
-// elimina nodi di grado 2 fondendo i due lati in una polilinea
-function wxContract(g) {
-  let again=true;
-  while (again) {
-    again=false;
-    const inc=g.nodes.map(()=>[]);
-    g.edges.forEach((e,i)=>{ inc[e.a].push(i); inc[e.b].push(i); });
-    for (let n=0;n<g.nodes.length;n++) {
-      if (inc[n].length!==2) continue;
-      const [i,j]=inc[n]; if (i===j) continue;
-      const e1=g.edges[i], e2=g.edges[j];
-      const p1 = e1.b===n ? e1.pts : e1.pts.slice().reverse(), a1 = e1.b===n ? e1.a : e1.b;
-      const p2 = e2.a===n ? e2.pts : e2.pts.slice().reverse(), b2 = e2.a===n ? e2.b : e2.a;
-      const ne={a:a1,b:b2,pts:p1.concat(p2.slice(1))};
-      g.edges=g.edges.filter((_,k)=>k!==i&&k!==j); g.edges.push(ne);
-      again=true; break;
-    }
-  }
-}
 
 function wxSimplify(pts, tol) {
   if (pts.length<3) return pts.slice();
@@ -3264,432 +2946,6 @@ function wxDistSeg(px,py,ax,ay,bx,by){
   if (!l2) return Math.hypot(px-ax,py-ay);
   const t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/l2));
   return Math.hypot(px-ax-t*dx, py-ay-t*dy);
-}
-
-// grafo semplificato -> {nodes,segs}
-function wxToSegments(g, tol) {
-  const nodes=g.nodes.map(n=>({x:n.x,y:n.y})), segs=[];
-  for (const e of g.edges) {
-    const sp=wxSimplify(e.pts, tol);
-    let prev=e.a;
-    for (let k=1;k<sp.length-1;k++) { nodes.push({x:sp[k].x,y:sp[k].y}); const id=nodes.length-1; segs.push([prev,id]); prev=id; }
-    segs.push([prev,e.b]);
-  }
-  return {nodes, segs};
-}
-
-function wxCompact(G) {
-  const used=new Set(); G.segs.forEach(([a,b])=>{ used.add(a); used.add(b); });
-  const map=new Map(), nodes=[];
-  [...used].sort((a,b)=>a-b).forEach(i=>{ map.set(i,nodes.length); nodes.push(G.nodes[i]); });
-  const seen=new Set(), segs=[];
-  for (const [a,b] of G.segs) {
-    const A=map.get(a), B=map.get(b); if (A===B) continue;
-    const k=A<B?A+','+B:B+','+A; if (seen.has(k)) continue; seen.add(k); segs.push([A,B]);
-  }
-  return {nodes, segs, map};
-}
-
-// raddrizzamento: allinea alle direzioni dominanti (H/V nel riferimento del disegno)
-function wxOrtho(G, tolDeg) {
-  if (!G.segs.length) return 0;
-  let sx=0, sy=0;
-  for (const [a,b] of G.segs) {
-    const A=G.nodes[a], B=G.nodes[b], L=Math.hypot(B.x-A.x,B.y-A.y);
-    const ang=Math.atan2(B.y-A.y,B.x-A.x); sx+=L*Math.cos(4*ang); sy+=L*Math.sin(4*ang);
-  }
-  const th = Math.atan2(sy,sx)/4, c=Math.cos(th), s=Math.sin(th);
-  const R=G.nodes.map(n=>({x:n.x*c+n.y*s, y:-n.x*s+n.y*c}));
-  const tt=Math.tan(tolDeg*Math.PI/180);
-  const par=G.nodes.map((_,i)=>i), par2=G.nodes.map((_,i)=>i);
-  const find=(p,i)=>{ while(p[i]!==i){ p[i]=p[p[i]]; i=p[i]; } return i; };
-  const un=(p,a,b)=>{ a=find(p,a); b=find(p,b); if(a!==b) p[a]=b; };
-  for (const [a,b] of G.segs) {
-    const dx=Math.abs(R[b].x-R[a].x), dy=Math.abs(R[b].y-R[a].y);
-    if (dy<=tt*dx) un(par,a,b);            // orizzontale: stessa y
-    else if (dx<=tt*dy) un(par2,a,b);      // verticale: stessa x
-  }
-  const sumY=new Map(), sumX=new Map();
-  G.nodes.forEach((_,i)=>{ const ry=find(par,i), rx=find(par2,i);
-    const y=sumY.get(ry)||[0,0]; y[0]+=R[i].y; y[1]++; sumY.set(ry,y);
-    const x=sumX.get(rx)||[0,0]; x[0]+=R[i].x; x[1]++; sumX.set(rx,x); });
-  G.nodes.forEach((n,i)=>{
-    const y=sumY.get(find(par,i)), x=sumX.get(find(par2,i));
-    const rx=x[1]>1 ? x[0]/x[1] : R[i].x, ry=y[1]>1 ? y[0]/y[1] : R[i].y;
-    n.x=rx*c-ry*s; n.y=rx*s+ry*c;
-  });
-  return th;
-}
-
-function wxMergeClose(G, dist) {
-  const n=G.nodes.length, par=G.nodes.map((_,i)=>i);
-  const find=i=>{ while(par[i]!==i){ par[i]=par[par[i]]; i=par[i]; } return i; };
-  for (let i=0;i<n;i++) for (let j=i+1;j<n;j++)
-    if (Math.hypot(G.nodes[i].x-G.nodes[j].x, G.nodes[i].y-G.nodes[j].y) < dist) par[find(i)]=find(j);
-  G.segs=G.segs.map(([a,b])=>[find(a),find(b)]);
-}
-
-// estremi liberi vicini al fianco di un altro muro: spezza il muro e li aggancia (giunzione a T)
-function wxTJoin(G, distPx) {
-  for (let pass=0; pass<2; pass++) {
-    const deg=new Int32Array(G.nodes.length);
-    G.segs.forEach(([a,b])=>{ deg[a]++; deg[b]++; });
-    let done=false;
-    for (let n=0;n<G.nodes.length && !done;n++) {
-      if (deg[n]!==1) continue;
-      const P=G.nodes[n]; let best=-1, bd=distPx, bt=0;
-      for (let k=0;k<G.segs.length;k++) {
-        const [a,b]=G.segs[k]; if (a===n||b===n) continue;
-        const A=G.nodes[a], B=G.nodes[b], dx=B.x-A.x, dy=B.y-A.y, l2=dx*dx+dy*dy; if (!l2) continue;
-        const t=((P.x-A.x)*dx+(P.y-A.y)*dy)/l2;
-        if (t<0.03||t>0.97) continue;
-        const d=Math.hypot(P.x-A.x-t*dx, P.y-A.y-t*dy);
-        if (d<bd) { bd=d; best=k; bt=t; }
-      }
-      if (best>=0) {
-        const [a,b]=G.segs[best], A=G.nodes[a], B=G.nodes[b];
-        P.x=A.x+bt*(B.x-A.x); P.y=A.y+bt*(B.y-A.y);
-        G.segs.splice(best,1,[a,n],[n,b]); done=true;
-      }
-    }
-    if (!done) break;
-    pass=-1;                                        // ripeto finche' trova estremi da agganciare
-    if (G.segs.length>4000) break;
-  }
-}
-
-// unisce i tratti collineari che passano per un nodo di grado 2
-function wxStraighten(G, tolDeg) {
-  let again=true;
-  while (again) {
-    again=false;
-    const inc=G.nodes.map(()=>[]);
-    G.segs.forEach((s,i)=>{ inc[s[0]].push(i); inc[s[1]].push(i); });
-    for (let n=0;n<G.nodes.length;n++) {
-      if (inc[n].length!==2) continue;
-      const [i,j]=inc[n]; const s1=G.segs[i], s2=G.segs[j];
-      const o1=s1[0]===n?s1[1]:s1[0], o2=s2[0]===n?s2[1]:s2[0]; if (o1===o2) continue;
-      const P=G.nodes[n], A=G.nodes[o1], B=G.nodes[o2];
-      const a1=Math.atan2(P.y-A.y,P.x-A.x), a2=Math.atan2(B.y-P.y,B.x-P.x);
-      let d=Math.abs(a1-a2); if (d>Math.PI) d=2*Math.PI-d;
-      if (d*180/Math.PI < tolDeg) {
-        G.segs=G.segs.filter((_,k)=>k!==i&&k!==j); G.segs.push([o1,o2]); again=true; break;
-      }
-    }
-  }
-}
-
-
-// ── pulizia finale: poche linee intere invece di tante spezzate.
-//    1) i pezzetti obliqui corti (scalini della scansione, lettere) collassano in un punto;
-//    2) le linee orizzontali/verticali entro la tolleranza vengono allineate sulla stessa retta,
-//       fuse in un'unica linea e ricucite sulle interruzioni piccole;
-//    3) via i moncherini corti rimasti appesi e le linee isolate corte.
-function wxRegularize(G, th, mpp, o) {
-  const px=m=>m/mpp, c=Math.cos(th), sn=Math.sin(th), N=G.nodes;
-  const minSeg=px(o.minSegM), lineTol=px(o.lineTolM), gap=px(o.gapM), spur=px(o.spur2M), dirTol=0.14;
-  const par=N.map((_,i)=>i);
-  const find=i=>{ while(par[i]!==i){ par[i]=par[par[i]]; i=par[i]; } return i; };
-  const R=()=>N.map(p=>({x:p.x*c+p.y*sn, y:-p.x*sn+p.y*c}));
-  const setR=(i,x,y)=>{ N[i].x=x*c-y*sn; N[i].y=x*sn+y*c; };
-  const collapse=()=>{                                   // fonde i nodi uniti, media delle posizioni
-    const acc=new Map();
-    N.forEach((p,i)=>{ const r=find(i); const a=acc.get(r)||{x:0,y:0,n:0}; a.x+=p.x; a.y+=p.y; a.n++; acc.set(r,a); });
-    acc.forEach((a,r)=>{ N[r].x=a.x/a.n; N[r].y=a.y/a.n; });
-    const seen=new Set();
-    G.segs=G.segs.map(([a,b])=>[find(a),find(b)]).filter(([a,b])=>{
-      if (a===b) return false; const k=a<b?a+','+b:b+','+a; if (seen.has(k)) return false; seen.add(k); return true; });
-  };
-  // 1) obliqui corti
-  let r=R();
-  G.segs.forEach(([a,b])=>{
-    const dx=r[b].x-r[a].x, dy=r[b].y-r[a].y, L=Math.hypot(dx,dy);
-    const hv=Math.abs(dy)<=dirTol*Math.abs(dx) || Math.abs(dx)<=dirTol*Math.abs(dy);
-    if (!hv && L<minSeg) par[find(a)]=find(b);
-  });
-  collapse();
-  // 2) allineamento e fusione per rette
-  r=R();
-  for (const k of ['H','V']) {
-    const along=p=>k==='H'?p.x:p.y, perp=p=>k==='H'?p.y:p.x;
-    const S=G.segs.map((s,i)=>({s,i})).filter(({s:[a,b]})=>{
-      const dx=r[b].x-r[a].x, dy=r[b].y-r[a].y;
-      return k==='H' ? Math.abs(dy)<=dirTol*Math.abs(dx) && Math.abs(dx)>0 : Math.abs(dx)<=dirTol*Math.abs(dy) && Math.abs(dy)>0;
-    }).map(e=>{ const [a,b]=e.s; return {...e, pos:(perp(r[a])+perp(r[b]))/2, L:Math.abs(along(r[b])-along(r[a]))}; })
-      .sort((p,q)=>p.pos-q.pos);
-    const clusters=[]; let cur=null;
-    for (const e of S) {
-      if (cur && e.pos-cur.mean<=lineTol) { cur.items.push(e); cur.w+=e.L+1; cur.mean+=(e.pos-cur.mean)*(e.L+1)/cur.w; }
-      else { cur={items:[e], w:e.L+1, mean:e.pos}; clusters.push(cur); }
-    }
-    const drop=new Set(), add=[];
-    for (const cl of clusters) {
-      // la retta: posizione media pesata sulla lunghezza; tutti i nodi della retta ci finiscono sopra
-      const nodes=new Set(); cl.items.forEach(e=>{ nodes.add(e.s[0]); nodes.add(e.s[1]); drop.add(e.i); });
-      nodes.forEach(n=>{ const p=r[n]; if (k==='H') { p.y=cl.mean; } else { p.x=cl.mean; } setR(n,p.x,p.y); });
-      // tratti coperti lungo la retta
-      const iv=cl.items.map(e=>{ const a=along(r[e.s[0]]), b=along(r[e.s[1]]); return [Math.min(a,b), Math.max(a,b)]; }).sort((p,q)=>p[0]-q[0]);
-      const cov=[]; iv.forEach(([a,b])=>{ const l=cov[cov.length-1]; if (l && a<=l[1]+gap) l[1]=Math.max(l[1],b); else cov.push([a,b]); });
-      const pts=[...nodes].map(n=>({n, t:along(r[n])})).sort((p,q)=>p.t-q.t);
-      for (let i=1;i<pts.length;i++) if (pts[i].t-pts[i-1].t<1.5) par[find(pts[i].n)]=find(pts[i-1].n);   // nodi coincidenti
-      for (let i=1;i<pts.length;i++) {
-        const t0=pts[i-1].t, t1=pts[i].t;
-        if (cov.some(([a,b])=>a<=t0+1 && b>=t1-1)) add.push([pts[i-1].n, pts[i].n]);
-      }
-    }
-    G.segs=G.segs.filter((_,i)=>!drop.has(i)).concat(add);
-    collapse();
-    r=R();
-  }
-  // 3) moncherini e linee isolate corte
-  let again=true;
-  while (again) {
-    again=false;
-    const deg=new Int32Array(N.length); G.segs.forEach(([a,b])=>{ deg[a]++; deg[b]++; });
-    const before=G.segs.length;
-    G.segs=G.segs.filter(([a,b])=>!((deg[a]===1||deg[b]===1) && Math.hypot(N[a].x-N[b].x,N[a].y-N[b].y)<spur));
-    if (G.segs.length!==before) again=true;
-  }
-  wxStraighten(G, 3);
-}
-
-
-// ── zone fitte: dove in 50 cm di raggio ci sono tanti punti (scale, chiocciole, scritte, tratteggi)
-//    non ci sono muri da ricalcare. Tolgo tutte le linee della zona e ne restituisco l'ingombro.
-function wxClutter(G, mpp, o) {
-  const px=m=>m/mpp, R=px(0.5), N=G.nodes, deg=new Int32Array(N.length);
-  G.segs.forEach(([a,b])=>{ deg[a]++; deg[b]++; });
-  const idx=[]; N.forEach((p,i)=>{ if (deg[i]) idx.push(i); });
-  const cell=new Map(), key=(x,y)=>Math.floor(x/R)+','+Math.floor(y/R);
-  idx.forEach(i=>{ const k=key(N[i].x,N[i].y); if (!cell.has(k)) cell.set(k,[]); cell.get(k).push(i); });
-  const near=i=>{ const p=N[i], cx=Math.floor(p.x/R), cy=Math.floor(p.y/R), out=[];
-    for (let dx=-1;dx<=1;dx++) for (let dy=-1;dy<=1;dy++) (cell.get((cx+dx)+','+(cy+dy))||[]).forEach(j=>{ if (Math.hypot(N[j].x-p.x,N[j].y-p.y)<=R) out.push(j); });
-    return out; };
-  const dense=new Uint8Array(N.length);
-  idx.forEach(i=>{ if (near(i).length>=o.clutterN) dense[i]=1; });
-  // zone: nodi fitti vicini tra loro
-  const par=N.map((_,i)=>i), find=i=>{ while(par[i]!==i){ par[i]=par[par[i]]; i=par[i]; } return i; };
-  idx.forEach(i=>{ if (dense[i]) near(i).forEach(j=>{ if (dense[j]) par[find(i)]=find(j); }); });
-  const zones=new Map();
-  idx.forEach(i=>{ if (!dense[i]) return; const r=find(i); const z=zones.get(r)||{x0:1e9,y0:1e9,x1:-1e9,y1:-1e9};
-    z.x0=Math.min(z.x0,N[i].x); z.y0=Math.min(z.y0,N[i].y); z.x1=Math.max(z.x1,N[i].x); z.y1=Math.max(z.y1,N[i].y); zones.set(r,z); });
-  const boxes=[...zones.values()];
-  if (!boxes.length) return [];
-  const inBox=p=>boxes.some(b=>p.x>=b.x0-2&&p.x<=b.x1+2&&p.y>=b.y0-2&&p.y<=b.y1+2);
-  G.segs=G.segs.filter(([a,b])=>{
-    const L=Math.hypot(N[a].x-N[b].x,N[a].y-N[b].y);
-    if (inBox(N[a]) && inBox(N[b])) return false;                 // tutta dentro la zona
-    if ((dense[a]||dense[b]) && L<px(0.8)) return false;           // pezzo corto che esce dalla zona
-    return true;
-  });
-  // moncherini lasciati appesi dalla pulizia
-  let again=true;
-  while (again) {
-    const d=new Int32Array(N.length); G.segs.forEach(([a,b])=>{ d[a]++; d[b]++; });
-    const n0=G.segs.length;
-    G.segs=G.segs.filter(([a,b])=>!((d[a]===1||d[b]===1) && Math.hypot(N[a].x-N[b].x,N[a].y-N[b].y)<px(o.spur2M)));
-    again=G.segs.length!==n0;
-  }
-  wxStraighten(G, 3);
-  return boxes.filter(b=>b.x1-b.x0>=px(0.8) && b.y1-b.y0>=px(0.8));
-}
-
-function wxDropSmallGroups(G, minLenPx) {
-  // un gruppo di linee collegate si tiene solo se e' abbastanza esteso (scritte e simboli restano piccoli)
-  const par=G.nodes.map((_,i)=>i);
-  const find=i=>{ while(par[i]!==i){ par[i]=par[par[i]]; i=par[i]; } return i; };
-  G.segs.forEach(([a,b])=>{ par[find(a)]=find(b); });
-  const g=new Map();
-  const add=(r,n)=>{ let e=g.get(r); if(!e){ e={len:0,x0:1e9,x1:-1e9,y0:1e9,y1:-1e9}; g.set(r,e); }
-    e.x0=Math.min(e.x0,n.x); e.x1=Math.max(e.x1,n.x); e.y0=Math.min(e.y0,n.y); e.y1=Math.max(e.y1,n.y); return e; };
-  G.segs.forEach(([a,b])=>{ const e=add(find(a),G.nodes[a]); add(find(a),G.nodes[b]); e.len+=Math.hypot(G.nodes[a].x-G.nodes[b].x,G.nodes[a].y-G.nodes[b].y); });
-  G.segs=G.segs.filter(([a])=>{ const e=g.get(find(a)); return e.len>=minLenPx && Math.max(e.x1-e.x0, e.y1-e.y0)>=minLenPx; });
-}
-
-
-// ── scale: almeno 3 linee parallele (qualsiasi inclinazione), di lunghezza simile, a passo regolare 15-42 cm.
-//    Le toglie dai muri (con i cosciali interni) e restituisce l'ingombro.
-function wxStairs(G, th, mpp) {
-  const px=m=>m/mpp, tol=Math.max(1.5, px(0.04)), N=G.nodes;
-  const segA=G.segs.map(([a,b],i)=>{
-    const A=N[a], B=N[b], L=Math.hypot(B.x-A.x,B.y-A.y);
-    let ang=Math.atan2(B.y-A.y,B.x-A.x)*180/Math.PI; if (ang<0) ang+=180; if (ang>=180) ang-=180;
-    return {i,a,b,L,ang};
-  }).filter(s=>s.L>=px(0.45) && s.L<=px(2.2)).sort((p,q)=>p.ang-q.ang);
-  // gruppi di direzione (entro 3 gradi, con il giro 0/180)
-  const buckets=[];
-  for (const s of segA) { const bk=buckets[buckets.length-1]; if (bk && s.ang-bk[bk.length-1].ang<3) bk.push(s); else buckets.push([s]); }
-  if (buckets.length>1 && buckets[0][0].ang+180-buckets[buckets.length-1].slice(-1)[0].ang<3) { buckets[0]=buckets.pop().concat(buckets[0]); }
-  const found=[], boxes=[], drop=new Set();
-  for (const bk of buckets) {
-    if (bk.length<3) continue;
-    let sx=0, sy=0; bk.forEach(s=>{ sx+=Math.cos(2*s.ang*Math.PI/180); sy+=Math.sin(2*s.ang*Math.PI/180); });
-    const t=Math.atan2(sy,sx)/2, ux=Math.cos(t), uy=Math.sin(t);
-    let dev=Math.abs(((t-th)*180/Math.PI)%90); if (dev>45) dev=90-dev; if (dev>15) continue;   // il tratteggio a 45 gradi dei muri non e' una scala
-    const F={ux,uy, along:p=>p.x*ux+p.y*uy, perp:p=>-p.x*uy+p.y*ux};
-    const cand=bk.map(s=>{ const la=F.along(N[s.a]), lb=F.along(N[s.b]);
-      return {i:s.i, lo:Math.min(la,lb), hi:Math.max(la,lb), pos:(F.perp(N[s.a])+F.perp(N[s.b]))/2}; }).sort((p,q)=>p.pos-q.pos);
-    const chains=[];
-    for (const e of cand) {
-      let best=null;
-      for (const ch of chains) {
-        const l=ch[ch.length-1], gap=e.pos-l.pos;
-        if (gap<px(0.20)||gap>px(0.84)) continue;
-        if (ch.length>=2) { const sp=ch.sp; if (Math.abs(gap-sp)>0.3*sp && Math.abs(gap-2*sp)>0.3*sp) continue; }   // passo regolare (anche con un gradino perso)
-        else if (gap>px(0.42)) continue;
-        const ml=Math.min(e.hi-e.lo,l.hi-l.lo), r=(e.hi-e.lo)/(l.hi-l.lo);
-        if (Math.min(e.hi,l.hi)-Math.max(e.lo,l.lo)<0.7*ml || r<0.7 || r>1.43) continue;
-        if (!best || ch.length>best.length) best=ch;
-      }
-      if (best) { const g=e.pos-best[best.length-1].pos; if (best.length===1) best.sp=g; else if (g<1.5*best.sp) best.sp=(best.sp*(best.length-1)+g)/best.length; best.push(e); }
-      else chains.push([e]);
-    }
-    for (const ch of chains) {
-      if (ch.length<3) continue;
-      ch.forEach(e=>drop.add(e.i));
-      const lo=Math.min(...ch.map(e=>e.lo)), hi=Math.max(...ch.map(e=>e.hi));
-      const sp=ch.sp, p0=ch[0].pos-sp/2, p1=ch[ch.length-1].pos+sp/2;
-      boxes.push({F, lo, hi, p0, p1});
-      const cr=[[lo,p0],[hi,p0],[lo,p1],[hi,p1]].map(([a,p])=>({x:a*ux-p*uy, y:a*uy+p*ux}));
-      const horiz = Math.abs(ux) >= Math.abs(uy);        // gradini piu' orizzontali che verticali
-      found.push({x0:Math.min(...cr.map(p=>p.x)), x1:Math.max(...cr.map(p=>p.x)), y0:Math.min(...cr.map(p=>p.y)), y1:Math.max(...cr.map(p=>p.y)),
-                  verso: horiz?'y':'x', spPx:sp, n:ch.length});
-    }
-  }
-  if (!found.length) return found;
-  G.segs=G.segs.filter((_,i)=>!drop.has(i));
-  wxStraighten(G, 2);
-  const inBox=p=>boxes.some(b=>{ const a=b.F.along(p), q=b.F.perp(p); return a>=b.lo-tol&&a<=b.hi+tol&&q>=b.p0-tol&&q<=b.p1+tol; });
-  G.segs=G.segs.filter(([a,b])=>!(inBox(N[a])&&inBox(N[b])));
-  return found;
-}
-
-// aggancia ogni bucatura (punto sulla faccia + direzione) al segmento finale che la contiene
-function wxMapOpenings(G, ops, mpp) {
-  const tol=Math.max(3, 0.10/mpp), out=[];
-  for (const op of ops) {
-    let best=-1, bd=tol, bt=0;
-    G.segs.forEach(([a,b],i)=>{
-      const A=G.nodes[a], B=G.nodes[b], dx=B.x-A.x, dy=B.y-A.y, L=Math.hypot(dx,dy);
-      if (L<op.wpx*0.8 || Math.abs(dx*op.dy-dy*op.dx)/L>0.12) return;
-      const t=((op.x-A.x)*dx+(op.y-A.y)*dy)/(L*L); if (t<0||t>1) return;
-      const d=Math.abs((op.x-A.x)*dy-(op.y-A.y)*dx)/L;
-      if (d<bd) { bd=d; best=i; bt=t; }
-    });
-    if (best>=0) out.push({seg:best, t:bt, widthM:op.wpx*mpp, type:op.type});
-  }
-  return out;
-}
-
-// ── serramenti: pannello di muro tra due stipiti trasversali con linea interna (telaio) o segno d'asse.
-//    Sostituisce i pezzi di parete e il simbolo con un solo segmento e restituisce le aperture trovate.
-function wxOpenings(G, th, mpp) {
-  const px=m=>m/mpp, c=Math.cos(th), sn=Math.sin(th);
-  const R=G.nodes.map(n=>({x:n.x*c+n.y*sn, y:-n.x*sn+n.y*c}));
-  const tol=Math.max(1.5, px(0.04)), ext=px(0.10)+tol;
-  const info=G.segs.map(([a,b],i)=>{
-    const A=R[a],B=R[b],dx=B.x-A.x,dy=B.y-A.y;
-    const k = Math.abs(dy)<=tol*0.7 && Math.abs(dx)>tol ? 'H' : (Math.abs(dx)<=tol*0.7 && Math.abs(dy)>tol ? 'V' : '');
-    return {i,a,b,k, lo:k==='H'?Math.min(A.x,B.x):Math.min(A.y,B.y), hi:k==='H'?Math.max(A.x,B.x):Math.max(A.y,B.y), pos:k==='H'?(A.y+B.y)/2:(A.x+B.x)/2};
-  });
-  function lines(k) {
-    const L=[], ss=info.filter(e=>e.k===k).sort((p,q)=>p.pos-q.pos);
-    let cl=[]; const flush=()=>{ if(!cl.length) return;
-      cl.sort((p,q)=>p.lo-q.lo); let cur=null;
-      for (const e of cl) {
-        if (cur && e.lo<=cur.hi+tol*2) { cur.hi=Math.max(cur.hi,e.hi); cur.segs.push(e); }
-        else { cur={k,pos:cl.reduce((t,x)=>t+x.pos,0)/cl.length, lo:e.lo, hi:e.hi, segs:[e]}; L.push(cur); }
-      } cl=[]; };
-    for (const e of ss) { if (cl.length && e.pos-cl[cl.length-1].pos>tol) flush(); cl.push(e); }
-    flush(); return L;
-  }
-  const LH=lines('H'), LV=lines('V');
-  let cx=0,cy=0; R.forEach(p=>{cx+=p.x;cy+=p.y;}); cx/=R.length; cy/=R.length;
-  const drop=new Set(), add=[], found=[];
-  const nearNode=(al,ac,k)=>{ let best=-1,bd=tol*2.5;
-    R.forEach((p,i)=>{ const d=Math.hypot((k==='H'?p.x:p.y)-al,(k==='H'?p.y:p.x)-ac); if(d<bd){bd=d;best=i;} }); return best; };
-  for (const k of ['H','V']) {
-    const F = k==='H'?LH:LV, P = k==='H'?LV:LH, cen = k==='H'?cy:cx;
-    // una linea compresa tra altre due (telaio di finestra) non e' una faccia di muro
-    const isInt = F.map(e => F.some(a => F.some(b => a!==e&&b!==e && a.pos<e.pos-tol && b.pos>e.pos+tol && b.pos-a.pos<=px(0.60)
-      && e.lo>=Math.max(a.lo,b.lo)-tol*3 && e.hi<=Math.min(a.hi,b.hi)+tol*3)));
-    for (let i=0;i<F.length;i++) for (let j=i+1;j<F.length;j++) {
-      const f1=F[i], f2=F[j];
-      if (isInt[i]||isInt[j]) continue;
-      if (f1.pos>f2.pos) continue;
-      const d=f2.pos-f1.pos; if (d<px(0.08)||d>px(0.60)) continue;
-      const xa=Math.max(f1.lo,f2.lo), xb=Math.min(f1.hi,f2.hi); if (xb-xa<px(0.6)) continue;
-      const p1=f1.pos, p2=f2.pos;
-      const bounds=[xa,xb], axis=[];
-      for (const q of P) {
-        if (q.pos<xa-tol || q.pos>xb+tol) continue;
-        if (q.lo>p1+tol || q.hi<p2-tol) continue;                    // non attraversa/collega le due facce
-        if (q.lo>=p1-ext && q.hi<=p2+ext) bounds.push(q.pos);        // stipite: esattamente tra le facce
-        else if (q.hi-q.lo<=px(1.6)) axis.push(q);                   // segno d'asse: sporge dalle facce
-      }
-      bounds.sort((a,b)=>a-b);
-      const bs=[]; bounds.forEach(x=>{ if(!bs.length||x-bs[bs.length-1]>tol*1.5) bs.push(x); });
-      for (let b=0;b<bs.length-1;b++) {
-        const u=bs[b], v=bs[b+1], wpx=v-u;
-        if (wpx<px(0.4)||wpx>px(4.0)) continue;
-        const inner=F.some(e=>e!==f1&&e!==f2 && e.pos>p1+tol*1.5 && e.pos<p2-tol*1.5 && Math.min(e.hi,v)-Math.max(e.lo,u)>=0.6*wpx);
-        const ax=axis.filter(q=>q.pos>u+tol&&q.pos<v-tol);
-        if (!inner && !ax.length) continue;
-        const nI=[nearNode(u,p1,k),nearNode(v,p1,k)], nO=[nearNode(u,p2,k),nearNode(v,p2,k)];
-        const okI=nI[0]>=0&&nI[1]>=0&&nI[0]!==nI[1], okO=nO[0]>=0&&nO[1]>=0&&nO[0]!==nO[1];
-        if (!okI&&!okO) continue;
-        const useFirst = okI && (!okO || Math.abs(p1-cen) <= Math.abs(p2-cen));   // faccia interna = piu' vicina al baricentro
-        for (const [ok,nn,f] of [[okI,nI,f1],[okO,nO,f2]]) {
-          if (!ok) continue;
-          info.forEach(e=>{ if (e.k===k && Math.abs(e.pos-f.pos)<=tol && e.lo>=u-tol && e.hi<=v+tol) drop.add(e.i); });
-          add.push([nn[0],nn[1]]);
-        }
-        info.forEach(e=>{
-          if (e.k===k && e.pos>p1+tol*1.5 && e.pos<p2-tol*1.5 && e.lo>=u-tol*2 && e.hi<=v+tol*2) drop.add(e.i);     // telaio
-          if (e.k!==k && e.k!=='' && e.pos>u+tol && e.pos<v-tol && e.hi<=p2+px(1.0) && e.lo>=p1-px(1.0)) drop.add(e.i); // asse e divisori
-          if (e.k!==k && e.k!=='' && (Math.abs(e.pos-u)<=tol*1.5 || Math.abs(e.pos-v)<=tol*1.5) && e.lo>=p1-ext && e.hi<=p2+ext) drop.add(e.i); // stipiti: il muro resta continuo
-        });
-        const fp=useFirst?p1:p2, al=(u+v)/2, rx=k==='H'?al:fp, ry=k==='H'?fp:al;
-        found.push({x:rx*c-ry*sn, y:rx*sn+ry*c, dx:k==='H'?c:-sn, dy:k==='H'?sn:c, wpx, type:'F'});
-      }
-    }
-  }
-  G.segs=G.segs.filter((_,i)=>!drop.has(i)).concat(add);
-  return found;
-}
-
-function wallsExtract(mask, w, h, mpp, opt) {
-  const o=Object.assign({}, WALL_DEFAULTS, opt||{});
-  const px=m=>m/mpp, minPx=Math.max(2, Math.round(px(o.minDimM)));
-  let clean = wxRemoveSmall(mask, w, h, minPx);
-  const bandOps = o.openings ? wxBandOpenings(clean, w, h, mpp) : [];
-  if (bandOps.length) clean = wxRemoveSmall(clean, w, h, minPx);
-  const rc = px(o.closeM);
-  const closed = rc>0 ? wxErode(wxDilate(clean, w, h, rc), w, h, rc) : clean;   // chiude le fessure senza fondere le due facce
-  const sk = wxThin(wxOutline(closed, w, h), w, h);
-  const g = wxSkeletonGraph(sk, w, h);
-  wxPrune(g, px(o.spurM));
-  let G = wxToSegments(g, px(o.simplM));
-  G = wxCompact(G);
-  const th = o.orthoDeg>0 ? wxOrtho(G, o.orthoDeg) : 0;
-  wxMergeClose(G, px(o.mergeM));
-  G = wxCompact(G);
-  wxTJoin(G, px(o.tjoinM));
-  G = wxCompact(G);
-  wxStraighten(G, 2);
-  wxDropSmallGroups(G, px(o.groupM));
-  G = wxCompact(G);
-  let stairs = o.stairs ? wxStairs(G, th, mpp) : [];
-  const lineOps = (o.openings && o.orthoDeg>0) ? wxOpenings(G, th, mpp) : [];
-  wxStraighten(G, 2);
-  if (o.minSegM>0) wxRegularize(G, th, mpp, o);
-  if (o.clutter) {
-    const zones = wxClutter(G, mpp, o);
-    if (o.stairs) stairs = stairs.concat(zones.map(z => ({...z, verso:'x', spPx:px(0.28), n:0})));
-  }
-  wxDropSmallGroups(G, px(o.groupM));
-  const fin = wxCompact(G);
-  return {nodes:fin.nodes, segs:fin.segs, openings:wxMapOpenings(fin, bandOps.concat(lineOps), mpp), stairs};
 }
 
 
@@ -3835,7 +3091,7 @@ function roomsExtract(mask, w, h, mpp, opt) {
     const pts=rxTrace((x,y)=>x>=0&&y>=0&&x<w&&y<h&&lab[y*w+x]===L0, sx, sy);
     rings.push({L0, pts:rxSimplifyRing(pts, px(o.simplM))});
   });
-  if (!rings.length) return {nodes:[], segs:[], rooms:[], openings:[], stairs:[]};
+  if (!rings.length) return {nodes:[], segs:[], rooms:[]};
   // direzione principale dei muri
   let ssx=0, ssy=0;
   rings.forEach(r=>r.pts.forEach((a,i)=>{ const b=r.pts[(i+1)%r.pts.length], L=Math.hypot(b.x-a.x,b.y-a.y), an=Math.atan2(b.y-a.y,b.x-a.x);
@@ -3884,7 +3140,7 @@ function roomsExtract(mask, w, h, mpp, opt) {
     }
     kept.push(P0);
   }
-  if (!kept.length) return {nodes:[], segs:[], rooms:[], openings:[], stairs:[]};
+  if (!kept.length) return {nodes:[], segs:[], rooms:[]};
   const tDef = allT.length ? median(allT) : px(0.30);
   extEdges.forEach(e=>{ const tm=Math.max(0.10, Math.round((e.t||tDef)*mpp/0.05)*0.05); e.tp=tm/mpp; });
 
@@ -3914,7 +3170,7 @@ function roomsExtract(mask, w, h, mpp, opt) {
   });
   const extStart=segs.length;
   if (ext.length>=3) { const ids=ext.map(p=>{ nodes.push({x:p.x, y:p.y}); return nodes.length-1; }); ids.forEach((id,i)=>segs.push([id, ids[(i+1)%ids.length]])); }
-  return {nodes, segs, rooms, openings:[], stairs:[], extStart, wallTcm: Math.round(tDef*mpp*100)};
+  return {nodes, segs, rooms, extStart, wallTcm: Math.round(tDef*mpp*100)};
 }
 
 function rxArea(P) { let s=0; for (let i=0;i<P.length;i++) { const j=(i+1)%P.length; s+=P[i].x*P[j].y-P[j].x*P[i].y; } return s/2; }
@@ -3943,12 +3199,11 @@ function buildUnderlayView(u) {
 
 function drawUnderlay() {
   const u = state.underlay; if (!u || !u.visible) return;
-  const rad = state.mapRotation*Math.PI/180, c=Math.cos(rad), s=Math.sin(rad), k=state.zoom*u.mpp;
-  const o = w2s(u.x, u.y);
+  const k = state.zoom*u.mpp, o = w2s(u.x, u.y);
   ctx.save();
   ctx.globalAlpha = u.alpha;
   ctx.imageSmoothingEnabled = k < 1;
-  ctx.transform(c*k, -s*k, s*k, c*k, o.x, o.y);
+  ctx.transform(k, 0, 0, k, o.x, o.y);
   ctx.drawImage(u.view, 0, 0);
   ctx.restore();
 }
@@ -3966,17 +3221,6 @@ function drawWallsPrev() {
     const A = w2s(P.nodes[a].x, P.nodes[a].y), B = w2s(P.nodes[b].x, P.nodes[b].y);
     ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke();
   });
-  ctx.lineWidth = 6;
-  (P.open||[]).forEach(op => {
-    const [a,b] = P.segs[op.seg], A = P.nodes[a], B = P.nodes[b], L = Math.hypot(B.x-A.x, B.y-A.y) || 1;
-    const h = op.widthM/2/L, t0 = Math.max(0, op.t-h), t1 = Math.min(1, op.t+h);
-    const S = w2s(A.x+(B.x-A.x)*t0, A.y+(B.y-A.y)*t0), E = w2s(A.x+(B.x-A.x)*t1, A.y+(B.y-A.y)*t1);
-    ctx.strokeStyle = op.type==='P' ? '#ff6b00' : '#00e5ff';
-    ctx.beginPath(); ctx.moveTo(S.x,S.y); ctx.lineTo(E.x,E.y); ctx.stroke();
-  });
-  ctx.lineWidth = 2; ctx.setLineDash([6,4]); ctx.strokeStyle = '#7aa8d0';
-  (P.stairs||[]).forEach(s => { rectPath(s); ctx.stroke(); });
-  ctx.setLineDash([]);
   ctx.fillStyle = '#ff9f43';
   P.nodes.forEach(n => { const s=w2s(n.x,n.y); ctx.beginPath(); ctx.arc(s.x,s.y,3,0,Math.PI*2); ctx.fill(); });
   ctx.restore();
@@ -3985,7 +3229,6 @@ function drawWallsPrev() {
 function fitUnderlay() {
   const u = state.underlay; if (!u) return;
   const wm = u.w*u.mpp, hm = u.h*u.mpp;
-  setRotation(0);
   state.zoom = Math.min(Math.max(Math.min((W-60)/wm, (H-60)/hm), 4), 2000);
   state.panX = W/2 - (u.x + wm/2)*state.zoom;
   state.panY = H/2 + (u.y - hm/2)*state.zoom;
@@ -4370,7 +3613,7 @@ function segExists(a,b){ return state.segments.some(s => (s.a===a&&s.b===b)||(s.
 function updateStatus() {
   document.getElementById('sb-points').textContent   = 'Punti: '+state.points.length;
   document.getElementById('sb-segments').textContent = 'Segmenti: '+state.segments.length;
-  document.getElementById('sb-ambienti').textContent = 'Ambienti: '+(state.ambienti.length+state.rooms.length);
+  document.getElementById('sb-ambienti').textContent = 'Ambienti: '+state.ambienti.length;
 }
 
 // un click fuori da menu e pulsanti chiude i menu aperti
@@ -4383,7 +3626,7 @@ document.addEventListener('pointerdown', e => {
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 250));
 window.addEventListener('beforeunload', e => {
-  if (state.points.length || state.rooms.length) {
+  if (state.points.length) {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())); } catch (err) {}
   }
 });
@@ -4406,8 +3649,8 @@ else { flagSaved('nuovo rilievo'); draw(); }
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '1.06';
-const APP_NOTE = ["Export PDF e JPG: righe sottili come in un disegno tecnico (muri 0,35 mm, muri esterni 0,5, serramenti 0,25, quote e richiami 0,13) e testi più piccoli, così quote e scritte non si sovrappongono più", "Tolto l'avviso \"stampare al 100%\": fa fede la barra metrica"];
+const APP_VERSION = '1.07';
+const APP_NOTE = ["Annulla dopo uno spostamento (punto, quota, etichetta, serramento, pilastro, scala): ora torna indietro al primo tocco", "Export PDF e JPG: dei serramenti resta solo il nome, senza la distanza dall'estremo del muro", "Barra di stato in basso: il nome dello strumento attivo è in italiano", "Codice alleggerito; le Stanze e le Note dei progetti salvati con le versioni vecchie diventano ambienti ed etichette all'apertura"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {
