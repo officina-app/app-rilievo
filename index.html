@@ -405,7 +405,12 @@ const COL_PRINT = {
   stair:'#333', stairArrow:'#000',
 };
 let C = COL_SCREEN, PRINT = false;
-const QUOTE_FONT = 'bold 12px Segoe UI';
+// export in scala: spessori e caratteri in mm di carta (1 px logico = 1/96 di pollice); a video restano in pixel
+const PX_MM = 96/25.4, PRINT_U = 0.62;            // PRINT_U accorcia in stampa le distanze fisse tra testi e linee
+function prLw(px, mm) { return PRINT ? mm*PX_MM : px; }
+function prFont(px, mm, bold) { return (bold ? 'bold ' : '')+(PRINT ? (mm*PX_MM).toFixed(2) : px)+'px Segoe UI'; }
+function prU(n) { return PRINT ? n*PRINT_U : n; }
+function quoteFont() { return prFont(12, 2, true); }
 const STAIR_PEDATA = 0.30, STAIR_ALZATA = 0.16, STAIR_MINW = 0.60;
 
 function inPoly(pts, x, y) {
@@ -457,9 +462,9 @@ function quotaInfo(i) {
   if (ang < -Math.PI/2) ang += Math.PI;
   let cx, cy;
   if (g.qo) { const c = w2s((A.x+B.x)/2+g.qo.x, (A.y+B.y)/2+g.qo.y); cx = c.x; cy = c.y; }
-  else { cx = (sa.x+sb.x)/2 + Math.sin(ang)*10; cy = (sa.y+sb.y)/2 - Math.cos(ang)*10; }   // sopra la linea
+  else { const o = prU(10); cx = (sa.x+sb.x)/2 + Math.sin(ang)*o; cy = (sa.y+sb.y)/2 - Math.cos(ang)*o; }   // sopra la linea
   const len = Math.hypot(B.x-A.x, B.y-A.y), txt = len.toFixed(2)+' m';
-  ctx.font = QUOTE_FONT;
+  ctx.font = quoteFont();
   return { cx, cy, ang, sa, sb, len, txt, w: ctx.measureText(txt).width, ok: segOk(g, len) };
 }
 function hitQuota(sx, sy) {
@@ -476,16 +481,16 @@ function drawQuota(i) {
   const g = state.segments[i];
   if (g.qo) {                                  // quota allontanata: linea di richiamo che la segue
     const d = distPtSeg(q.cx, q.cy, q.sa.x, q.sa.y, q.sb.x, q.sb.y);
-    if (d > 26) {
+    if (d > prU(26)) {
       const dx = q.sb.x-q.sa.x, dy = q.sb.y-q.sa.y, l2 = dx*dx+dy*dy || 1;
       const t = Math.max(0, Math.min(1, ((q.cx-q.sa.x)*dx + (q.cy-q.sa.y)*dy)/l2));
-      const px = q.sa.x+t*dx, py = q.sa.y+t*dy, ux = (q.cx-px)/d, uy = (q.cy-py)/d;
-      ctx.save(); ctx.strokeStyle = C.lead; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
-      ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(q.cx-ux*9, q.cy-uy*9); ctx.stroke(); ctx.restore();
+      const px = q.sa.x+t*dx, py = q.sa.y+t*dy, ux = (q.cx-px)/d, uy = (q.cy-py)/d, gap = prU(9);
+      ctx.save(); ctx.strokeStyle = C.lead; ctx.lineWidth = prLw(1, 0.13); ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(q.cx-ux*gap, q.cy-uy*gap); ctx.stroke(); ctx.restore();
     }
   }
   ctx.save(); ctx.translate(q.cx, q.cy); ctx.rotate(q.ang);
-  ctx.fillStyle = q.ok ? C.quotaOk : C.quota; ctx.font = QUOTE_FONT;
+  ctx.fillStyle = q.ok ? C.quotaOk : C.quota; ctx.font = quoteFont();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(q.txt, 0, 0); ctx.restore();
 }
@@ -511,7 +516,7 @@ function openingQuotaPos(i) {
   const p = openingPos(i); if (!p) return null;
   const op = state.openings[i];
   if (op.qo) { const c = openingCenterW(i), q = w2s(c.x+op.qo.x, c.y+op.qo.y); return {x:q.x, y:q.y}; }
-  return { x: p.sx, y: p.sy-22 };
+  return { x: p.sx, y: p.sy-prU(22) };
 }
 function hitOpeningQuota(sx, sy) {
   for (let i=state.openings.length-1; i>=0; i--) {
@@ -596,8 +601,8 @@ function drawStair(s, mode) {
   const b = stairB(s), p = s.pedata, st = s.sgn>0 ? b.a0 : b.a1;
   rectPath(s);
   if (!PRINT) { ctx.fillStyle = 'rgba(120,160,200,.14)'; ctx.fill(); }
-  ctx.strokeStyle = mode==='sel' ? '#ffe066' : C.stair; ctx.lineWidth = 2; ctx.stroke();
-  ctx.strokeStyle = C.stair; ctx.lineWidth = 1;
+  ctx.strokeStyle = mode==='sel' ? '#ffe066' : C.stair; ctx.lineWidth = prLw(2, 0.25); ctx.stroke();
+  ctx.strokeStyle = C.stair; ctx.lineWidth = prLw(1, 0.13);
   for (let k=1; k<s.n; k++) {
     const a = st + s.sgn*k*p;
     const u = s.ax==='x' ? w2s(a,b.c0) : w2s(b.c0,a), v = s.ax==='x' ? w2s(a,b.c1) : w2s(b.c1,a);
@@ -606,14 +611,14 @@ function drawStair(s, mode) {
   // freccia di salita lungo l'asse, dalla partenza verso l'arrivo
   const cm = (b.c0+b.c1)/2, L = s.n*p, f0 = st + s.sgn*L*0.12, f1 = st + s.sgn*L*0.88;
   const A0 = s.ax==='x' ? w2s(f0,cm) : w2s(cm,f0), A1 = s.ax==='x' ? w2s(f1,cm) : w2s(cm,f1);
-  ctx.strokeStyle = C.stairArrow; ctx.fillStyle = C.stairArrow; ctx.lineWidth = 1.5;
+  ctx.strokeStyle = C.stairArrow; ctx.fillStyle = C.stairArrow; ctx.lineWidth = prLw(1.5, 0.18);
   ctx.beginPath(); ctx.moveTo(A0.x,A0.y); ctx.lineTo(A1.x,A1.y); ctx.stroke();
-  const ang = Math.atan2(A1.y-A0.y, A1.x-A0.x), hs = 9;
+  const ang = Math.atan2(A1.y-A0.y, A1.x-A0.x), hs = prU(9);
   ctx.beginPath(); ctx.moveTo(A1.x,A1.y);
   ctx.lineTo(A1.x-hs*Math.cos(ang-0.45), A1.y-hs*Math.sin(ang-0.45));
   ctx.lineTo(A1.x-hs*Math.cos(ang+0.45), A1.y-hs*Math.sin(ang+0.45));
   ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.arc(A0.x,A0.y,3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(A0.x,A0.y,prU(3),0,Math.PI*2); ctx.fill();
   if (mode) {                                // etichetta: solo a scala selezionata o col mouse sopra
     const c = rectCenter(s), t = stairInfo(s);
     ctx.font = 'bold 12px Segoe UI';
@@ -867,12 +872,12 @@ function drawPilastri() {
     rectPath(r);
     ctx.fillStyle = isSel('pilastro',i) ? 'rgba(255,224,102,.45)' : (PRINT ? 'rgba(80,80,80,.55)' : 'rgba(200,200,200,.55)');
     ctx.fill();
-    ctx.strokeStyle = isSel('pilastro',i) ? '#ffe066' : (PRINT ? '#222' : '#ddd'); ctx.lineWidth=2; ctx.stroke();
+    ctx.strokeStyle = isSel('pilastro',i) ? '#ffe066' : (PRINT ? '#222' : '#ddd'); ctx.lineWidth=prLw(2, 0.25); ctx.stroke();
     const c = rectCenter(r);
-    ctx.fillStyle=PRINT ? '#000' : '#fff'; ctx.font='bold 10px Segoe UI';
+    ctx.fillStyle=PRINT ? '#000' : '#fff'; ctx.font=prFont(10, 1.8, true);
     ctx.textAlign='center'; ctx.textBaseline='bottom';
-    ctx.fillText(r.label, c.x, c.y-3);
-    ctx.fillStyle='#333'; ctx.font='9px Segoe UI'; ctx.textBaseline='top';
+    ctx.fillText(r.label, c.x, c.y-prU(3));
+    ctx.fillStyle='#333'; ctx.font=prFont(9, 1.6); ctx.textBaseline='top';
     ctx.fillText(Math.round(r.w*100)+'x'+Math.round(r.h*100), c.x, c.y+1);
   });
 }
@@ -940,10 +945,11 @@ function drawAmbienti() {
     }
     const c = ambLabelPos(amb), area = ambNet(amb);
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillStyle=C.ambName; ctx.font='bold 14px Segoe UI'; ctx.fillText(amb.name, c.x, c.y-16);
-    ctx.fillStyle=C.ambArea; ctx.font='bold 13px Segoe UI'; ctx.fillText(area.toFixed(2)+' m²', c.x, c.y);
-    ctx.fillStyle=C.ambH;    ctx.font='bold 13px Segoe UI'; ctx.fillText('H. '+Number(amb.h).toFixed(2)+' m', c.x, c.y+16);
-    ctx.fillStyle=C.ambVol;  ctx.font='11px Segoe UI';      ctx.fillText((area*amb.h).toFixed(2)+' m³', c.x, c.y+32);
+    const dy = prU(16);
+    ctx.fillStyle=C.ambName; ctx.font=prFont(14, 2.5, true); ctx.fillText(amb.name, c.x, c.y-dy);
+    ctx.fillStyle=C.ambArea; ctx.font=prFont(13, 2, true);   ctx.fillText(area.toFixed(2)+' m²', c.x, c.y);
+    ctx.fillStyle=C.ambH;    ctx.font=prFont(13, 2, true);   ctx.fillText('H. '+Number(amb.h).toFixed(2)+' m', c.x, c.y+dy);
+    ctx.fillStyle=C.ambVol;  ctx.font=prFont(11, 1.8);       ctx.fillText((area*amb.h).toFixed(2)+' m³', c.x, c.y+2*dy);
   });
 }
 
@@ -960,7 +966,7 @@ function drawPencil() {
     const f = w2s(l.pts[0].x, l.pts[0].y);
     ctx.beginPath(); ctx.moveTo(f.x,f.y);
     l.pts.slice(1).forEach(p => { const s=w2s(p.x,p.y); ctx.lineTo(s.x,s.y); });
-    ctx.strokeStyle=color; ctx.lineWidth=2; ctx.setLineDash([6,3]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle=color; ctx.lineWidth=prLw(2, 0.18); ctx.setLineDash([6,3]); ctx.stroke(); ctx.setLineDash([]);
   };
   state.pencilLines.forEach((l,i) => line(l, isSel('pencil',i) || (state.selPen && state.selPen.has(i)) ? '#ffe066' : (PRINT ? '#555' : '#ff8c00')));
   if (state.pencilCurrent) line(state.pencilCurrent,'#ffaa33');
@@ -971,7 +977,7 @@ function drawSegments() {
     const A=state.points[g.a], B=state.points[g.b]; if(!A||!B) return;
     const sa=w2s(A.x,A.y), sb=w2s(B.x,B.y);
     const selL = (state.selSeg && state.selSeg.has(i)) || isSel('segment',i);
-    ctx.strokeStyle = selL ? '#e94560' : (g.layer==='MURI_EST' ? C.wallExt : C.wall); ctx.lineWidth = selL ? 4 : (PRINT ? 3 : 2.5);
+    ctx.strokeStyle = selL ? '#e94560' : (g.layer==='MURI_EST' ? C.wallExt : C.wall); ctx.lineWidth = selL ? 4 : prLw(2.5, g.layer==='MURI_EST' ? 0.5 : 0.35);
     ctx.beginPath(); ctx.moveTo(sa.x,sa.y); ctx.lineTo(sb.x,sb.y); ctx.stroke();
     drawQuota(i);
   });
@@ -988,26 +994,27 @@ function drawOpenings() {
     const col     = PRINT ? (op.type==='P' ? C.door : C.win) : (op.type==='F' ? C.win : op.type==='P' ? C.door : C.pf);
 
     ctx.save(); ctx.translate(p.sx,p.sy); ctx.rotate(ang);
-    if (PRINT) { ctx.strokeStyle='#fff'; ctx.lineWidth=9; ctx.beginPath(); ctx.moveTo(-halfPx,0); ctx.lineTo(halfPx,0); ctx.stroke(); }   // stacca il muro sotto il serramento
-    ctx.strokeStyle = on ? '#fff' : col; ctx.lineWidth = on ? 3.5 : 2.5;
+    const tk = prU(8), gl = prU(4);                 // stipiti e vetro
+    if (PRINT) { ctx.strokeStyle='#fff'; ctx.lineWidth=prLw(9, 1.2); ctx.beginPath(); ctx.moveTo(-halfPx,0); ctx.lineTo(halfPx,0); ctx.stroke(); }   // stacca il muro sotto il serramento
+    ctx.strokeStyle = on ? '#fff' : col; ctx.lineWidth = on ? 3.5 : prLw(2.5, 0.25);
     ctx.beginPath(); ctx.moveTo(-halfPx,0); ctx.lineTo(halfPx,0); ctx.stroke();
-    [-halfPx,halfPx].forEach(x => { ctx.beginPath(); ctx.moveTo(x,-8); ctx.lineTo(x,8); ctx.stroke(); });
+    [-halfPx,halfPx].forEach(x => { ctx.beginPath(); ctx.moveTo(x,-tk); ctx.lineTo(x,tk); ctx.stroke(); });
     if (op.type==='F' || op.type==='PF') {          // doppia linea = vetro
-      ctx.lineWidth=1.5;
-      ctx.beginPath(); ctx.moveTo(-halfPx,-4); ctx.lineTo(halfPx,-4); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-halfPx, 4); ctx.lineTo(halfPx, 4); ctx.stroke();
+      ctx.lineWidth=prLw(1.5, 0.13);
+      ctx.beginPath(); ctx.moveTo(-halfPx,-gl); ctx.lineTo(halfPx,-gl); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-halfPx, gl); ctx.lineTo(halfPx, gl); ctx.stroke();
     }
     ctx.restore();
 
     // quota: distanza dall'estremo A, sempre in orizzontale, spostabile; la linea di richiamo la segue
     const q = openingQuotaPos(i);
     ctx.save();
-    ctx.strokeStyle = on ? '#fff' : (PRINT ? C.lead : '#888'); ctx.lineWidth=1; ctx.setLineDash([3,3]);
-    ctx.beginPath(); ctx.moveTo(p.sx,p.sy); ctx.lineTo(q.x, q.y+14); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = on ? '#fff' : (PRINT ? C.lead : '#888'); ctx.lineWidth=prLw(1, 0.13); ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(p.sx,p.sy); ctx.lineTo(q.x, q.y+prU(14)); ctx.stroke(); ctx.setLineDash([]);
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillStyle=col; ctx.font='bold 11px Segoe UI'; ctx.fillText(op.label, q.x, q.y-7);
-    ctx.fillStyle = PRINT ? C.quota : '#ccc'; ctx.font='10px Segoe UI';
-    ctx.fillText((PRINT ? '' : p.A.label+'→ ')+(op.t*segLen).toFixed(2)+' m', q.x, q.y+6);
+    ctx.fillStyle=col; ctx.font=prFont(11, 2, true); ctx.fillText(op.label, q.x, q.y-prU(7));
+    ctx.fillStyle = PRINT ? C.quota : '#ccc'; ctx.font=prFont(10, 1.8);
+    ctx.fillText((PRINT ? '' : p.A.label+'→ ')+(op.t*segLen).toFixed(2)+' m', q.x, q.y+prU(6));
     ctx.restore();
   });
 }
@@ -1085,7 +1092,7 @@ function drawMeasure() {
 }
 
 function drawLabels() {
-  ctx.font='bold 13px Segoe UI'; ctx.textAlign='left'; ctx.textBaseline='top';
+  ctx.font=prFont(13, 2.5, true); ctx.textAlign='left'; ctx.textBaseline='top';
   state.labels.forEach(l => {
     const s = w2s(l.x,l.y);
     ctx.fillStyle=C.label; ctx.fillText(l.text, s.x, s.y);
@@ -2683,9 +2690,7 @@ function drawScaleBar(den, Hl) {
   ctx.fillStyle = '#000'; ctx.font = '11px Segoe UI'; ctx.textBaseline = 'top'; ctx.textAlign = 'center';
   ctx.fillText('0', x0, y0+hh+3); ctx.fillText(L+' m', x0+lenL, y0+hh+3);
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = 'bold 13px Segoe UI';
-  ctx.fillText('Scala 1:'+den, x0+lenL+14*pm/3.78, y0+hh/2-2);
-  ctx.font = '10px Segoe UI'; ctx.fillStyle = '#444';
-  ctx.fillText('A4 - stampare al 100% (dimensione reale) per mantenere la scala', x0+lenL+14*pm/3.78, y0+hh/2+14);
+  ctx.fillText('Scala 1:'+den, x0+lenL+14*pm/3.78, y0+hh/2);
   ctx.restore();
 }
 
@@ -2730,11 +2735,11 @@ function expGo() {
       jfifDpi(bytes, 300);
       if (kind==='jpg') {
         download(base+'.jpg', new Blob([bytes], {type:'image/jpeg'}), 'image/jpeg');
-        setTip('JPG A4 in scala 1:'+den+' (300 dpi). Per mantenere la scala stampalo a dimensione reale.');
+        setTip('JPG A4 in scala 1:'+den+' (300 dpi).');
       } else {
         const wpt = o==='land' ? 841.89 : 595.28, hpt = o==='land' ? 595.28 : 841.89;
         download(base+'.pdf', makePdf(bytes, cv.width, cv.height, wpt, hpt), 'application/pdf');
-        setTip('PDF A4 in scala 1:'+den+'. Per mantenere la scala stampalo al 100% (dimensione reale).');
+        setTip('PDF A4 in scala 1:'+den+'.');
       }
     });
   }, 'image/jpeg', 0.92);
@@ -4401,8 +4406,8 @@ else { flagSaved('nuovo rilievo'); draw(); }
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '1.05';
-const APP_NOTE = ["Importa planimetria: il pulsante \"Usa\" sta accanto ad \"Area\"; \"Raddrizza\" compare solo per le foto e \"Scala\" solo quando la scala non è stata trovata", "Su telefono in verticale la barra dell'import sta in basso, con le didascalie sotto le icone e le istruzioni sopra la barra"];
+const APP_VERSION = '1.06';
+const APP_NOTE = ["Export PDF e JPG: righe sottili come in un disegno tecnico (muri 0,35 mm, muri esterni 0,5, serramenti 0,25, quote e richiami 0,13) e testi più piccoli, così quote e scritte non si sovrappongono più", "Tolto l'avviso \"stampare al 100%\": fa fede la barra metrica"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {
