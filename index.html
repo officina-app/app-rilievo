@@ -68,10 +68,10 @@
 
     #dialog-overlay {
       position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:300;
-      display:none; align-items:center; justify-content:center;
+      display:none; align-items:flex-start; justify-content:center; padding-top:max(12px, 7vh);   /* in alto: la tastiera del telefono non copre il campo */
     }
     #dialog-overlay.show { display:flex; }
-    #dialog-box { background:#16213e; border:1px solid #0f3460; border-radius:12px; padding:24px; min-width:320px; max-width:94vw; max-height:90vh; overflow-y:auto; }
+    #dialog-box { background:#16213e; border:1px solid #0f3460; border-radius:12px; padding:24px; min-width:320px; max-width:94vw; max-height:70vh; overflow-y:auto; }
     #dialog-box h3 { margin-bottom:14px; font-size:16px; color:#e94560; }
     .dialog-field { margin-bottom:12px; }
     .dialog-field label { display:block; font-size:12px; color:#aaa; margin-bottom:4px; }
@@ -761,6 +761,11 @@ function segmentT(segIdx, sx, sy) {
   return clamp01t(((sx-sa.x)*dx + (sy-sa.y)*dy) / l2);
 }
 function clamp01t(t){ return Math.max(0.005, Math.min(0.995, t)); }
+// centro di un serramento: sempre a mezza larghezza almeno dagli estremi della linea (se e' piu' largo della linea, a meta')
+function clampOpeningT(op, t) {
+  const L = segLength(op.segIdx) || 1, hw = Math.min(op.width/L/2, 0.5);
+  return Math.min(Math.max(t, hw), 1-hw);
+}
 function segLength(segIdx) {
   const g = state.segments[segIdx];
   const A = state.points[g.a], B = state.points[g.b];
@@ -1548,7 +1553,9 @@ function openingMenuAction(action) {
       {label:'Distanza da '+A.label+' (m)', id:'d', value:(op.t*len).toFixed(2), type:'number'}
     ], 'Parete lunga '+len.toFixed(2)+' m', v => {
       const d = parseFloat(v.d); if (!isFinite(d)) return;
-      saveHistory(); op.t = clamp01t(d/len); commit('Serramento riposizionato.');
+      const tt = clampOpeningT(op, d/len), cl = Math.abs(tt - d/len) > 1e-6;
+      saveHistory(); op.t = tt;
+      commit(cl ? 'Serramento riposizionato al limite: deve restare dentro la parete.' : 'Serramento riposizionato.');
     });
     return;
   }
@@ -1796,7 +1803,7 @@ function menuAction(action) {
       if (o.segIdx!==inc[0].k && o.segIdx!==inc[1].k) return;
       const g = state.segments[o.segIdx], P0 = state.points[g.a], P1 = state.points[g.b];
       const cx = P0.x+(P1.x-P0.x)*o.t, cy = P0.y+(P1.y-P0.y)*o.t;
-      o.segIdx = nk; o.t = clamp01t(((cx-A.x)*(B.x-A.x)+(cy-A.y)*(B.y-A.y))/L2);
+      o.segIdx = nk; o.t = clampOpeningT(o, ((cx-A.x)*(B.x-A.x)+(cy-A.y)*(B.y-A.y))/L2);
     });
     state.ambienti.forEach(am => { am.indices = am.indices.filter(x => x!==i); });
     const lab = P.label;
@@ -1891,8 +1898,8 @@ function splitSegment(si, t) {
   const ns = state.segments.length-1;
   state.openings.forEach(o => {
     if (o.segIdx!==si) return;
-    if (o.t <= t) o.t = clamp01t(o.t/t);
-    else { o.segIdx = ns; o.t = clamp01t((o.t-t)/(1-t)); }
+    if (o.t <= t) o.t = clampOpeningT(o, o.t/t);
+    else { o.segIdx = ns; o.t = clampOpeningT(o, (o.t-t)/(1-t)); }
   });
   state.ambienti.forEach(a => {
     const k = a.indices.length;
@@ -2299,7 +2306,7 @@ canvas.addEventListener('pointermove', e => {
   if (state.openingDrag) {
     dragSnap();
     const op = state.openings[state.openingDrag.idx];
-    op.t = segmentT(op.segIdx, sx, sy);
+    op.t = clampOpeningT(op, segmentT(op.segIdx, sx, sy));
     const len = segLength(op.segIdx);
     const A = state.points[state.segments[op.segIdx].a];
     showTooltip(A.label+' → '+(op.t*len).toFixed(2)+' m  |  '+((1-op.t)*len).toFixed(2)+' m', e.clientX, e.clientY);
@@ -3037,9 +3044,9 @@ function askDialog(title, fields, hint, onOk, onCancel) {
       if (f.value) el.value = f.value;
     } else {
       el = document.createElement('input');
-      el.type = f.type==='number' ? 'number' : 'text';
+      el.type = 'text';                                   // i campi type=number su Android (Gboard) a volte rifiutano caratteri: testo + tastiera decimale, la virgola la gestisce readDialog
       if (f.type==='number') {
-        el.step='0.01'; el.inputMode='decimal';
+        el.inputMode='decimal'; el.autocomplete='off'; el.autocapitalize='off'; el.spellcheck=false; el.dataset.num='1';
         if (f.value) { el.placeholder = String(f.value); el.dataset.def = String(f.value); el.value = ''; }   // vuoto, col predefinito in grigio
         else el.value = '';
       } else el.value = f.value||'';
@@ -4172,8 +4179,8 @@ window.addEventListener('popstate', () => {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '1.12';
-const APP_NOTE = ["Menu del punto: non si apre più sotto il dito, quindi toccare un punto in basso o a destra non fa più partire un comando da solo", "Spostando un punto, trascinando la selezione o tracciando un muro, il punto si allinea in orizzontale o in verticale con gli altri punti vicini, con guida tratteggiata e cerchio sul punto di riferimento; con due allineamenti va all'incrocio", "Pulsante ✋ in alto a destra: con un dito si sposta la vista in qualunque strumento (tocca di nuovo per finire)", "Apri progetto: le parti mancanti nel file non restano più quelle del disegno di prima, e la base importata di prima viene tolta", "Più fluido: il disegno si aggiorna una sola volta per fotogramma", "Il rilievo si salva subito quando l'app va in secondo piano", "Maniglie di scale e serramenti e scelta tra le due intersezioni più larghe da toccare", "Le foto dei punti non vengono più copiate a ogni passo di Annulla (meno memoria)", "Foto e immagini importate ridotte a 3500 punti sul lato lungo, per non saturare la memoria del telefono", "Tasto Indietro di Android: chiude prima finestre, menu, mano e strumento attivo; per uscire due pressioni ravvicinate", "Aiuti a video aggiornati (angolo guidato ogni 5°, vista con due dita o con la mano)"];
+const APP_VERSION = '1.13';
+const APP_NOTE = ["Serramenti: trascinandoli non escono più dalla linea che li ospita; il centro si ferma a mezza larghezza dagli estremi (vale anche per \"Imposta distanza\", con un avviso se il valore viene limitato)", "Finestre di inserimento: i campi numerici sono ora di testo con tastiera decimale (la virgola funziona) e la finestra sta in alto, così la tastiera del telefono non la copre"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {
