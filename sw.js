@@ -1,6 +1,6 @@
 // Service worker App Rilievo: rende l'app installabile e utilizzabile offline.
 // Il segnaposto della versione viene sostituito da pubblica_app.py a ogni pubblicazione: cambia la cache e forza l'aggiornamento.
-const CACHE = 'app-rilievo-1.08';
+const CACHE = 'app-rilievo-1.09';
 const FILES = [
   './', './index.html', './manifest.json',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
@@ -26,7 +26,11 @@ self.addEventListener('fetch', e => {
   if (req.mode === 'navigate') {
     // no-cache: chiede sempre al server se la pagina e' cambiata, ignorando la copia del browser (10 minuti su GitHub Pages)
     e.respondWith(fetch(req.url, {cache: 'no-cache'})
-      .then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put('./index.html', copy)); return r; })
+      .then(r => {                     // errore del server: si usa la copia salvata, che non viene toccata
+        if (!r.ok) return caches.match('./index.html').then(c => c || r);
+        const copy = r.clone(); caches.open(CACHE).then(c => c.put('./index.html', copy));
+        return r;
+      })
       .catch(() => caches.match('./index.html')));
     return;
   }
