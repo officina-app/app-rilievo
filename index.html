@@ -355,9 +355,9 @@
 //  Coordinate mondo in METRI. Y positiva verso l'alto.
 // ═══════════════════════════════════════════════════════════
 
-const SNAP_ANGLES  = [];
-for (let a = 0; a <= 360; a += 15) SNAP_ANGLES.push(a);
-const SNAP_THRESH  = 6;      // gradi di tolleranza per lo snap angolare
+const SNAP_STEP    = 5;      // passo dell'angolo guidato (gradi)
+const SNAP_TOL_FINE = 1.5;   // tolleranza attorno ai passi da 5 gradi
+const SNAP_TOL_STRONG = 3;   // tolleranza attorno agli angoli notevoli (multipli di 15) e a quelli ortogonali ai muri vicini
 const SNAP_PT_PX   = 16;     // raggio in px per l'aggancio ai punti esistenti
 const COARSE       = !!(window.matchMedia && matchMedia('(pointer:coarse)').matches);   // schermo a dito (telefono): bersagli piu' larghi
 const HIT_PT_PX    = COARSE ? 24 : 15;
@@ -393,7 +393,7 @@ const state = {
   pending:        null,   // {pts:[{x,y}]} scelta fra intersezioni ①②
   connectFrom:    null,
   trilStep:0, trilPoints:[], circles:[], cand:null,   // cand = punti proposti sull'incrocio con i muri
-  wallOrigin:null, wallPreview:null, wallSnapAngle:null, wallSnapPoint:null,
+  wallOrigin:null, wallPreview:null, wallSnapAngle:null, wallSnapPoint:null, assist:null, touchMode:false,
   openingType:null, openingDrag:null,
   pilastroCounter:0, scalaCounter:0, pointCounter:0,
   rectDraw:null,          // {x0,y0,x1,y1} anteprima Scala
@@ -794,6 +794,7 @@ function draw() {
   drawPending();
   drawSelBox();
   drawExport();
+  drawAssist();
   // pulsante Elimina per la selezione a riquadro (sul telefono non c'e' il tasto Canc)
   const nSel = (state.selSet?state.selSet.size:0)+(state.selSeg?state.selSeg.size:0)+(state.selOpen?state.selOpen.size:0)+(state.selPen?state.selPen.size:0);
   const btn = document.getElementById('del-sel-btn');
@@ -1165,7 +1166,7 @@ function setTool(t) {
   if (t!=='opening') state.openingType=null;
   hideAllMenus();
   markTool(t);
-  document.getElementById('snap-indicator').style.display='none';
+  clearAssist();
   document.getElementById('sb-tool').textContent = t==='select' ? 'Seleziona' : (TOOL_NAME[t] || t);
   setTip(TIPS[t] || '');
   draw();
@@ -1176,7 +1177,120 @@ function setTip(msg){ document.getElementById('info-tip').textContent = msg; }
 //  MURO — snap angolare + snap ai punti esistenti
 // ═══════════════════════════════════════════════════════════
 function angleDeg(x1,y1,x2,y2){ let d = Math.atan2(y2-y1,x2-x1)*180/Math.PI; return d<0?d+360:d; }
-function snapAngle(deg){ for (const a of SNAP_ANGLES) if (Math.abs(deg-a)<=SNAP_THRESH) return a%360; return null; }
+// angolo guidato: passo da 5 gradi; i multipli di 15 e gli angoli ortogonali (o in linea) ai muri che partono dallo stesso punto agganciano con piu' forza
+function angDiff(a,b){ return ((a-b)%360+540)%360-180; }
+function neighborsOf(i, skip) {
+  const r=[]; state.segments.forEach(g => { if (g.a===i && g.b!==skip) r.push(g.b); else if (g.b===i && g.a!==skip) r.push(g.a); });
+  return r;
+}
+function refAnglesAt(i, skip) { const O=state.points[i]; return neighborsOf(i,skip).map(j => angleDeg(O.x,O.y,state.points[j].x,state.points[j].y)); }
+function angleSnapAt(O, wx, wy, refs) {
+  const raw = angleDeg(O.x,O.y,wx,wy); let best=null;
+  const consider = (a, tol, kind, label) => {
+    const dev = Math.abs(angDiff(raw,a)); if (dev>tol) return;
+    const score = dev/tol; if (!best || score<best.score) best = {a:((a%360)+360)%360, kind, label, score};
+  };
+  for (let a=0; a<360; a+=SNAP_STEP) {
+    if (a%90===0)       consider(a, SNAP_TOL_STRONG, 'major', a+'\u00b0 '+(a%180===0?'orizzontale':'verticale'));
+    else if (a%15===0)  consider(a, SNAP_TOL_STRONG, 'notable', a+'\u00b0');
+    else                consider(a, SNAP_TOL_FINE, 'fine', a+'\u00b0');
+  }
+  (refs||[]).forEach(t => {
+    consider(t+90,  SNAP_TOL_STRONG, 'ortho', 'ortogonale al muro precedente');
+    consider(t-90,  SNAP_TOL_STRONG, 'ortho', 'ortogonale al muro precedente');
+    consider(t,     SNAP_TOL_STRONG, 'ortho', 'in linea col muro precedente');
+    consider(t+180, SNAP_TOL_STRONG, 'ortho', 'in linea col muro precedente');
+  });
+  if (best) best.text = (best.kind==='major' || best.kind==='ortho' ? '\u27c2 ' : '') + best.label;
+  return best;
+}
+
+// angoli del disegno importato (vertici degli ambienti che l'app ricava dalla base): calamita per i punti
+function underlayCorners() {
+  const u = state.underlay; if (!u) return null;
+  if (!u._corners) {
+    const lev = ROOM_LEVELS[3], r = roomsExtract(u.mask, u.w, u.h, u.mpp, Object.assign({doorM:0.9, jogM:lev.simplM*1.2}, lev));
+    u._corners = r.nodes.map(n => ({px:n.x, py:n.y}));
+  }
+  return u._corners;
+}
+function cornerWorld(c) { const u=state.underlay; return {x:u.x + c.px*u.mpp, y:u.y - c.py*u.mpp}; }
+function baseSnap(sx, sy) {
+  const u = state.underlay; if (!u || !u.visible) return null;
+  const list = underlayCorners(); if (!list) return null;
+  let best=null, bd = COARSE ? 26 : 14;
+  list.forEach(c => { const w=cornerWorld(c), q=w2s(w.x,w.y), d=Math.hypot(q.x-sx, q.y-sy); if (d<bd) { bd=d; best=w; } });
+  return best;
+}
+function nearCorners(sx, sy) {
+  const u = state.underlay; if (!u || !u.visible || !u._corners) return null;
+  const r=[]; u._corners.forEach(c => { const w=cornerWorld(c), q=w2s(w.x,w.y); if (Math.hypot(q.x-sx,q.y-sy)<=90) r.push(w); });
+  return r.length ? r.slice(0,16) : null;
+}
+function setAssist(sx, sy, o) {
+  const loupe = state.touchMode && state.pointers.size>0 ? {fx:sx, fy:sy, px:o.tx, py:o.ty} : null;
+  state.assist = {sx, sy, corner:o.corner||null, guides:o.guides||null, loupe, near:nearCorners(sx,sy)};
+}
+function clearAssist() { state.assist=null; const si=document.getElementById('snap-indicator'); if (si) si.style.display='none'; }
+function drawAssist() {
+  const a = state.assist; if (!a) return;
+  ctx.save();
+  (a.guides||[]).forEach(g => {
+    if (g.kind==='fine') return;
+    const o=w2s(g.ox,g.oy), r=g.angle*Math.PI/180, L=2600;
+    ctx.setLineDash([3,5]); ctx.strokeStyle='rgba(127,224,255,.6)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(o.x-L*Math.cos(r), o.y+L*Math.sin(r)); ctx.lineTo(o.x+L*Math.cos(r), o.y-L*Math.sin(r)); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+  (a.near||[]).forEach(w => { const q=w2s(w.x,w.y); ctx.strokeStyle='rgba(0,229,255,.8)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(q.x,q.y-5); ctx.lineTo(q.x+5,q.y); ctx.lineTo(q.x,q.y+5); ctx.lineTo(q.x-5,q.y); ctx.closePath(); ctx.stroke(); });
+  if (a.corner) { const q=w2s(a.corner.x,a.corner.y); ctx.strokeStyle='#00e5ff'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(q.x,q.y,13,0,Math.PI*2); ctx.stroke(); }
+  if (a.loupe) {                                       // lente: il dito copre il punto, quindi sopra al dito compare l'ingrandimento della zona
+    const L = a.loupe, R = 62, ls = 2.6, dpr = window.devicePixelRatio || 1;
+    const cx = Math.min(Math.max(L.fx, R+6), W-R-6);
+    let cy = L.fy - 125; if (cy < R+6) cy = L.fy + 125;
+    ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.save(); ctx.clip();
+    ctx.fillStyle='#1a1a2e'; ctx.fillRect(cx-R,cy-R,2*R,2*R);
+    ctx.imageSmoothingEnabled = true;
+    const sw = 2*R/ls;
+    ctx.drawImage(canvas, (L.px-R/ls)*dpr, (L.py-R/ls)*dpr, sw*dpr, sw*dpr, cx-R, cy-R, 2*R, 2*R);
+    ctx.restore();
+    ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle='#e94560'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(cx-R,cy); ctx.lineTo(cx+R,cy); ctx.moveTo(cx,cy-R); ctx.lineTo(cx,cy+R); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// spostando un punto collegato: l'angolo con i muri vicini si aggancia come in Muro; con due vincoli (es. orizzontale e verticale) il punto va all'incrocio
+function dragPointTo(i, w, sx, sy) {
+  const P = state.points[i], si = document.getElementById('snap-indicator');
+  let x=w.x, y=w.y, guides=null, corner=null, text=null;
+  const bs = baseSnap(sx,sy);
+  if (bs) { x=bs.x; y=bs.y; corner=bs; text='\u25c8 angolo della base'; }
+  else {
+    const cons=[];
+    neighborsOf(i).forEach(j => { const N=state.points[j], sn=angleSnapAt(N, w.x, w.y, refAnglesAt(j,i)); if (sn) cons.push({N, sn}); });
+    cons.sort((p,q) => p.sn.score-q.sn.score);
+    if (cons.length) {
+      const c1=cons[0], c2=cons[1];
+      const dir = c => ({x:Math.cos(c.sn.a*Math.PI/180), y:Math.sin(c.sn.a*Math.PI/180)});
+      let pt=null;
+      if (c2) {
+        const d1=dir(c1), d2=dir(c2), det = d2.x*d1.y - d1.x*d2.y;
+        if (Math.abs(det)>0.05) {
+          const bx=c2.N.x-c1.N.x, by=c2.N.y-c1.N.y, t=(d2.x*by - d2.y*bx)/det;
+          pt={x:c1.N.x+t*d1.x, y:c1.N.y+t*d1.y};
+          const q=w2s(pt.x,pt.y); if (Math.hypot(q.x-sx,q.y-sy)>70) pt=null;
+        }
+      }
+      if (pt) { guides=[c1,c2].map(c => ({ox:c.N.x, oy:c.N.y, angle:c.sn.a, kind:c.sn.kind})); text=c1.sn.text+'  +  '+c2.sn.text; }
+      else { const d=Math.hypot(w.x-c1.N.x, w.y-c1.N.y), dv=dir(c1); pt={x:c1.N.x+d*dv.x, y:c1.N.y+d*dv.y}; guides=[{ox:c1.N.x, oy:c1.N.y, angle:c1.sn.a, kind:c1.sn.kind}]; text=c1.sn.text; }
+      x=pt.x; y=pt.y;
+    }
+  }
+  P.x=x; P.y=y;
+  if (text) { si.textContent=text; si.style.display='block'; } else si.style.display='none';
+  const t=w2s(x,y); setAssist(sx,sy,{corner,guides,tx:t.x,ty:t.y});
+}
 
 function nearestPoint(sx, sy, exclude) {
   let best=null, bestD=SNAP_PT_PX;
@@ -1199,22 +1313,29 @@ function updateWallPreview(sx, sy) {
     state.wallSnapPoint = np; state.wallSnapAngle = null;
     state.wallPreview = { x: state.points[np].x, y: state.points[np].y };
     si.textContent = '⊙ punto ' + state.points[np].label; si.style.display='block';
+    const t = w2s(state.wallPreview.x, state.wallPreview.y); setAssist(sx, sy, {tx:t.x, ty:t.y});
     draw(); return;
   }
   state.wallSnapPoint = null;
 
-  // priorità 2: snap angolare a multipli di 15°
-  let w = s2w(sx,sy);
-  const raw  = angleDeg(O.x,O.y,w.x,w.y);
-  const snap = snapAngle(raw);
-  state.wallSnapAngle = snap;
-  if (snap !== null) {
-    const d = Math.hypot(w.x-O.x, w.y-O.y);
-    const r = snap*Math.PI/180;
-    w = { x: O.x + d*Math.cos(r), y: O.y + d*Math.sin(r) };
-    si.textContent = '⟂ '+snap+'°'; si.style.display='block';
-  } else si.style.display='none';
+  // priorità 2: angolo del disegno importato; priorità 3: angolo guidato (passo 5°, notevoli 15°, ortogonali ai muri vicini)
+  let w = s2w(sx,sy), guides = null, corner = null;
+  const bs = baseSnap(sx, sy);
+  if (bs) {
+    w = {x:bs.x, y:bs.y}; corner = bs; state.wallSnapAngle = null;
+    si.textContent = '\u25c8 angolo della base'; si.style.display='block';
+  } else {
+    const sn = angleSnapAt(O, w.x, w.y, refAnglesAt(state.wallOrigin));
+    state.wallSnapAngle = sn ? sn.a : null;
+    if (sn) {
+      const d = Math.hypot(w.x-O.x, w.y-O.y), r = sn.a*Math.PI/180;
+      w = { x: O.x + d*Math.cos(r), y: O.y + d*Math.sin(r) };
+      guides = [{ox:O.x, oy:O.y, angle:sn.a, kind:sn.kind}];
+      si.textContent = sn.text; si.style.display='block';
+    } else si.style.display='none';
+  }
   state.wallPreview = w;
+  const t = w2s(w.x,w.y); setAssist(sx, sy, {corner, guides, tx:t.x, ty:t.y});
   draw();
 }
 
@@ -1227,13 +1348,13 @@ function finishWall() {
   if (target===null) { state.points.push({ x:P.x, y:P.y, label:nextLabel(), note:'', photo:null }); target = state.points.length-1; }
   if (!segExists(state.wallOrigin, target)) state.segments.push({a:state.wallOrigin, b:target});
   state.wallOrigin = target; state.wallPreview=null; state.wallSnapPoint=null; state.wallSnapAngle=null;
-  document.getElementById('snap-indicator').style.display='none';
+  clearAssist();
   checkClosedPolygon(target);
   commit('Clicca il vertice successivo. Per finire: clic sull\'ultimo punto, doppio clic o ESC.');
 }
 function resetWall() {
   state.wallOrigin=null; state.wallPreview=null; state.wallSnapAngle=null; state.wallSnapPoint=null;
-  document.getElementById('snap-indicator').style.display='none'; draw();
+  clearAssist(); draw();
 }
 
 
@@ -1845,7 +1966,7 @@ function handleClick(sx, sy, clientX, clientY) {
 
   case 'point': {
     if (pi!==null) return;
-    const w = s2w(sx,sy);
+    const w = baseSnap(sx,sy) || s2w(sx,sy);
     saveHistory();
     state.points.push({x:w.x, y:w.y, label:nextLabel(), note:'', photo:null});
     commit('Punto '+state.points[state.points.length-1].label+' aggiunto.');
@@ -1860,7 +1981,7 @@ function handleClick(sx, sy, clientX, clientY) {
     if (state.wallOrigin===null) {
       if (pi!==null) { state.wallOrigin=pi; setTip('Clicca il vertice successivo (da '+state.points[pi].label+').'); }
       else {
-        const w = s2w(sx,sy);
+        const w = baseSnap(sx,sy) || s2w(sx,sy);
         saveHistory();
         state.points.push({x:w.x, y:w.y, label:nextLabel(), note:'', photo:null});
         state.wallOrigin = state.points.length-1;
@@ -1971,10 +2092,11 @@ canvas.addEventListener('pointerdown', e => {
   if (e.pointerType==='mouse' && e.button>2) return;
   canvas.setPointerCapture(e.pointerId);
   state.pointers.set(e.pointerId, evtPos(e));
+  state.touchMode = e.pointerType!=='mouse';
 
   if (state.pointers.size===2) {            // due dita: pinch, annullo ogni altra azione
     if (state.selBox && state.selBox.keep) Object.assign(state, state.selBox.keep);   // il primo dito non era un riquadro: la selezione resta
-    state.pinchUsed=true;
+    state.pinchUsed=true; clearAssist();
     state.isPanning=false; state.drag=null; state.rectDraw=null; state.stairResize=null;
     state.pencilCurrent=null; state.selBox=null;
     const p=[...state.pointers.values()];
@@ -2114,7 +2236,7 @@ canvas.addEventListener('pointermove', e => {
     const w = s2w(sx,sy);
     const d = state.drag;
     if (d.kind!=='base') dragSnap();                           // la base non entra nell'annulla
-    if (d.kind==='point')    { state.points[d.idx].x=w.x;    state.points[d.idx].y=w.y; }
+    if (d.kind==='point')    dragPointTo(d.idx, w, sx, sy);
     if (d.kind==='multi')    { const dx=w.x-d.x0, dy=w.y-d.y0;
       d.pts.forEach(p => { state.points[p.i].x=p.x+dx; state.points[p.i].y=p.y+dy; });
       d.pen.forEach(q => { state.pencilLines[q.i].pts = q.o.map(p => ({x:p.x+dx, y:p.y+dy})); }); }
@@ -2144,7 +2266,7 @@ canvas.addEventListener('pointerup', endPointer);
 // gesto interrotto dal sistema (notifica, chiamata, gesto del telefono): si chiude tutto quello che era in corso,
 // lo spostamento gia' fatto resta e si puo' annullare
 canvas.addEventListener('pointercancel', e => {
-  state.pointers.delete(e.pointerId); endPan(); hideTooltip();
+  state.pointers.delete(e.pointerId); endPan(); hideTooltip(); clearAssist();
   state.pinchDist=null; state.pinchMid=null; state.selBox=null; if (!state.pointers.size) state.pinchUsed=false;
   state.drag=null; state.openingDrag=null; state.openingResize=null; state.stairResize=null; state.rectDraw=null; state.pencilCurrent=null;
   if (state.dragSnap) { dragEnd(true); persist(); }
@@ -2155,6 +2277,7 @@ function endPointer(e) {
   if (!state.pointers.has(e.pointerId)) return;
   state.pointers.delete(e.pointerId);
   if (state.pointers.size>0) { state.pinchDist=null; state.pinchMid=null; return; }
+  if (state.assist) { clearAssist(); draw(); }
   state.pinchMid=null;
   state.pinchDist = null;
   // fine di uno zoom a due dita: non e' un clic, la selezione resta com'e'
@@ -3289,7 +3412,7 @@ function baseRemove() {
 
 // ── import: file -> immagine sorgente ──────────────────────
 const imp = { src:null, mpp:null, v:{s:1,ox:0,oy:0}, sel:null, mode:'rect', calib:[], quad:[], drag:null, note:'', photo:false,
-              ink:null, thr:140, prev:null, ptrs:new Map(), pinch:null, tap:null, loupe:null };
+              ink:null, thr:140, prev:null, ptrs:new Map(), pinch:null, tap:null, loupe:null, quotes:null, quotesBusy:false, quotesSrc:null };
 const impCv = $id('imp-canvas'), impCtx = impCv.getContext('2d');
 
 function importPlan() { hideAllMenus(); const i=$id('file-plan'); i.value=''; i.click(); }
@@ -3364,7 +3487,7 @@ function impWarp(q, longM, shortM, scale) {
 }
 
 // soglia locale per le foto: un pixel e' tratto se e' piu' scuro dei dintorni (ombre e carta grigia non contano)
-function adaptiveDark(d, w, h, mpp) {
+function adaptiveDark(d, w, h, mpp, allowBlue) {
   const g = new Float32Array(w*h);
   for (let i=0;i<w*h;i++) g[i] = (d[i*4]+d[i*4+1]+d[i*4+2])/3;
   const W1 = w+1, I = new Float64Array(W1*(h+1));
@@ -3375,7 +3498,7 @@ function adaptiveDark(d, w, h, mpp) {
     for (let x=0;x<w;x++) {
       const x0=Math.max(0,x-r), x1=Math.min(w,x+r+1), i=y*w+x;
       const m = (I[y1*W1+x1]-I[y0*W1+x1]-I[y1*W1+x0]+I[y0*W1+x0]) / ((x1-x0)*(y1-y0));
-      mask[i] = (g[i] < m*0.82 && g[i] < 200 && (d[i*4+2]-Math.max(d[i*4],d[i*4+1])) < 60) ? 1 : 0;
+      mask[i] = (g[i] < m*0.82 && g[i] < 200 && (allowBlue || (d[i*4+2]-Math.max(d[i*4],d[i*4+1])) < 60)) ? 1 : 0;
     }
   }
   return mask;
@@ -3488,7 +3611,97 @@ function impZoom(f, cx, cy) {
   const v=imp.v, ns=Math.min(Math.max(v.s*f, 0.05), 24);
   v.ox = cx-(cx-v.ox)*ns/v.s; v.oy = cy-(cy-v.oy)*ns/v.s; v.s = ns; impDraw();
 }
-function impSetMode(m) { imp.mode=m; imp.calib=[]; if (m!=='quad') imp.quad=[]; impUpdateBar(); impDraw(); }
+function impSetMode(m) { imp.mode=m; imp.calib=[]; if (m!=='quad') imp.quad=[]; if (m==='calib') impQuotesScan(); impUpdateBar(); impDraw(); }
+
+// ── linee di quota: linea sottile, orizzontale o verticale, con un tratto che la attraversa a entrambe le estremita'; di qualsiasi colore (anche blu).
+// L'app le propone, la misura la scrive l'utente (nessun riconoscimento del numero)
+function impQuotesScan() {
+  if (!imp.src || imp.quotesSrc===imp.src) return;
+  imp.quotes = null; imp.quotesBusy = true;
+  setTimeout(() => {
+    if (!imp.src) return;
+    try { imp.quotes = impFindQuotes(); } catch (e) { imp.quotes = []; }
+    imp.quotesSrc = imp.src; imp.quotesBusy = false; impUpdateBar(); impDraw();
+  }, 40);
+}
+function impFindQuotes() {
+  const src = imp.src, k = Math.min(1, 3000/Math.max(src.width, src.height));
+  const w = Math.round(src.width*k), h = Math.round(src.height*k);
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const cx = c.getContext('2d', {willReadFrequently:true}); cx.fillStyle='#fff'; cx.fillRect(0,0,w,h); cx.drawImage(src,0,0,w,h);
+  const d = cx.getImageData(0,0,w,h).data;
+  let m;
+  if (imp.ink==='light') { const t = otsuLum(d,w*h); m = new Uint8Array(w*h); for (let i=0;i<w*h;i++) m[i] = lumOf(d,i*4) > t ? 1 : 0; }
+  else m = adaptiveDark(d, w, h, 0.01, true);                 // anche i tratti blu del catasto
+  const out = [];
+  quoteScan(m, w, h, false, out);
+  const t = new Uint8Array(w*h); for (let y=0;y<h;y++) for (let x=0;x<w;x++) t[x*h+y] = m[y*w+x];
+  quoteScan(t, h, w, true, out);
+  out.sort((a,b) => b.len-a.len);
+  return out.slice(0,8).map(q => ({x0:q.x0/k, y0:q.y0/k, x1:q.x1/k, y1:q.y1/k}));
+}
+function quoteScan(m, W, H, vert, out) {
+  const minLen = Math.max(60, Math.round(W*0.12)), gap = Math.round(W*0.012)+2;
+  const mt = Math.max(24, Math.round(W*0.05));               // un tratto di estremita' e' corto: se l'inchiostro continua e' un muro o un bordo
+  const tickLen = (ex, c, dir) => {                           // quanto si estende l'inchiostro attorno all'estremita': vale anche per tratti obliqui e frecce
+    let y = dir<0 ? c.y0-1 : c.y1+1, len=0, miss=0;
+    while (y>=0 && y<H && len<=mt) {
+      let any=0; for (let x=Math.max(0,ex-6); x<=Math.min(W-1,ex+6); x++) if (m[y*W+x]) { any=1; break; }
+      if (any) { len++; miss=0; } else if (++miss>1) break;
+      y += dir;
+    }
+    return len;
+  };
+  const sideDensity = (c, dir) => {                           // lungo una quota ai lati c'e' carta: se c'e' inchiostro pieno e' il bordo di un muro
+    const oM = Math.max(12, Math.round(W*0.02)), a0 = c.x0+Math.round((c.x1-c.x0)*0.1), a1 = c.x1-Math.round((c.x1-c.x0)*0.1);
+    let ink=0, area=0;
+    for (let x=a0; x<=a1; x++) for (let o=4; o<=oM; o++) { const y = dir<0 ? c.y0-o : c.y1+o; if (y<0||y>=H) continue; area++; ink += m[y*W+x]; }
+    return area ? ink/area : 0;
+  };
+  const tick = (ex, c) => {
+    const u = tickLen(ex,c,-1), d = tickLen(ex,c,1);
+    return u>=4 && d>=4 && u<=mt && d<=mt && Math.max(u,d)/Math.min(u,d) <= 3.5;
+  };
+  const fin = c => {
+    if (c.y1-c.y0+1>4 || c.x1-c.x0+1<minLen || !tick(c.x0,c) || !tick(c.x1,c)) return;
+    if (sideDensity(c,-1)>0.5 || sideDensity(c,1)>0.5) return;
+    const yc = (c.y0+c.y1)/2;
+    out.push(vert ? {x0:yc, y0:c.x0, x1:yc, y1:c.x1, len:c.x1-c.x0} : {x0:c.x0, y0:yc, x1:c.x1, y1:yc, len:c.x1-c.x0});
+  };
+  let act = [];
+  for (let y=0; y<H; y++) {
+    const runs=[], row=y*W; let x=0;
+    while (x<W) {
+      if (!m[row+x]) { x++; continue; }
+      const s0=x; let e=x; x++;
+      while (x<W) {
+        if (m[row+x]) { e=x; x++; continue; }
+        let g=x; while (g<W && !m[row+g] && g-x<=gap) g++;
+        if (g<W && m[row+g] && g-x<=gap) x=g; else break;
+      }
+      if (e-s0+1>=minLen) runs.push([s0,e]);
+    }
+    const next=[];
+    runs.forEach(([s0,e]) => {
+      const c = act.find(a => a.y1===y-1 && Math.min(e,a.x1)-Math.max(s0,a.x0) >= 0.8*Math.min(e-s0, a.x1-a.x0));
+      if (c) { c.y1=y; c.x0=Math.min(c.x0,s0); c.x1=Math.max(c.x1,e); next.push(c); }
+      else next.push({x0:s0, x1:e, y0:y, y1:y});
+    });
+    act.forEach(a => { if (a.y1!==y) fin(a); });
+    act = next;
+  }
+  act.forEach(fin);
+}
+function impHitQuote(p) {
+  if (!imp.quotes) return null;
+  let best=null, bd = COARSE ? 30 : 12;
+  imp.quotes.forEach((q,i) => {
+    const ax=q.x0*imp.v.s+imp.v.ox, ay=q.y0*imp.v.s+imp.v.oy, bx=q.x1*imp.v.s+imp.v.ox, by=q.y1*imp.v.s+imp.v.oy;
+    const dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy || 1, t=Math.max(0, Math.min(1, ((p.x-ax)*dx+(p.y-ay)*dy)/L2));
+    const dd=Math.hypot(p.x-(ax+t*dx), p.y-(ay+t*dy)); if (dd<bd) { bd=dd; best=i; }
+  });
+  return best;
+}
 function impPoints() { return imp.mode==='calib' ? imp.calib : imp.mode==='quad' ? imp.quad : null; }
 function impUpdateBar() {
   $id('imp-info').textContent = (imp.note||'') + (imp.mpp ? '' : '  Scala non impostata.');
@@ -3502,7 +3715,9 @@ function impUpdateBar() {
   $id('imp-hint').textContent = imp.mode==='rect' ? 'Trascina per selezionare l\'appartamento, poi tocca Usa. Con due dita ingrandisci e sposti la pagina.'
     : imp.mode==='pan' ? 'Trascina per spostare la pagina. Torna ad Area per selezionare.'
     : imp.mode==='quad' ? (nQ<4 ? 'Tocca i 4 angoli del foglio ('+nQ+'/4). Con due dita ingrandisci.' : 'Trascina i punti per regolarli, poi tocca Conferma.')
-    : (nC<2 ? 'Tocca due punti di distanza nota ('+nC+'/2). Con due dita ingrandisci.' : 'Trascina i punti per regolarli, poi tocca Conferma.'+dist);
+    : (nC<2 ? (imp.quotesBusy ? 'Cerco le linee di quota...' : imp.quotes && imp.quotes.length ? 'Ho trovato '+imp.quotes.length+' possibili linee di quota (verdi, numerate): tocca quella giusta, oppure tocca due punti a mano.'
+                : 'Tocca due punti di distanza nota ('+nC+'/2). Con due dita ingrandisci.')
+        : 'Trascina i punti per regolarli, poi tocca Conferma.'+dist);
   const ctl = !!imp.sel && !(imp.drag && imp.drag.kind==='rect');
   $id('imp-ctl').style.display = ctl ? 'flex' : 'none';
   if (ctl) { $id('imp-ink').value = imp.ink; $id('imp-thr-wrap').style.display = imp.ink==='photo' ? 'none' : ''; }
@@ -3563,6 +3778,16 @@ function impDraw() {
   if (imp.prev) {                                   // anteprima: i tratti che l'app leggera' dalla selezione
     impCtx.imageSmoothingEnabled = true;
     impCtx.drawImage(imp.prev.cv, imp.prev.x0*v.s+v.ox, imp.prev.y0*v.s+v.oy, imp.prev.w*v.s, imp.prev.h*v.s);
+  }
+  if (imp.mode==='calib' && imp.quotes) {
+    imp.quotes.forEach((q,i) => {
+      const ax=q.x0*v.s+v.ox, ay=q.y0*v.s+v.oy, bx=q.x1*v.s+v.ox, by=q.y1*v.s+v.oy;
+      impCtx.strokeStyle = imp.calib.length===2 ? 'rgba(60,255,120,.35)' : 'rgba(60,255,120,.9)'; impCtx.lineWidth=5;
+      impCtx.beginPath(); impCtx.moveTo(ax,ay); impCtx.lineTo(bx,by); impCtx.stroke();
+      const mx=(ax+bx)/2, my=(ay+by)/2;
+      impCtx.fillStyle='#3cff78'; impCtx.beginPath(); impCtx.arc(mx,my,12,0,Math.PI*2); impCtx.fill();
+      impCtx.fillStyle='#000'; impCtx.font='bold 14px sans-serif'; impCtx.textAlign='center'; impCtx.textBaseline='middle'; impCtx.fillText(String(i+1), mx, my+1);
+    });
   }
   if (imp.sel) {
     const x0=Math.min(imp.sel.x0,imp.sel.x1)*v.s+v.ox, x1=Math.max(imp.sel.x0,imp.sel.x1)*v.s+v.ox;
@@ -3660,8 +3885,9 @@ function impPtrEnd(e) {
   if (imp.ptrs.size) return;
   const d = imp.drag, tap = imp.tap; imp.drag = null; imp.tap = null; imp.loupe = null;
   if (e.type==='pointerup' && tap) {                       // tocco nel vuoto: aggiunge un punto (max 2 in Scala, 4 in Raddrizza)
-    const list = impPoints(), max = imp.mode==='calib' ? 2 : 4;
-    if (list && list.length<max) list.push(impToSrc(tap));
+    const list = impPoints(), max = imp.mode==='calib' ? 2 : 4, qi = imp.mode==='calib' ? impHitQuote(tap) : null;
+    if (qi!==null) { const q = imp.quotes[qi]; imp.calib = [{x:q.x0, y:q.y0}, {x:q.x1, y:q.y1}]; }     // linea di quota proposta: i due estremi, ancora regolabili
+    else if (list && list.length<max) list.push(impToSrc(tap));
   }
   if (d && d.kind==='rect') { if (e.type==='pointerup') impSelChanged(); else { imp.sel = d.prevSel; impUpdateBar(); } }
   else impUpdateBar();
@@ -3701,6 +3927,7 @@ function impConfirm() {
   }
   state.underlay = u; state.wallsPrev = null; state.moveBase = false;
   impClose(); refreshBasePanel(); fitUnderlay();
+  setTimeout(() => { try { underlayCorners(); } catch (e) {} }, 400);       // angoli della base per la calamita, pronti prima del primo uso
   setTip('Base importata. Usa "Ricalca ambienti" nel pannello a sinistra.');
 }
 
@@ -3763,6 +3990,7 @@ function underlayFromJSON(o) {
     for (let i=0;i<mask.length;i++) mask[i] = d[i*4+3] > 128 ? 1 : 0;
     const u = {mask, w:c.width, h:c.height, x:o.x, y:o.y, mpp:o.mpp, alpha:o.alpha, visible:o.visible!==false};
     buildUnderlayView(u); state.underlay = u; refreshBasePanel(); draw();
+    setTimeout(() => { try { underlayCorners(); } catch (e) {} }, 400);
     if (o.colorUrl) {                                     // base a colori salvata a parte (i vecchi progetti non ce l'hanno)
       const ic = new Image();
       ic.onload = () => {
@@ -3819,8 +4047,8 @@ else { flagSaved('nuovo rilievo'); draw(); }
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '1.10';
-const APP_NOTE = ["Sposta base: si spegne da solo chiudendo il pannello o cambiando strumento, e finché è attivo compare un pulsante verde \"tocca per finire\". Prima poteva restare acceso senza segni e impediva di selezionare i muri", "Importa planimetria: riconosce da sola i disegni chiari su fondo scuro; scelta del tipo di tratti (scuri su chiaro, chiari su scuro, foto di carta), soglia regolabile e anteprima dei tratti prima di toccare Usa", "La base importata può essere mostrata a colori, come l'originale (casella \"Originale a colori\" nel pannello base); il progetto salvato la conserva", "Importa planimetria: zoom e spostamento a due dita in ogni modalità", "Scala e Raddrizza: i punti si trascinano finché non sono giusti, con una lente d'ingrandimento sopra il dito; il pulsante Conferma apre la domanda della misura", "Telefono: bersagli di tocco più larghi, un tocco con dito che trema non sposta più i punti, altezza corretta con la barra degli indirizzi di Chrome, niente selezione di testo con la pressione lunga"];
+const APP_VERSION = '1.11';
+const APP_NOTE = ["Spostando un punto o tracciando un muro col dito compare una lente d'ingrandimento sopra il dito", "Zoom a due dita verificato anche con lo strumento Misura", "Scala: l'app propone da sola le linee di quota dell'immagine (linee sottili con un tratto a ogni estremità, anche blu come nel catasto): si tocca quella giusta e si scrive la misura", "Calamita: un punto spostato o un muro tracciato vicino a un angolo della planimetria importata si aggancia a quell'angolo", "Muro: angolo guidato ogni 5° (prima 15°); gli angoli notevoli (0°, 90° e multipli di 15°) e quelli ortogonali o in linea con i muri vicini agganciano con più forza e mostrano una guida tratteggiata", "Spostando un punto collegato ai muri valgono gli stessi suggerimenti; con due vincoli (per esempio orizzontale con un muro e verticale con l'altro) il punto va all'incrocio"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {
