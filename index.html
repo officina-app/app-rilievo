@@ -12,10 +12,10 @@
   <meta name="apple-mobile-web-app-title" content="Rilievo">
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    html, body { overscroll-behavior:none; }
-    body { background:#1a1a2e; color:#eee; font-family:'Segoe UI',system-ui,sans-serif; overflow:hidden; height:100vh; height:var(--vh,100vh); width:100vw;
-           -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent; }
-    input, textarea, select { -webkit-user-select:text; user-select:text; }
+    body { background:#1a1a2e; color:#eee; font-family:'Segoe UI',system-ui,sans-serif; overflow:hidden; height:100vh; height:var(--vh,100vh); width:100vw; }
+    /* niente selezione del testo con la pressione lunga solo dove si disegna e sui comandi: sul resto della pagina (campi, finestre) tutto normale */
+    #canvas, #imp-canvas, #toolbar, #statusbar, #menu-tab, #hand-btn, #exp-bar, #imp-bar, .floating-menu, #info-tip, #move-sel-btn, #del-sel-btn, #move-base-btn, .tool-btn, .menu-item
+      { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent; }
 
     #toolbar {
       position:fixed; top:0; left:0; bottom:28px;
@@ -4155,32 +4155,11 @@ if (recovered) { centerView(); setTip('Rilievo precedente ripristinato: '+state.
 else { flagSaved('nuovo rilievo'); draw(); }
 
 // ═══════════════════════════════════════════════════════════
-//  TASTO INDIETRO DI ANDROID: chiude finestre e menu prima di uscire dall'app
-// ═══════════════════════════════════════════════════════════
-let _backAt = 0, _leaving = false;
-try { history.pushState({k:'app'}, ''); } catch (e) {}
-window.addEventListener('popstate', () => {
-  if (_leaving) { _leaving = false; history.back(); return; }
-  try { history.pushState({k:'app'}, ''); } catch (e) {}
-  const shown = id => $id(id).classList.contains('show');
-  if (shown('dialog-overlay'))  { dialogCancel(); return; }
-  if (shown('photo-viewer'))    { closePhoto(); return; }
-  if (shown('imp-overlay'))     { impClose(); return; }
-  if (state.exp)                { expCancel(); return; }
-  if (MENU_IDS.some(id => $id(id).style.display==='block')) { hideAllMenus(); return; }
-  if (state.handMode)           { toggleHand(); return; }
-  if (state.tool!=='select')    { setTool('select'); return; }
-  const now = Date.now();
-  if (now - _backAt < 2000) { _leaving = true; history.go(-1); return; }
-  _backAt = now; setTip('Premi di nuovo Indietro per uscire (il rilievo è salvato).');
-});
-
-// ═══════════════════════════════════════════════════════════
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '1.13';
-const APP_NOTE = ["Serramenti: trascinandoli non escono più dalla linea che li ospita; il centro si ferma a mezza larghezza dagli estremi (vale anche per \"Imposta distanza\", con un avviso se il valore viene limitato)", "Finestre di inserimento: i campi numerici sono ora di testo con tastiera decimale (la virgola funziona) e la finestra sta in alto, così la tastiera del telefono non la copre"];
+const APP_VERSION = '1.14';
+const APP_NOTE = ["App installata su Android: la tastiera compariva ma non scriveva nei campi. La selezione del testo non è più disattivata su tutta la pagina (solo su disegno, barra e pulsanti) e non c'è più il blocco dello scorrimento di pagina", "Tolto il tasto Indietro gestito dall'app (introdotto nella 1.12): Indietro torna a comportarsi come prima"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {
