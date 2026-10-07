@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>App Rilievo</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#16213e">
@@ -12,10 +12,7 @@
   <meta name="apple-mobile-web-app-title" content="Rilievo">
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { background:#1a1a2e; color:#eee; font-family:'Segoe UI',system-ui,sans-serif; overflow:hidden; height:100vh; height:var(--vh,100vh); width:100vw; }
-    /* niente selezione del testo con la pressione lunga solo dove si disegna e sui comandi: sul resto della pagina (campi, finestre) tutto normale */
-    #canvas, #imp-canvas, #toolbar, #statusbar, #menu-tab, #hand-btn, #exp-bar, #imp-bar, .floating-menu, #info-tip, #move-sel-btn, #del-sel-btn, #move-base-btn, .tool-btn, .menu-item
-      { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent; }
+    body { background:#1a1a2e; color:#eee; font-family:'Segoe UI',system-ui,sans-serif; overflow:hidden; height:100vh; width:100vw; }
 
     #toolbar {
       position:fixed; top:0; left:0; bottom:28px;
@@ -54,7 +51,7 @@
     .tool-item.active { background:#e94560; }
     .tool-item.active small { color:#ffd9df; }
 
-    #canvas { position:fixed; top:0; left:0; width:100vw; height:calc(var(--vh,100vh) - 28px); cursor:crosshair; touch-action:none; display:block; }
+    #canvas { position:fixed; top:0; left:0; width:100vw; height:calc(100vh - 28px); cursor:crosshair; touch-action:none; display:block; }
 
     .floating-menu {
       position:fixed; background:#16213e; border:1px solid #0f3460; border-radius:8px;
@@ -68,10 +65,10 @@
 
     #dialog-overlay {
       position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:300;
-      display:none; align-items:flex-start; justify-content:center; padding-top:max(12px, 7vh);   /* in alto: la tastiera del telefono non copre il campo */
+      display:none; align-items:center; justify-content:center;
     }
     #dialog-overlay.show { display:flex; }
-    #dialog-box { background:#16213e; border:1px solid #0f3460; border-radius:12px; padding:24px; min-width:320px; max-width:94vw; max-height:70vh; overflow-y:auto; }
+    #dialog-box { background:#16213e; border:1px solid #0f3460; border-radius:12px; padding:24px; min-width:320px; max-width:94vw; max-height:90vh; overflow-y:auto; }
     #dialog-box h3 { margin-bottom:14px; font-size:16px; color:#e94560; }
     .dialog-field { margin-bottom:12px; }
     .dialog-field label { display:block; font-size:12px; color:#aaa; margin-bottom:4px; }
@@ -97,8 +94,6 @@
     #exp-bar button.ok { background:#1a6a3a; border-color:#2a9a5a; }
     #exp-bar button:disabled { opacity:.4; cursor:not-allowed; }
     #exp-info { flex:1 1 220px; font-size:12px; }
-    #hand-btn { position:fixed; top:10px; right:10px; z-index:160; min-width:46px; height:46px; border-radius:23px; padding:0 14px; font-size:20px; background:rgba(22,33,62,.82); color:#fff; border:1px solid #4a9eff; box-shadow:0 2px 10px rgba(0,0,0,.45); }
-    #hand-btn.on { background:#1a6a3a; border-color:#2a9a5a; font-size:15px; }
     #snap-indicator {
       position:fixed; top:60px; left:50%; transform:translateX(-50%);
       background:rgba(255,224,102,.92); color:#333; border-radius:5px;
@@ -115,7 +110,6 @@
       display:flex; align-items:center; padding:0 12px; font-size:11px; color:#888; z-index:100; gap:14px; overflow-x:auto; white-space:nowrap;
     }
     #statusbar span { color:#aaa; }
-    @media (pointer:coarse) { #sb-coords { display:none; } }
     #sb-save { color:#2a9a5a; }
     #info-tip {
       position:fixed; bottom:calc(36px + var(--tb-h,0px)); left:50%; transform:translateX(-50%);
@@ -141,18 +135,14 @@
     #imp-bar .ic { font-size:15px; }
     #imp-text { position:absolute; left:0; right:0; top:46px; padding:4px 10px; font-size:12px; color:#ffe066; background:rgba(22,33,62,.88); pointer-events:none; z-index:2; display:none; }
     #imp-text #imp-hint { color:#b9c8dd; }
-    #imp-ctl { display:none; pointer-events:auto; gap:10px; align-items:center; flex-wrap:wrap; margin-top:5px; color:#ddd; }
-    #imp-ctl select { background:#0f3460; color:#eee; border:1px solid #1a5a9a; border-radius:6px; padding:5px 8px; font-size:13px; max-width:100%; }
-    #imp-ctl input[type=range] { width:130px; accent-color:#e94560; vertical-align:middle; }
-    @media (pointer:coarse) { .mouse-only { display:none !important; } }
-    #imp-canvas { position:absolute; left:0; top:46px; width:100vw; height:calc(var(--vh,100vh) - 46px); cursor:crosshair; touch-action:none; display:block; }
+    #imp-canvas { position:absolute; left:0; top:46px; width:100vw; height:calc(100vh - 46px); cursor:crosshair; touch-action:none; display:block; }
     /* telefono in verticale: barra in basso come nell'app, con le didascalie sotto le icone, e istruzioni sopra la barra */
     #imp-overlay.bottom #imp-bar { top:auto; bottom:0; height:58px; border-bottom:none; border-top:1px solid #0f3460; overflow:hidden; padding:4px; gap:3px; }
     #imp-overlay.bottom #imp-bar button { flex:1 1 0; min-width:0; height:50px; flex-direction:column; justify-content:center; gap:3px; padding:0; }
     #imp-overlay.bottom #imp-bar .ic { font-size:18px; }
     #imp-overlay.bottom #imp-bar .cap { font-size:10px; max-width:100%; overflow:hidden; }
     #imp-overlay.bottom #imp-text { top:auto; bottom:58px; }
-    #imp-overlay.bottom #imp-canvas { top:0; height:calc(var(--vh,100vh) - 58px); }
+    #imp-overlay.bottom #imp-canvas { top:0; height:calc(100vh - 58px); }
 
     .side-panel { position:fixed; left:calc(var(--tb-w,0px) + 10px); background:#16213e; border:1px solid #0f3460; border-radius:8px; padding:10px 14px; z-index:150; display:none; flex-direction:column; gap:6px; width:260px; font-size:12px; color:#ccc; }
     .side-panel.show { display:flex; }
@@ -162,7 +152,7 @@
     .side-panel button { background:#0f3460; border:1px solid #1a5a9a; color:#eee; border-radius:5px; padding:6px 10px; cursor:pointer; font-size:12px; }
     .side-panel button.ok { background:#1a6a3a; border-color:#2a9a5a; }
     #base-panel { top:10px; }
-    #walls-panel { top:165px; max-height:calc(var(--vh,100vh) - 210px); overflow-y:auto; }
+    #walls-panel { top:165px; max-height:calc(100vh - 210px); overflow-y:auto; }
   </style>
 </head>
 <body>
@@ -272,35 +262,23 @@
   <div id="imp-bar">
     <button id="imp-m-rect"  title="Seleziona area" onclick="impSetMode('rect')"><span class="ic">▭</span><span class="cap">Area</span></button>
     <button class="ok" title="Usa la selezione" onclick="impConfirm()"><span class="ic">✔</span><span class="cap">Usa</span></button>
-    <button id="imp-m-pan" class="mouse-only" title="Sposta la pagina" onclick="impSetMode('pan')"><span class="ic">✋</span><span class="cap">Sposta</span></button>
+    <button id="imp-m-pan"   title="Sposta la pagina" onclick="impSetMode('pan')"><span class="ic">✋</span><span class="cap">Sposta</span></button>
     <button id="imp-m-quad"  title="Raddrizza foglio (solo per le foto)" onclick="impSetMode('quad')"><span class="ic">📐</span><span class="cap">Raddrizza</span></button>
     <button id="imp-m-calib" title="Calibra scala" onclick="impSetMode('calib')"><span class="ic">📏</span><span class="cap">Scala</span></button>
-    <button id="imp-m-ok" class="ok" style="display:none" title="Conferma i punti" onclick="impPointsOk()"><span class="ic">✔</span><span class="cap">Conferma</span></button>
-    <button class="mouse-only" title="Ingrandisci" onclick="impZoom(1.3)"><span class="ic">＋</span><span class="cap">Zoom</span></button>
-    <button class="mouse-only" title="Riduci" onclick="impZoom(1/1.3)"><span class="ic">－</span><span class="cap">Zoom</span></button>
+    <button title="Ingrandisci" onclick="impZoom(1.3)"><span class="ic">＋</span><span class="cap">Zoom</span></button>
+    <button title="Riduci" onclick="impZoom(1/1.3)"><span class="ic">－</span><span class="cap">Zoom</span></button>
     <button title="Adatta alla finestra" onclick="impFit()"><span class="ic">⤢</span><span class="cap">Adatta</span></button>
     <button title="Annulla" onclick="impClose()"><span class="ic">✖</span><span class="cap">Annulla</span></button>
   </div>
-  <div id="imp-text"><span id="imp-info"></span> <span id="imp-hint"></span>
-    <div id="imp-ctl">
-      <select id="imp-ink" onchange="impInkChange(this.value)">
-        <option value="dark">Tratti scuri su fondo chiaro</option>
-        <option value="light">Tratti chiari su fondo scuro</option>
-        <option value="photo">Foto di un foglio di carta</option>
-      </select>
-      <label><input type="checkbox" id="imp-prev" checked onchange="impPrevSchedule()"> Mostra tratti</label>
-      <span id="imp-thr-wrap">Soglia <input type="range" id="imp-thr" min="10" max="250" value="140" oninput="impThrChange(+this.value)"></span>
-    </div>
-  </div>
+  <div id="imp-text"><span id="imp-info"></span> <span id="imp-hint"></span></div>
   <canvas id="imp-canvas"></canvas>
 </div>
 
 <div id="base-panel" class="side-panel">
-  <div class="row"><h4>Base planimetria</h4><button onclick="closeBasePanel()" title="Chiudi (riapri da File)">✕</button></div>
+  <div class="row"><h4>Base planimetria</h4><button onclick="$id('base-panel').classList.remove('show')" title="Chiudi (riapri da File)">✕</button></div>
   <div class="row"><label><input type="checkbox" id="base-vis" checked onchange="baseVisible(this.checked)"> Mostra</label>
     <span>Opacità</span></div>
   <input type="range" id="base-alpha" min="10" max="100" value="60" oninput="baseAlpha(+this.value)">
-  <div class="row" id="base-color-row"><label><input type="checkbox" id="base-color" onchange="baseColor(this.checked)"> Originale a colori</label></div>
   <div id="base-info" style="color:#888"></div>
   <div class="row"><button class="ok" onclick="wallsOpen()">🏠 Ricalca ambienti</button>
     <button onclick="fitUnderlay()">Adatta</button><button onclick="baseRemove()">🗑</button></div>
@@ -329,8 +307,6 @@
 </div>
 <div id="snap-indicator">⟂ 90°</div>
 <div id="hint-tooltip"></div>
-<button id="hand-btn" title="Mano: sposta la vista con un dito" onclick="toggleHand()">✋</button>
-<button id="move-base-btn" onclick="toggleMoveBase()" style="position:fixed;right:12px;bottom:calc(144px + var(--tb-h,0px));z-index:160;display:none;background:#1a6a3a;color:#fff;border:1px solid #2a9a5a;border-radius:22px;padding:12px 18px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5)">✥ Base in spostamento - tocca per finire</button>
 <button id="move-sel-btn" onclick="toggleMoveSel()" style="position:fixed;right:12px;bottom:calc(92px + var(--tb-h,0px));z-index:160;display:none;background:#0f3460;color:#fff;border:1px solid #4a9eff;border-radius:22px;padding:12px 18px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5)">✥ Sposta selezione</button>
 <button id="del-sel-btn" onclick="deleteSelection()" style="position:fixed;right:12px;bottom:calc(40px + var(--tb-h,0px));z-index:160;display:none;background:#e94560;color:#fff;border:none;border-radius:22px;padding:12px 18px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5)">🗑 Elimina selezione</button>
 
@@ -358,15 +334,13 @@
 //  Coordinate mondo in METRI. Y positiva verso l'alto.
 // ═══════════════════════════════════════════════════════════
 
-const COARSE       = !!(window.matchMedia && matchMedia('(pointer:coarse)').matches);   // schermo a dito (telefono): bersagli piu' larghi
-const SNAP_STEP    = 5;      // passo dell'angolo guidato (gradi)
-const SNAP_TOL_FINE = 1.5;   // tolleranza attorno ai passi da 5 gradi
-const SNAP_TOL_STRONG = 3;   // tolleranza attorno agli angoli notevoli (multipli di 15) e a quelli ortogonali ai muri vicini
-const SNAP_PT_PX   = COARSE ? 24 : 16;     // raggio in px per l'aggancio ai punti esistenti
-const HIT_HANDLE_PX = COARSE ? 24 : 14;    // maniglie di scale e serramenti, scelta delle intersezioni
-const HIT_PT_PX    = COARSE ? 24 : 15;
-const HIT_SEG_PX   = COARSE ? 20 : 12;
-const CLICK_SLOP   = COARSE ? 12 : 6;      // px sotto i quali un drag conta come click
+const SNAP_ANGLES  = [];
+for (let a = 0; a <= 360; a += 15) SNAP_ANGLES.push(a);
+const SNAP_THRESH  = 6;      // gradi di tolleranza per lo snap angolare
+const SNAP_PT_PX   = 16;     // raggio in px per l'aggancio ai punti esistenti
+const HIT_PT_PX    = 15;
+const HIT_SEG_PX   = 12;
+const CLICK_SLOP   = 6;      // px sotto i quali un drag conta come click
 const AMB_COLORS   = ['#3a6a4a','#3a4a7a','#6a3a4a','#5a5a2a','#4a3a6a','#2a5a5a','#6a4a2a','#2a3a6a'];
 const STORAGE_KEY  = 'app_rilievo_v2';
 const PILASTRI_STD = ['20x20','25x25','30x30','30x40','40x40','20x40'];
@@ -397,7 +371,7 @@ const state = {
   pending:        null,   // {pts:[{x,y}]} scelta fra intersezioni ①②
   connectFrom:    null,
   trilStep:0, trilPoints:[], circles:[], cand:null,   // cand = punti proposti sull'incrocio con i muri
-  wallOrigin:null, wallPreview:null, wallSnapAngle:null, wallSnapPoint:null, assist:null, touchMode:false,
+  wallOrigin:null, wallPreview:null, wallSnapAngle:null, wallSnapPoint:null,
   openingType:null, openingDrag:null,
   pilastroCounter:0, scalaCounter:0, pointCounter:0,
   rectDraw:null,          // {x0,y0,x1,y1} anteprima Scala
@@ -596,7 +570,7 @@ function hitStairHandle(sx, sy) {
   const h = stairHandles(s);
   for (const k of ['a0','a1','c0','c1']) {
     const q = w2s(h[k].x, h[k].y);
-    if (Math.hypot(sx-q.x, sy-q.y) <= HIT_HANDLE_PX) return {idx:state.sel.idx, side:k};
+    if (Math.hypot(sx-q.x, sy-q.y) <= 14) return {idx:state.sel.idx, side:k};
   }
   return null;
 }
@@ -660,7 +634,6 @@ function drawStair(s, mode) {
 // colonna dei comandi: righe quante ne entrano nell'altezza, il canvas parte dopo la colonna
 function layoutToolbar() {
   const tb = document.getElementById('toolbar'), root = document.documentElement.style;
-  root.setProperty('--vh', window.innerHeight+'px');          // su Android 100vh include la barra degli indirizzi: uso l'altezza reale
   const bottom = window.innerHeight > window.innerWidth;       // verticale: barra in basso, dove arriva il pollice
   tb.classList.toggle('bottom', bottom); document.body.classList.toggle('bm', bottom);
   let w = 0, h = 0;
@@ -669,7 +642,7 @@ function layoutToolbar() {
     else { tb.style.setProperty('--rows', Math.max(4, Math.floor((window.innerHeight - 28 - 4) / 48))); w = tb.offsetWidth; }
   }
   root.setProperty('--tb-w', w+'px'); root.setProperty('--tb-h', h+'px');
-  canvas.style.left = w+'px'; canvas.style.width = 'calc(100vw - '+w+'px)'; canvas.style.height = 'calc(var(--vh,100vh) - '+(28+h)+'px)';
+  canvas.style.left = w+'px'; canvas.style.width = 'calc(100vw - '+w+'px)'; canvas.style.height = 'calc(100vh - '+(28+h)+'px)';
 }
 function toggleMenuBar(show) {
   const tb = document.getElementById('toolbar');
@@ -687,7 +660,7 @@ function resize() {
   canvas.width  = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // così disegniamo sempre in CSS px, ma nitido su schermi HiDPI
-  drawNow();
+  draw();
 }
 
 // posizione del puntatore relativa al canvas: niente offset hardcoded
@@ -728,7 +701,7 @@ function hitOpening(sx, sy) {
     const t0 = Math.max(0, op.t-hw), t1 = Math.min(1, op.t+hw);
     const ax = p.sa.x+(p.sb.x-p.sa.x)*t0, ay = p.sa.y+(p.sb.y-p.sa.y)*t0;
     const bx = p.sa.x+(p.sb.x-p.sa.x)*t1, by = p.sa.y+(p.sb.y-p.sa.y)*t1;
-    if (Math.hypot(sx-p.sx, sy-p.sy) <= (COARSE?22:16) || distPtSeg(sx,sy,ax,ay,bx,by) <= (COARSE?18:12)) return i;
+    if (Math.hypot(sx-p.sx, sy-p.sy) <= 16 || distPtSeg(sx,sy,ax,ay,bx,by) <= 12) return i;
   }
   return null;
 }
@@ -761,11 +734,6 @@ function segmentT(segIdx, sx, sy) {
   return clamp01t(((sx-sa.x)*dx + (sy-sa.y)*dy) / l2);
 }
 function clamp01t(t){ return Math.max(0.005, Math.min(0.995, t)); }
-// centro di un serramento: sempre a mezza larghezza almeno dagli estremi della linea (se e' piu' largo della linea, a meta')
-function clampOpeningT(op, t) {
-  const L = segLength(op.segIdx) || 1, hw = Math.min(op.width/L/2, 0.5);
-  return Math.min(Math.max(t, hw), 1-hw);
-}
 function segLength(segIdx) {
   const g = state.segments[segIdx];
   const A = state.points[g.a], B = state.points[g.b];
@@ -782,9 +750,7 @@ function openingPos(i) {
 // ═══════════════════════════════════════════════════════════
 //  DISEGNO
 // ═══════════════════════════════════════════════════════════
-let _drawRaf = 0;
-function draw() { if (!_drawRaf) _drawRaf = requestAnimationFrame(() => { _drawRaf = 0; drawNow(); }); }     // piu' richieste nello stesso fotogramma = un solo ridisegno
-function drawNow() {
+function draw() {
   ctx.clearRect(0,0,W,H);
   drawGrid();
   drawUnderlay();
@@ -805,27 +771,19 @@ function drawNow() {
   drawPending();
   drawSelBox();
   drawExport();
-  drawAssist();
   // pulsante Elimina per la selezione a riquadro (sul telefono non c'e' il tasto Canc)
   const nSel = (state.selSet?state.selSet.size:0)+(state.selSeg?state.selSeg.size:0)+(state.selOpen?state.selOpen.size:0)+(state.selPen?state.selPen.size:0);
   const btn = document.getElementById('del-sel-btn');
-  if (btn) { setDisp(btn, nSel && !state.selBox ? 'block' : 'none'); setTxt(btn, '🗑 Elimina selezione ('+nSel+')'); }
+  if (btn) { btn.style.display = nSel && !state.selBox ? 'block' : 'none'; btn.textContent = '🗑 Elimina selezione ('+nSel+')'; }
   const mb = document.getElementById('move-sel-btn');
   if (!nSel) state.moveSel = false;
-  if (mb) { setDisp(mb, nSel && !state.selBox ? 'block' : 'none');
-            setTxt(mb, state.moveSel ? '✥ Trascina per spostare (tocca per finire)' : '✥ Sposta selezione');
-            const bg = state.moveSel ? '#1a6a3a' : '#0f3460'; if (mb.style.background !== bg) mb.style.background = bg; }
+  if (mb) { mb.style.display = nSel && !state.selBox ? 'block' : 'none';
+            mb.textContent = state.moveSel ? '✥ Trascina per spostare (tocca per finire)' : '✥ Sposta selezione';
+            mb.style.background = state.moveSel ? '#1a6a3a' : '#0f3460'; }
   const bm = document.getElementById('base-move');
   if (bm) bm.classList.toggle('ok', !!state.moveBase);
-  const mbb = document.getElementById('move-base-btn');
-  if (mbb) setDisp(mbb, state.moveBase ? 'block' : 'none');       // il blocco "sposta base" deve sempre vedersi, anche a pannello chiuso
-  const hb = document.getElementById('hand-btn');
-  if (hb) { setTxt(hb, state.handMode ? '✋ Mano attiva - tocca per finire' : '✋'); hb.classList.toggle('on', !!state.handMode); }
   updateValid();
 }
-
-function setDisp(el, v) { if (el.style.display !== v) el.style.display = v; }
-function setTxt(el, t) { if (el.textContent !== t) el.textContent = t; }
 
 function drawGrid() {
   const step = state.zoom;
@@ -868,9 +826,8 @@ function drawScale() {
   state.scale.forEach((s,i) => drawStair(s, PRINT ? '' : isSel('scala',i) ? 'sel' : (state.hoverScala===i ? 'hover' : '')));
   if (!PRINT && state.sel && state.sel.kind==='scala' && state.scale[state.sel.idx]) {       // maniglie
     const h = stairHandles(state.scale[state.sel.idx]);
-    const hs = COARSE ? 9 : 6;
     ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#e94560'; ctx.lineWidth=2;
-    ['a0','a1','c0','c1'].forEach(k => { const q = w2s(h[k].x, h[k].y); ctx.fillRect(q.x-hs,q.y-hs,hs*2,hs*2); ctx.strokeRect(q.x-hs,q.y-hs,hs*2,hs*2); });
+    ['a0','a1','c0','c1'].forEach(k => { const q = w2s(h[k].x, h[k].y); ctx.fillRect(q.x-6,q.y-6,12,12); ctx.strokeRect(q.x-6,q.y-6,12,12); });
     ctx.restore();
   }
 }
@@ -1015,7 +972,7 @@ function drawWallPreview() {
   if (state.tool!=='wall' || state.wallOrigin===null || !state.wallPreview) return;
   const A  = state.points[state.wallOrigin]; if (!A) return;
   const sa = w2s(A.x,A.y), sb = w2s(state.wallPreview.x, state.wallPreview.y);
-  const snapped = state.wallSnapAngle!==null || state.wallSnapPoint!==null || !!(state.assist && state.assist.guides && state.assist.guides.length);
+  const snapped = state.wallSnapAngle!==null || state.wallSnapPoint!==null;
   ctx.strokeStyle = snapped?'#ffe066':'#aaaaff'; ctx.lineWidth=2;
   ctx.setLineDash(snapped?[]:[6,4]);
   ctx.beginPath(); ctx.moveTo(sa.x,sa.y); ctx.lineTo(sb.x,sb.y); ctx.stroke(); ctx.setLineDash([]);
@@ -1132,8 +1089,8 @@ function isSel(kind, idx) { return state.sel && state.sel.kind===kind && state.s
 //  TOOL
 // ═══════════════════════════════════════════════════════════
 const TIPS = {
-  select:   'Tocca un\'entità per il menu. Trascina nel vuoto = selezione a riquadro. Vista: due dita, oppure il pulsante ✋ in alto a destra.',
-  wall:     'Muro come polilinea: clic sul punto di partenza, poi un clic per ogni vertice (angolo guidato ogni 5°, forte sui 15°, sugli angoli della base e sui punti esistenti). Fine: clic sull\'ultimo punto, doppio clic o ESC.',
+  select:   'Clicca un\'entità per il menu. Trascina nel vuoto = selezione a riquadro (poi Canc). Vista: rotella/tasto destro o due dita.',
+  wall:     'Muro come polilinea: clic sul punto di partenza, poi un clic per ogni vertice (snap ogni 15° e sui punti esistenti). Fine: clic sull\'ultimo punto, doppio clic o ESC.',
   point:    'Clicca per aggiungere punti, quanti ne vuoi. Seleziona per uscire.',
   connect:  'Clicca il punto A, poi il punto B.',
   trilatere:'Clicca il 1° punto e dai il raggio: se la circonferenza incontra dei muri compaiono i punti numerati, altrimenti clicca un 2° punto, dai il raggio e scegli l\'intersezione.',
@@ -1175,7 +1132,6 @@ function setTool(t) {
   state.trilStep=0; state.trilPoints=[]; state.circles=[]; state.pending=null; state.cand=null;
   state.wallOrigin=null; state.wallPreview=null; state.wallSnapAngle=null; state.wallSnapPoint=null;
   state.openingDrag=null; state.drag=null; state.rectDraw=null; state.selBox=null; state.selSet=null; state.selOpen=null; state.selSeg=null;
-  state.moveBase=false; state.handMode=false;       // cambiare strumento chiude lo spostamento della base e la mano: altrimenti ogni tocco li ripete
   if (state.pencilCurrent) {
     if (state.pencilCurrent.pts.length>1) { saveHistory(); state.pencilLines.push(state.pencilCurrent); }
     state.pencilCurrent=null;
@@ -1183,7 +1139,7 @@ function setTool(t) {
   if (t!=='opening') state.openingType=null;
   hideAllMenus();
   markTool(t);
-  clearAssist();
+  document.getElementById('snap-indicator').style.display='none';
   document.getElementById('sb-tool').textContent = t==='select' ? 'Seleziona' : (TOOL_NAME[t] || t);
   setTip(TIPS[t] || '');
   draw();
@@ -1194,161 +1150,7 @@ function setTip(msg){ document.getElementById('info-tip').textContent = msg; }
 //  MURO — snap angolare + snap ai punti esistenti
 // ═══════════════════════════════════════════════════════════
 function angleDeg(x1,y1,x2,y2){ let d = Math.atan2(y2-y1,x2-x1)*180/Math.PI; return d<0?d+360:d; }
-// angolo guidato: passo da 5 gradi; i multipli di 15 e gli angoli ortogonali (o in linea) ai muri che partono dallo stesso punto agganciano con piu' forza
-function angDiff(a,b){ return ((a-b)%360+540)%360-180; }
-function neighborsOf(i, skip) {
-  const r=[]; state.segments.forEach(g => { if (g.a===i && g.b!==skip) r.push(g.b); else if (g.b===i && g.a!==skip) r.push(g.a); });
-  return r;
-}
-function refAnglesAt(i, skip) { const O=state.points[i]; return neighborsOf(i,skip).map(j => angleDeg(O.x,O.y,state.points[j].x,state.points[j].y)); }
-function angleSnapAt(O, wx, wy, refs) {
-  const raw = angleDeg(O.x,O.y,wx,wy); let best=null;
-  const consider = (a, tol, kind, label) => {
-    const dev = Math.abs(angDiff(raw,a)); if (dev>tol) return;
-    const score = dev/tol; if (!best || score<best.score) best = {a:((a%360)+360)%360, kind, label, score};
-  };
-  for (let a=0; a<360; a+=SNAP_STEP) {
-    if (a%90===0)       consider(a, SNAP_TOL_STRONG, 'major', a+'\u00b0 '+(a%180===0?'orizzontale':'verticale'));
-    else if (a%15===0)  consider(a, SNAP_TOL_STRONG, 'notable', a+'\u00b0');
-    else                consider(a, SNAP_TOL_FINE, 'fine', a+'\u00b0');
-  }
-  (refs||[]).forEach(t => {
-    consider(t+90,  SNAP_TOL_STRONG, 'ortho', 'ortogonale al muro precedente');
-    consider(t-90,  SNAP_TOL_STRONG, 'ortho', 'ortogonale al muro precedente');
-    consider(t,     SNAP_TOL_STRONG, 'ortho', 'in linea col muro precedente');
-    consider(t+180, SNAP_TOL_STRONG, 'ortho', 'in linea col muro precedente');
-  });
-  if (best) best.text = (best.kind==='major' || best.kind==='ortho' ? '\u27c2 ' : '') + best.label;
-  return best;
-}
-
-// angoli del disegno importato (vertici degli ambienti che l'app ricava dalla base): calamita per i punti
-function underlayCorners() {
-  const u = state.underlay; if (!u) return null;
-  if (!u._corners) {
-    const lev = ROOM_LEVELS[3], r = roomsExtract(u.mask, u.w, u.h, u.mpp, Object.assign({doorM:0.9, jogM:lev.simplM*1.2}, lev));
-    u._corners = r.nodes.map(n => ({px:n.x, py:n.y}));
-  }
-  return u._corners;
-}
-function cornerWorld(c) { const u=state.underlay; return {x:u.x + c.px*u.mpp, y:u.y - c.py*u.mpp}; }
-function baseSnap(sx, sy) {
-  const u = state.underlay; if (!u || !u.visible) return null;
-  const list = underlayCorners(); if (!list) return null;
-  let best=null, bd = COARSE ? 26 : 14;
-  list.forEach(c => { const w=cornerWorld(c), q=w2s(w.x,w.y), d=Math.hypot(q.x-sx, q.y-sy); if (d<bd) { bd=d; best=w; } });
-  return best;
-}
-function nearCorners(sx, sy) {
-  const u = state.underlay; if (!u || !u.visible || !u._corners) return null;
-  const r=[]; u._corners.forEach(c => { const w=cornerWorld(c), q=w2s(w.x,w.y); if (Math.hypot(q.x-sx,q.y-sy)<=90) r.push(w); });
-  return r.length ? r.slice(0,16) : null;
-}
-function setAssist(sx, sy, o) {
-  const loupe = state.touchMode && state.pointers.size>0 && !o.noLoupe ? {fx:sx, fy:sy, px:o.tx, py:o.ty} : null;
-  state.assist = {sx, sy, corner:o.corner||null, guides:o.guides||null, marks:o.marks||null, loupe, near:nearCorners(sx,sy)};
-}
-function clearAssist() { state.assist=null; const si=document.getElementById('snap-indicator'); if (si) si.style.display='none'; }
-function drawAssist() {
-  const a = state.assist; if (!a) return;
-  ctx.save();
-  (a.guides||[]).forEach(g => {
-    if (g.kind==='fine') return;
-    const o=w2s(g.ox,g.oy), r=g.angle*Math.PI/180, L=2600;
-    ctx.setLineDash([3,5]); ctx.strokeStyle='rgba(127,224,255,.6)'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(o.x-L*Math.cos(r), o.y+L*Math.sin(r)); ctx.lineTo(o.x+L*Math.cos(r), o.y-L*Math.sin(r)); ctx.stroke();
-  });
-  ctx.setLineDash([]);
-  (a.near||[]).forEach(w => { const q=w2s(w.x,w.y); ctx.strokeStyle='rgba(0,229,255,.8)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(q.x,q.y-5); ctx.lineTo(q.x+5,q.y); ctx.lineTo(q.x,q.y+5); ctx.lineTo(q.x-5,q.y); ctx.closePath(); ctx.stroke(); });
-  (a.marks||[]).forEach(P => { const q=w2s(P.x,P.y); ctx.strokeStyle='rgba(127,224,255,.9)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(q.x,q.y,11,0,Math.PI*2); ctx.stroke(); });
-  if (a.corner) { const q=w2s(a.corner.x,a.corner.y); ctx.strokeStyle='#00e5ff'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(q.x,q.y,13,0,Math.PI*2); ctx.stroke(); }
-  if (a.loupe) {                                       // lente: il dito copre il punto, quindi sopra al dito compare l'ingrandimento della zona
-    const L = a.loupe, R = 62, ls = 2.6, dpr = window.devicePixelRatio || 1;
-    const cx = Math.min(Math.max(L.fx, R+6), W-R-6);
-    let cy = L.fy - 125; if (cy < R+6) cy = L.fy + 125;
-    ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.save(); ctx.clip();
-    ctx.fillStyle='#1a1a2e'; ctx.fillRect(cx-R,cy-R,2*R,2*R);
-    ctx.imageSmoothingEnabled = true;
-    const sw = 2*R/ls;
-    ctx.drawImage(canvas, (L.px-R/ls)*dpr, (L.py-R/ls)*dpr, sw*dpr, sw*dpr, cx-R, cy-R, 2*R, 2*R);
-    ctx.restore();
-    ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.stroke();
-    ctx.strokeStyle='#e94560'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(cx-R,cy); ctx.lineTo(cx+R,cy); ctx.moveTo(cx,cy-R); ctx.lineTo(cx,cy+R); ctx.stroke();
-  }
-  ctx.restore();
-}
-
-// risolve i vincoli vicini al dito: angoli con i muri collegati (angCons) e allineamenti in X o in Y con gli altri punti.
-// Con due vincoli non paralleli il punto va all'incrocio (es. orizzontale con un punto e verticale con un altro)
-function snapResolve(sx, sy, w, angCons, excl) {
-  const tol = COARSE ? 12 : 7, cand = [];
-  angCons.forEach(c => { const r = c.sn.a*Math.PI/180; cand.push({kind:'ang', score:c.sn.score, N:c.N, sn:c.sn, p0:{x:c.N.x, y:c.N.y}, d:{x:Math.cos(r), y:Math.sin(r)}, text:c.sn.text}); });
-  let bx=null, by=null;
-  state.points.forEach((P,j) => {
-    if (excl.has(j)) return;
-    const q = w2s(P.x,P.y), dx = Math.abs(q.x-sx), dy = Math.abs(q.y-sy);
-    if (dx<=tol && (!bx || dx<bx.d)) bx = {d:dx, P};
-    if (dy<=tol && (!by || dy<by.d)) by = {d:dy, P};
-  });
-  if (bx) cand.push({kind:'x', score:bx.d/tol, P:bx.P, p0:{x:bx.P.x, y:bx.P.y}, d:{x:0, y:1}, text:'allineato in X con '+bx.P.label});
-  if (by) cand.push({kind:'y', score:by.d/tol, P:by.P, p0:{x:by.P.x, y:by.P.y}, d:{x:1, y:0}, text:'allineato in Y con '+by.P.label});
-  if (!cand.length) return null;
-  cand.sort((p,q) => p.score-q.score);
-  const c1 = cand[0];
-  const guide = c => c.kind==='ang' ? {ox:c.N.x, oy:c.N.y, angle:c.sn.a, kind:c.sn.kind} : {ox:c.P.x, oy:c.P.y, angle:c.kind==='x'?90:0, kind:'align'};
-  const mark  = c => c.kind==='ang' ? null : c.P;
-  for (let k=1; k<cand.length; k++) {
-    const c2 = cand[k], det = c1.d.x*c2.d.y - c1.d.y*c2.d.x;
-    if (Math.abs(det) < 0.2) continue;
-    const t = ((c2.p0.x-c1.p0.x)*c2.d.y - (c2.p0.y-c1.p0.y)*c2.d.x)/det;
-    const pt = {x:c1.p0.x+t*c1.d.x, y:c1.p0.y+t*c1.d.y}, q = w2s(pt.x,pt.y);
-    if (Math.hypot(q.x-sx, q.y-sy) > 70) continue;
-    return {x:pt.x, y:pt.y, guides:[guide(c1), guide(c2)], marks:[mark(c1), mark(c2)].filter(Boolean), text:c1.text+'  +  '+c2.text, ang: c1.kind==='ang' ? c1.sn.a : c2.kind==='ang' ? c2.sn.a : null};
-  }
-  let pt;
-  if (c1.kind==='ang') { const d = Math.hypot(w.x-c1.N.x, w.y-c1.N.y); pt = {x:c1.N.x+d*c1.d.x, y:c1.N.y+d*c1.d.y}; }
-  else if (c1.kind==='x') pt = {x:c1.P.x, y:w.y};
-  else pt = {x:w.x, y:c1.P.y};
-  return {x:pt.x, y:pt.y, guides:[guide(c1)], marks:[mark(c1)].filter(Boolean), text:c1.text, ang: c1.kind==='ang' ? c1.sn.a : null};
-}
-
-// spostando un punto: angolo con i muri collegati e allineamento con i punti vicini; vicino a un angolo della base vince la calamita
-function dragPointTo(i, w, sx, sy) {
-  const P = state.points[i], si = document.getElementById('snap-indicator');
-  let x=w.x, y=w.y, guides=null, marks=null, corner=null, text=null;
-  const bs = baseSnap(sx,sy);
-  if (bs) { x=bs.x; y=bs.y; corner=bs; text='\u25c8 angolo della base'; }
-  else {
-    const angCons=[], excl=new Set([i]);
-    neighborsOf(i).forEach(j => { excl.add(j); const N=state.points[j], sn=angleSnapAt(N, w.x, w.y, refAnglesAt(j,i)); if (sn) angCons.push({N, sn}); });
-    const r = snapResolve(sx, sy, w, angCons, excl);
-    if (r) { x=r.x; y=r.y; guides=r.guides; marks=r.marks; text=r.text; }
-  }
-  P.x=x; P.y=y;
-  if (text) { si.textContent=text; si.style.display='block'; } else si.style.display='none';
-  const t=w2s(x,y); setAssist(sx,sy,{corner,guides,marks,tx:t.x,ty:t.y});
-}
-
-// Sposta selezione: i punti spostati si allineano in X o in Y con quelli che non si muovono
-function alignMulti(d, dx, dy, sx, sy) {
-  const sel = new Set(d.pts.map(p => p.i)), tol = (COARSE ? 12 : 7)/state.zoom;
-  let bx=null, by=null;
-  d.pts.forEach(p => {
-    const x = p.x+dx, y = p.y+dy;
-    state.points.forEach((Q,j) => {
-      if (sel.has(j)) return;
-      const ex = Q.x-x, ey = Q.y-y;
-      if (Math.abs(ex)<=tol && (!bx || Math.abs(ex)<Math.abs(bx.e))) bx = {e:ex, Q};
-      if (Math.abs(ey)<=tol && (!by || Math.abs(ey)<Math.abs(by.e))) by = {e:ey, Q};
-    });
-  });
-  const si = document.getElementById('snap-indicator'), guides=[], marks=[], txt=[];
-  if (bx) { dx += bx.e; guides.push({ox:bx.Q.x, oy:bx.Q.y, angle:90, kind:'align'}); marks.push(bx.Q); txt.push('allineato in X con '+bx.Q.label); }
-  if (by) { dy += by.e; guides.push({ox:by.Q.x, oy:by.Q.y, angle:0,  kind:'align'}); marks.push(by.Q); txt.push('allineato in Y con '+by.Q.label); }
-  if (txt.length) { si.textContent = txt.join('  +  '); si.style.display='block'; setAssist(sx, sy, {guides, marks, noLoupe:true}); }
-  else { si.style.display='none'; state.assist = null; }
-  return {dx, dy};
-}
+function snapAngle(deg){ for (const a of SNAP_ANGLES) if (Math.abs(deg-a)<=SNAP_THRESH) return a%360; return null; }
 
 function nearestPoint(sx, sy, exclude) {
   let best=null, bestD=SNAP_PT_PX;
@@ -1371,27 +1173,22 @@ function updateWallPreview(sx, sy) {
     state.wallSnapPoint = np; state.wallSnapAngle = null;
     state.wallPreview = { x: state.points[np].x, y: state.points[np].y };
     si.textContent = '⊙ punto ' + state.points[np].label; si.style.display='block';
-    const t = w2s(state.wallPreview.x, state.wallPreview.y); setAssist(sx, sy, {tx:t.x, ty:t.y});
     draw(); return;
   }
   state.wallSnapPoint = null;
 
-  // priorità 2: angolo del disegno importato; priorità 3: angolo guidato (passo 5°, notevoli 15°, ortogonali ai muri vicini)
-  let w = s2w(sx,sy), guides = null, marks = null, corner = null;
-  const bs = baseSnap(sx, sy);
-  if (bs) {
-    w = {x:bs.x, y:bs.y}; corner = bs; state.wallSnapAngle = null;
-    si.textContent = '\u25c8 angolo della base'; si.style.display='block';
-  } else {
-    const sn = angleSnapAt(O, w.x, w.y, refAnglesAt(state.wallOrigin));
-    const excl = new Set([state.wallOrigin].concat(neighborsOf(state.wallOrigin)));
-    const r = snapResolve(sx, sy, w, sn ? [{N:O, sn}] : [], excl);
-    state.wallSnapAngle = r && r.ang!==null ? r.ang : null;
-    if (r) { w = {x:r.x, y:r.y}; guides = r.guides; marks = r.marks; si.textContent = r.text; si.style.display='block'; }
-    else si.style.display='none';
-  }
+  // priorità 2: snap angolare a multipli di 15°
+  let w = s2w(sx,sy);
+  const raw  = angleDeg(O.x,O.y,w.x,w.y);
+  const snap = snapAngle(raw);
+  state.wallSnapAngle = snap;
+  if (snap !== null) {
+    const d = Math.hypot(w.x-O.x, w.y-O.y);
+    const r = snap*Math.PI/180;
+    w = { x: O.x + d*Math.cos(r), y: O.y + d*Math.sin(r) };
+    si.textContent = '⟂ '+snap+'°'; si.style.display='block';
+  } else si.style.display='none';
   state.wallPreview = w;
-  const t = w2s(w.x,w.y); setAssist(sx, sy, {corner, guides, marks, tx:t.x, ty:t.y});
   draw();
 }
 
@@ -1404,13 +1201,13 @@ function finishWall() {
   if (target===null) { state.points.push({ x:P.x, y:P.y, label:nextLabel(), note:'', photo:null }); target = state.points.length-1; }
   if (!segExists(state.wallOrigin, target)) state.segments.push({a:state.wallOrigin, b:target});
   state.wallOrigin = target; state.wallPreview=null; state.wallSnapPoint=null; state.wallSnapAngle=null;
-  clearAssist();
+  document.getElementById('snap-indicator').style.display='none';
   checkClosedPolygon(target);
   commit('Clicca il vertice successivo. Per finire: clic sull\'ultimo punto, doppio clic o ESC.');
 }
 function resetWall() {
   state.wallOrigin=null; state.wallPreview=null; state.wallSnapAngle=null; state.wallSnapPoint=null;
-  clearAssist(); draw();
+  document.getElementById('snap-indicator').style.display='none'; draw();
 }
 
 
@@ -1501,16 +1298,15 @@ function openingEnds(i) {
 function hitOpeningHandle(sx, sy) {
   if (!state.sel || state.sel.kind!=='opening') return null;
   const i = state.sel.idx, e = openingEnds(i); if (!e) return null;
-  if (Math.hypot(sx-e.a.x, sy-e.a.y) <= HIT_HANDLE_PX) return {idx:i, fixT:e.t1};
-  if (Math.hypot(sx-e.b.x, sy-e.b.y) <= HIT_HANDLE_PX) return {idx:i, fixT:e.t0};
+  if (Math.hypot(sx-e.a.x, sy-e.a.y) <= 12) return {idx:i, fixT:e.t1};
+  if (Math.hypot(sx-e.b.x, sy-e.b.y) <= 12) return {idx:i, fixT:e.t0};
   return null;
 }
 function drawOpeningHandles() {
   if (!state.sel || state.sel.kind!=='opening') return;
   const e = openingEnds(state.sel.idx); if (!e) return;
   ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#e94560'; ctx.lineWidth=2;
-  const hs = COARSE ? 9 : 6;
-  [e.a, e.b].forEach(p => { ctx.fillRect(p.x-hs,p.y-hs,hs*2,hs*2); ctx.strokeRect(p.x-hs,p.y-hs,hs*2,hs*2); });
+  [e.a, e.b].forEach(p => { ctx.fillRect(p.x-6,p.y-6,12,12); ctx.strokeRect(p.x-6,p.y-6,12,12); });
   ctx.restore();
 }
 
@@ -1553,9 +1349,7 @@ function openingMenuAction(action) {
       {label:'Distanza da '+A.label+' (m)', id:'d', value:(op.t*len).toFixed(2), type:'number'}
     ], 'Parete lunga '+len.toFixed(2)+' m', v => {
       const d = parseFloat(v.d); if (!isFinite(d)) return;
-      const tt = clampOpeningT(op, d/len), cl = Math.abs(tt - d/len) > 1e-6;
-      saveHistory(); op.t = tt;
-      commit(cl ? 'Serramento riposizionato al limite: deve restare dentro la parete.' : 'Serramento riposizionato.');
+      saveHistory(); op.t = clamp01t(d/len); commit('Serramento riposizionato.');
     });
     return;
   }
@@ -1737,8 +1531,7 @@ function setWallLength(si, m) {
 //  MENU
 // ═══════════════════════════════════════════════════════════
 const MENU_IDS = ['quota-context','seg-context','amb-context','context-menu','opening-context','entity-context','group-draw','group-ins','file-submenu'];
-let _menuOpenedAt = 0;
-function showMenu(id, x, y, above, avoid) {
+function showMenu(id, x, y, above) {
   hideAllMenus();
   if (id==='entity-context') document.getElementById('ent-edit').style.display = state.sel && state.sel.kind==='pencil' ? 'none' : '';
   if (id==='quota-context' && state.sel && state.sel.kind==='quota') {
@@ -1749,30 +1542,11 @@ function showMenu(id, x, y, above, avoid) {
     document.getElementById('qm-reset').style.display = g && g.qo ? '' : 'none';
   }
   const m = document.getElementById(id);
-  m.style.display='block'; _menuOpenedAt = Date.now();
-  const r = m.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight, clamp = (v,a,b) => Math.max(a, Math.min(v, b));
-  let left, top;
-  if (!avoid) {
-    left = clamp(x, 4, vw - r.width - 6);
-    top  = clamp(above ? y - r.height - 6 : y, 4, vh - r.height - 6);
-  } else {                                   // menu aperto da un tocco: non deve mai coprire il dito, altrimenti il clic che segue sceglie una voce
-    const fx = avoid.x, fy = avoid.y, gap = 14;
-    left = x; top = y;
-    if (left + r.width > vw - 6) left = fx - r.width - gap;
-    if (top + r.height > vh - 6) top = fy - r.height - gap;
-    left = clamp(left, 4, vw - r.width - 6); top = clamp(top, 4, vh - r.height - 6);
-    if (fx >= left-10 && fx <= left+r.width+10 && fy >= top-10 && fy <= top+r.height+10) {
-      if (fy - r.height - gap >= 4) top = fy - r.height - gap;
-      else if (fy + gap + r.height <= vh - 6) top = fy + gap;
-      else left = fx < vw/2 ? Math.min(fx + gap, vw - r.width - 6) : Math.max(4, fx - r.width - gap);
-    }
-  }
-  m.style.left = left + 'px'; m.style.top = top + 'px';
+  m.style.display='block';
+  const r = m.getBoundingClientRect();
+  m.style.left = Math.max(4, Math.min(x, window.innerWidth  - r.width  - 6)) + 'px';
+  m.style.top  = Math.max(4, Math.min(above ? y - r.height - 6 : y, window.innerHeight - r.height - 6)) + 'px';
 }
-// il clic sintetico che il browser genera dopo un tocco non deve cadere su un menu appena aperto
-document.addEventListener('click', e => {
-  if (Date.now() - _menuOpenedAt < 350 && e.target instanceof Element && MENU_IDS.some(id => document.getElementById(id).contains(e.target))) { e.stopPropagation(); e.preventDefault(); }
-}, true);
 function hideAllMenus(){ MENU_IDS.forEach(id => document.getElementById(id).style.display='none'); }
 function toggleMenu(id, btn) {
   const m = document.getElementById(id);
@@ -1803,7 +1577,7 @@ function menuAction(action) {
       if (o.segIdx!==inc[0].k && o.segIdx!==inc[1].k) return;
       const g = state.segments[o.segIdx], P0 = state.points[g.a], P1 = state.points[g.b];
       const cx = P0.x+(P1.x-P0.x)*o.t, cy = P0.y+(P1.y-P0.y)*o.t;
-      o.segIdx = nk; o.t = clampOpeningT(o, ((cx-A.x)*(B.x-A.x)+(cy-A.y)*(B.y-A.y))/L2);
+      o.segIdx = nk; o.t = clamp01t(((cx-A.x)*(B.x-A.x)+(cy-A.y)*(B.y-A.y))/L2);
     });
     state.ambienti.forEach(am => { am.indices = am.indices.filter(x => x!==i); });
     const lab = P.label;
@@ -1898,8 +1672,8 @@ function splitSegment(si, t) {
   const ns = state.segments.length-1;
   state.openings.forEach(o => {
     if (o.segIdx!==si) return;
-    if (o.t <= t) o.t = clampOpeningT(o, o.t/t);
-    else { o.segIdx = ns; o.t = clampOpeningT(o, (o.t-t)/(1-t)); }
+    if (o.t <= t) o.t = clamp01t(o.t/t);
+    else { o.segIdx = ns; o.t = clamp01t((o.t-t)/(1-t)); }
   });
   state.ambienti.forEach(a => {
     const k = a.indices.length;
@@ -2005,7 +1779,7 @@ function handleClick(sx, sy, clientX, clientY) {
   if (state.pending) {
     for (const p of state.pending.pts) {
       const s = w2s(p.x,p.y);
-      if (Math.hypot(sx-s.x, sy-s.y) <= HIT_HANDLE_PX+2) { addPoint(p); return; }
+      if (Math.hypot(sx-s.x, sy-s.y) <= 16) { addPoint(p); return; }
     }
     return;
   }
@@ -2031,7 +1805,7 @@ function handleClick(sx, sy, clientX, clientY) {
     if (pick) {
       state.sel = {kind:pick[0], idx:pick[1]};
       if (pick[0]==='segment') state.sel.t = segmentT(pick[1], sx, sy);
-      draw(); showMenu(pick[2], clientX+8, clientY+8, false, {x:clientX, y:clientY}); return;
+      draw(); showMenu(pick[2], clientX+8, clientY+8); return;
     }
     state.sel=null; state.selSet=null; state.selOpen=null; state.selSeg=null; draw(); return;
   }
@@ -2045,7 +1819,7 @@ function handleClick(sx, sy, clientX, clientY) {
 
   case 'point': {
     if (pi!==null) return;
-    const w = baseSnap(sx,sy) || s2w(sx,sy);
+    const w = s2w(sx,sy);
     saveHistory();
     state.points.push({x:w.x, y:w.y, label:nextLabel(), note:'', photo:null});
     commit('Punto '+state.points[state.points.length-1].label+' aggiunto.');
@@ -2060,7 +1834,7 @@ function handleClick(sx, sy, clientX, clientY) {
     if (state.wallOrigin===null) {
       if (pi!==null) { state.wallOrigin=pi; setTip('Clicca il vertice successivo (da '+state.points[pi].label+').'); }
       else {
-        const w = baseSnap(sx,sy) || s2w(sx,sy);
+        const w = s2w(sx,sy);
         saveHistory();
         state.points.push({x:w.x, y:w.y, label:nextLabel(), note:'', photo:null});
         state.wallOrigin = state.points.length-1;
@@ -2105,7 +1879,7 @@ function handleClick(sx, sy, clientX, clientY) {
     if (state.trilStep===2) {
       if (state.cand) for (const p of state.cand) {            // punto proposto sul muro
         const s = w2s(p.x,p.y);
-        if (Math.hypot(sx-s.x, sy-s.y) <= HIT_HANDLE_PX+2) { addPoint(p); return; }
+        if (Math.hypot(sx-s.x, sy-s.y) <= 16) { addPoint(p); return; }
       }
       if (pi!==null && !state.trilPoints.includes(pi)) {
         state.trilPoints.push(pi);
@@ -2171,11 +1945,10 @@ canvas.addEventListener('pointerdown', e => {
   if (e.pointerType==='mouse' && e.button>2) return;
   canvas.setPointerCapture(e.pointerId);
   state.pointers.set(e.pointerId, evtPos(e));
-  state.touchMode = e.pointerType!=='mouse';
 
   if (state.pointers.size===2) {            // due dita: pinch, annullo ogni altra azione
     if (state.selBox && state.selBox.keep) Object.assign(state, state.selBox.keep);   // il primo dito non era un riquadro: la selezione resta
-    state.pinchUsed=true; clearAssist();
+    state.pinchUsed=true;
     state.isPanning=false; state.drag=null; state.rectDraw=null; state.stairResize=null;
     state.pencilCurrent=null; state.selBox=null;
     const p=[...state.pointers.values()];
@@ -2192,8 +1965,6 @@ canvas.addEventListener('pointerdown', e => {
   state.moved   = false;
   const keep = {sel:state.sel, selSet:state.selSet, selOpen:state.selOpen, selSeg:state.selSeg, selPen:state.selPen};   // selezione da ripristinare se arriva il secondo dito
 
-  // mano: un dito sposta la vista, qualunque sia lo strumento
-  if (state.handMode) { startPan(e.clientX, e.clientY); return; }
   // sposta base o selezione: il trascinamento sposta, non disegna
   if (state.moveBase && state.underlay) { const w=s2w(sx,sy); state.drag={kind:'base', x0:w.x, y0:w.y, ux:state.underlay.x, uy:state.underlay.y}; return; }
   if (state.moveSel) {
@@ -2281,8 +2052,6 @@ canvas.addEventListener('pointermove', e => {
 
   if (state.isPanning) { doPan(e.clientX, e.clientY); return; }
   if (state.exp && state.exp.drag) { expMove(sx, sy); return; }
-  // il dito trema: finche' non supera la soglia di clic nulla si sposta (un tocco su un punto non lo deve muovere)
-  if (!state.moved && (state.drag || state.openingDrag || state.openingResize || state.stairResize)) return;
 
   if (state.pencilCurrent) { state.pencilCurrent.pts.push(s2w(sx,sy)); draw(); return; }
   if (state.rectDraw)      { const w=s2w(sx,sy); state.rectDraw.x1=w.x; state.rectDraw.y1=w.y; draw(); return; }
@@ -2306,7 +2075,7 @@ canvas.addEventListener('pointermove', e => {
   if (state.openingDrag) {
     dragSnap();
     const op = state.openings[state.openingDrag.idx];
-    op.t = clampOpeningT(op, segmentT(op.segIdx, sx, sy));
+    op.t = segmentT(op.segIdx, sx, sy);
     const len = segLength(op.segIdx);
     const A = state.points[state.segments[op.segIdx].a];
     showTooltip(A.label+' → '+(op.t*len).toFixed(2)+' m  |  '+((1-op.t)*len).toFixed(2)+' m', e.clientX, e.clientY);
@@ -2317,8 +2086,8 @@ canvas.addEventListener('pointermove', e => {
     const w = s2w(sx,sy);
     const d = state.drag;
     if (d.kind!=='base') dragSnap();                           // la base non entra nell'annulla
-    if (d.kind==='point')    dragPointTo(d.idx, w, sx, sy);
-    if (d.kind==='multi')    { const m = alignMulti(d, w.x-d.x0, w.y-d.y0, sx, sy), dx=m.dx, dy=m.dy;
+    if (d.kind==='point')    { state.points[d.idx].x=w.x;    state.points[d.idx].y=w.y; }
+    if (d.kind==='multi')    { const dx=w.x-d.x0, dy=w.y-d.y0;
       d.pts.forEach(p => { state.points[p.i].x=p.x+dx; state.points[p.i].y=p.y+dy; });
       d.pen.forEach(q => { state.pencilLines[q.i].pts = q.o.map(p => ({x:p.x+dx, y:p.y+dy})); }); }
     if (d.kind==='base')     { state.underlay.x=d.ux+w.x-d.x0; state.underlay.y=d.uy+w.y-d.y0; }
@@ -2347,7 +2116,7 @@ canvas.addEventListener('pointerup', endPointer);
 // gesto interrotto dal sistema (notifica, chiamata, gesto del telefono): si chiude tutto quello che era in corso,
 // lo spostamento gia' fatto resta e si puo' annullare
 canvas.addEventListener('pointercancel', e => {
-  state.pointers.delete(e.pointerId); endPan(); hideTooltip(); clearAssist();
+  state.pointers.delete(e.pointerId); endPan(); hideTooltip();
   state.pinchDist=null; state.pinchMid=null; state.selBox=null; if (!state.pointers.size) state.pinchUsed=false;
   state.drag=null; state.openingDrag=null; state.openingResize=null; state.stairResize=null; state.rectDraw=null; state.pencilCurrent=null;
   if (state.dragSnap) { dragEnd(true); persist(); }
@@ -2358,13 +2127,11 @@ function endPointer(e) {
   if (!state.pointers.has(e.pointerId)) return;
   state.pointers.delete(e.pointerId);
   if (state.pointers.size>0) { state.pinchDist=null; state.pinchMid=null; return; }
-  if (state.assist) { clearAssist(); draw(); }
   state.pinchMid=null;
   state.pinchDist = null;
   // fine di uno zoom a due dita: non e' un clic, la selezione resta com'e'
   if (state.pinchUsed) { state.pinchUsed=false; state.drag=null; state.selBox=null; dragEnd(true); endPan(); draw(); return; }
   if (state.exp) { state.exp.drag=null; endPan(); draw(); return; }
-  if (state.handMode) { endPan(); draw(); return; }
 
   const {x:sx, y:sy} = evtPos(e);
   endPan();
@@ -2524,7 +2291,6 @@ function centerView() {
 }
 function updateZoomLabel(){ document.getElementById('sb-zoom').textContent = 'Zoom: '+Math.round(state.zoom*100/150)+'%'; }
 function updateCoords(p){
-  if (COARSE) return;                        // su telefono la barra non la mostra
   const w = s2w(p.x,p.y);
   document.getElementById('sb-coords').textContent = 'X:'+w.x.toFixed(2)+' Y:'+w.y.toFixed(2);
 }
@@ -2546,32 +2312,14 @@ function clearAll() {
 const SNAP_KEYS = ['points','segments','ambienti','openings','pilastri','scale','labels','pencilLines'];
 const COUNTERS  = ['pilastroCounter','scalaCounter','pointCounter'];   // numeri che non si riusano (PIL, SCALA, P)
 
-// le foto dei punti pesano: nelle copie di Annulla ce n'e' una per passo (fino a 60), quindi i dati stanno in un deposito unico (pid)
-// e le copie portano solo il riferimento; il salvataggio vero (inline=true) le porta intere
-const photoStore = new Map(); let photoSeq = 0;
-function snapshot(inline) {
+function snapshot() {
   const o = {};
   SNAP_KEYS.concat(COUNTERS).forEach(k => o[k] = state[k]);
-  o.points = state.points.map(p => {
-    if (!p.photo || !p.photo.data) return p;
-    if (!p.photo.pid) p.photo.pid = ++photoSeq;
-    photoStore.set(p.photo.pid, p.photo.data);
-    return inline ? p : Object.assign({}, p, {photo:{pid:p.photo.pid, note:p.photo.note}});
-  });
   return JSON.parse(JSON.stringify(o));
 }
-function photosIn(points) {                          // dopo un ripristino: dati presi dal deposito, o nuovo riferimento per le foto lette da file
-  points.forEach(p => {
-    if (!p.photo) return;
-    if (p.photo.data) { p.photo.pid = ++photoSeq; photoStore.set(p.photo.pid, p.photo.data); }
-    else if (p.photo.pid && photoStore.has(p.photo.pid)) p.photo.data = photoStore.get(p.photo.pid);
-    else p.photo = null;
-  });
-}
 function restore(o) {
-  SNAP_KEYS.forEach(k => { state[k] = o[k] || []; });               // una parte mancante nel file significa vuota, non "resta quella di prima"
+  SNAP_KEYS.forEach(k => { if (o[k]) state[k] = o[k]; });
   COUNTERS.forEach(k => state[k] = o[k] || 0);
-  photosIn(state.points);
   if (!state.pointCounter) state.pointCounter = state.points.length;
   state.scale.forEach(stairFix);
   legacyConvert(o);
@@ -2612,7 +2360,7 @@ function persist() {
   clearTimeout(_persistTimer);
   _persistTimer = setTimeout(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot(true)));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot()));
       flagSaved('salvato ' + new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}));
     } catch (err) {
       flagSaved('⚠ spazio esaurito — usa Salva progetto', true);
@@ -2654,7 +2402,7 @@ function stamp() {
 }
 function saveProject() {
   hideAllMenus();
-  const snap = snapshot(true); snap.underlay = underlayToJSON();
+  const snap = snapshot(); snap.underlay = underlayToJSON();
   download(stamp()+'_rilievo.json', JSON.stringify(snap, null, 1), 'application/json');
   setTip('Progetto salvato. Riaprilo con "Apri progetto" per riprendere il rilievo.');
 }
@@ -2670,8 +2418,7 @@ document.getElementById('file-json').addEventListener('change', e => {
     try {
       const o = JSON.parse(rd.result);
       if (!o || !Array.isArray(o.points)) throw new Error('formato non valido');
-      saveHistory(); restore(o); state.underlay = null; state.wallsPrev = null; state.moveBase = false; refreshBasePanel();
-      if (o.underlay) underlayFromJSON(o.underlay); centerView(); commit('Progetto caricato.');
+      saveHistory(); restore(o); if (o.underlay) underlayFromJSON(o.underlay); centerView(); commit('Progetto caricato.');
     } catch (err) { alert('File non valido: '+err.message); }
   };
   rd.readAsText(f);
@@ -3044,9 +2791,9 @@ function askDialog(title, fields, hint, onOk, onCancel) {
       if (f.value) el.value = f.value;
     } else {
       el = document.createElement('input');
-      el.type = 'text';                                   // i campi type=number su Android (Gboard) a volte rifiutano caratteri: testo + tastiera decimale, la virgola la gestisce readDialog
+      el.type = f.type==='number' ? 'number' : 'text';
       if (f.type==='number') {
-        el.inputMode='decimal'; el.autocomplete='off'; el.autocapitalize='off'; el.spellcheck=false; el.dataset.num='1';
+        el.step='0.01'; el.inputMode='decimal';
         if (f.value) { el.placeholder = String(f.value); el.dataset.def = String(f.value); el.value = ''; }   // vuoto, col predefinito in grigio
         else el.value = '';
       } else el.value = f.value||'';
@@ -3098,14 +2845,14 @@ document.getElementById('dialog-overlay').addEventListener('keydown', e => {
 
 function wxRemoveSmall(mask, w, h, minPx) {
   const lab = new Int32Array(w*h), out = new Uint8Array(w*h);
-  const stack = new Int32Array(w*h), buf = new Int32Array(w*h);     // buf: i pixel di ogni componente, uno dopo l'altro
+  const stack = new Int32Array(w*h);
   let id = 0;
   for (let i=0;i<w*h;i++) {
     if (!mask[i] || lab[i]) continue;
     id++; let sp=0; stack[sp++]=i; lab[i]=id;
-    let x0=w,x1=0,y0=h,y1=0, bp=0;
+    let x0=w,x1=0,y0=h,y1=0; const members=[];
     while (sp) {
-      const p=stack[--sp]; buf[bp++]=p;
+      const p=stack[--sp]; members.push(p);
       const px=p%w, py=(p-px)/w;
       if (px<x0)x0=px; if (px>x1)x1=px; if (py<y0)y0=py; if (py>y1)y1=py;
       for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++) {
@@ -3116,7 +2863,7 @@ function wxRemoveSmall(mask, w, h, minPx) {
         if (mask[q] && !lab[q]) { lab[q]=id; stack[sp++]=q; }
       }
     }
-    if (Math.max(x1-x0+1, y1-y0+1) >= minPx) for (let k=0;k<bp;k++) out[buf[k]]=1;
+    if (Math.max(x1-x0+1, y1-y0+1) >= minPx) for (const p of members) out[p]=1;
   }
   return out;
 }
@@ -3419,29 +3166,6 @@ state.wallsPrev = null;  // {nodes:[{x,y}], segs:[[a,b]]}  proposta muri in coor
 const $id = id => document.getElementById(id);
 const DARK_THRESH = 140;
 
-// luminosita' di un pixel e soglia automatica (Otsu) sull'istogramma: separa fondo e tratti quando i tratti sono chiari
-function lumOf(d,i) { return (d[i]*299 + d[i+1]*587 + d[i+2]*114)/1000; }
-function otsuLum(d, n) {
-  const hist = new Float64Array(256); for (let i=0;i<n;i++) hist[Math.round(lumOf(d,i*4))]++;
-  let sum=0; for (let t=0;t<256;t++) sum += t*hist[t];
-  let wB=0, sB=0, best=-1, thr=128;
-  for (let t=0;t<256;t++) {
-    wB += hist[t]; if (!wB) continue;
-    const wF = n-wB; if (!wF) break;
-    sB += t*hist[t];
-    const mB=sB/wB, mF=(sum-sB)/wF, v=wB*wF*(mB-mF)*(mB-mF);
-    if (v>best) { best=v; thr=t; }
-  }
-  return thr;
-}
-// maschera dei tratti: 1 = tratto. 'dark' scuro non blu (cornice/scala del catasto), 'light' piu' chiaro della soglia, 'photo' scuro rispetto ai dintorni
-function inkMask(d, w, h, mpp, ink, thr) {
-  if (ink==='photo') return adaptiveDark(d, w, h, mpp);
-  const m = new Uint8Array(w*h), n = w*h;
-  if (ink==='light') { for (let i=0;i<n;i++) m[i] = lumOf(d,i*4) > thr ? 1 : 0; return m; }
-  for (let i=0;i<n;i++) { const r=d[i*4], g=d[i*4+1], b=d[i*4+2]; m[i] = ((r+g+b)/3 < thr && (b-Math.max(r,g)) < 60) ? 1 : 0; }
-  return m;
-}
 function isDarkPx(r,g,b) { return (r+g+b)/3 < DARK_THRESH && (b - Math.max(r,g)) < 60; }   // scuro e non blu (cornice/scala del catasto)
 
 function buildUnderlayView(u) {
@@ -3459,7 +3183,7 @@ function drawUnderlay() {
   ctx.globalAlpha = u.alpha;
   ctx.imageSmoothingEnabled = k < 1;
   ctx.transform(k, 0, 0, k, o.x, o.y);
-  ctx.drawImage(u.color && u.showColor ? u.color : u.view, 0, 0);
+  ctx.drawImage(u.view, 0, 0);
   ctx.restore();
 }
 
@@ -3496,33 +3220,28 @@ function refreshBasePanel() {
   $id('base-panel').classList.toggle('show', !!u);
   if (!u) { $id('walls-panel').classList.remove('show'); return; }
   $id('base-vis').checked = u.visible;
-  $id('base-color-row').style.display = u.color ? '' : 'none'; $id('base-color').checked = !!(u.color && u.showColor);
   $id('base-alpha').value = Math.round(u.alpha*100);
   $id('base-info').textContent = u.w+'x'+u.h+' px  |  '+(u.mpp*100).toFixed(2)+' cm/px  |  '+(u.w*u.mpp).toFixed(1)+' x '+(u.h*u.mpp).toFixed(1)+' m';
 }
-function toggleHand() { state.handMode = !state.handMode; state.moveBase = false; state.moveSel = false; clearAssist(); setTip(state.handMode ? 'Mano: trascina con un dito per spostare la vista. Tocca di nuovo ✋ per finire.' : (TIPS[state.tool] || '')); draw(); }
 function toggleMoveSel()  { state.moveSel = !state.moveSel; state.moveBase = false; setTip(state.moveSel ? 'Trascina in un punto qualsiasi: si sposta tutta la selezione. Tocca di nuovo il pulsante per finire.' : 'Spostamento terminato.'); draw(); }
 function toggleMoveBase() { if (!state.underlay) return; state.moveBase = !state.moveBase; state.moveSel = false; setTip(state.moveBase ? 'Trascina per spostare la base sotto il disegno. Tocca di nuovo "Sposta base" per finire.' : 'Base posizionata.'); draw(); }
-function toggleBasePanel() { hideAllMenus(); if (!state.underlay) { setTip('Nessuna base planimetria caricata.'); return; } if ($id('base-panel').classList.contains('show')) closeBasePanel(); else $id('base-panel').classList.add('show'); }
-function closeBasePanel() { $id('base-panel').classList.remove('show'); if (state.moveBase) { state.moveBase=false; setTip('Base posizionata.'); draw(); } }
+function toggleBasePanel() { hideAllMenus(); if (!state.underlay) { setTip('Nessuna base planimetria caricata.'); return; } $id('base-panel').classList.toggle('show'); }
 function baseVisible(on) { if (state.underlay) { state.underlay.visible = on; draw(); } }
-function baseColor(on)   { if (state.underlay && state.underlay.color) { state.underlay.showColor = on; draw(); } }
 function baseAlpha(v)    { if (state.underlay) { state.underlay.alpha = v/100; draw(); } }
 function baseRemove() {
   if (!state.underlay || !confirm('Rimuovere la base planimetrica? I punti e i muri del rilievo restano.')) return;
-  state.underlay = null; state.wallsPrev = null; state.moveBase = false; refreshBasePanel(); draw();
+  state.underlay = null; state.wallsPrev = null; refreshBasePanel(); draw();
 }
 
 // ── import: file -> immagine sorgente ──────────────────────
-const imp = { src:null, mpp:null, v:{s:1,ox:0,oy:0}, sel:null, mode:'rect', calib:[], quad:[], drag:null, note:'', photo:false,
-              ink:null, thr:140, prev:null, ptrs:new Map(), pinch:null, tap:null, loupe:null, quotes:null, quotesBusy:false, quotesSrc:null };
+const imp = { src:null, mpp:null, v:{s:1,ox:0,oy:0}, sel:null, mode:'rect', calib:[], quad:[], drag:null, note:'', photo:false };
 const impCv = $id('imp-canvas'), impCtx = impCv.getContext('2d');
 
 function importPlan() { hideAllMenus(); const i=$id('file-plan'); i.value=''; i.click(); }
 $id('file-plan').addEventListener('change', async e => {
   const f = e.target.files && e.target.files[0]; if (!f) return;
   try {
-    imp.mpp=null; imp.sel=null; imp.calib=[]; imp.quad=[]; imp.mode='rect'; imp.note=''; imp.ink=null;
+    imp.mpp=null; imp.sel=null; imp.calib=[]; imp.quad=[]; imp.mode='rect'; imp.note='';
     imp.photo = !(/\.pdf$/i.test(f.name) || f.type==='application/pdf');
     if (!imp.photo) await impLoadPdf(f); else await impLoadImage(f);
     impOpen();
@@ -3534,7 +3253,7 @@ function photoPlan() { hideAllMenus(); const i=$id('file-plan-cam'); i.value='';
 $id('file-plan-cam').addEventListener('change', async e => {
   const f = e.target.files && e.target.files[0]; if (!f) return;
   try {
-    imp.mpp=null; imp.sel=null; imp.calib=[]; imp.quad=[]; imp.note=''; imp.photo=true; imp.ink='photo';
+    imp.mpp=null; imp.sel=null; imp.calib=[]; imp.quad=[]; imp.note=''; imp.photo=true;
     await impLoadImage(f);
     imp.note = 'Tocca i 4 angoli del foglio per raddrizzarlo (oppure salta e usa Calibra scala).';
     impOpen(); impSetMode('quad');
@@ -3550,7 +3269,7 @@ function impQuadAsk() {
     const long = v.fmt==='A3' ? 0.42 : 0.297, short = v.fmt==='A3' ? 0.297 : 0.21, sc = parseFloat(v.sc);
     impWarp(imp.quad, long, short, isFinite(sc) && sc>0 ? sc : null);
     imp.quad=[]; impSetMode('rect');
-  }, () => { impUpdateBar(); impDraw(); });
+  }, () => { imp.quad=[]; impUpdateBar(); impDraw(); });
 }
 function impWarp(q, longM, shortM, scale) {
   // ordino gli angoli: alto-sx, alto-dx, basso-dx, basso-sx
@@ -3590,7 +3309,7 @@ function impWarp(q, longM, shortM, scale) {
 }
 
 // soglia locale per le foto: un pixel e' tratto se e' piu' scuro dei dintorni (ombre e carta grigia non contano)
-function adaptiveDark(d, w, h, mpp, allowBlue) {
+function adaptiveDark(d, w, h, mpp) {
   const g = new Float32Array(w*h);
   for (let i=0;i<w*h;i++) g[i] = (d[i*4]+d[i*4+1]+d[i*4+2])/3;
   const W1 = w+1, I = new Float64Array(W1*(h+1));
@@ -3601,7 +3320,7 @@ function adaptiveDark(d, w, h, mpp, allowBlue) {
     for (let x=0;x<w;x++) {
       const x0=Math.max(0,x-r), x1=Math.min(w,x+r+1), i=y*w+x;
       const m = (I[y1*W1+x1]-I[y0*W1+x1]-I[y1*W1+x0]+I[y0*W1+x0]) / ((x1-x0)*(y1-y0));
-      mask[i] = (g[i] < m*0.82 && g[i] < 200 && (allowBlue || (d[i*4+2]-Math.max(d[i*4],d[i*4+1])) < 60)) ? 1 : 0;
+      mask[i] = (g[i] < m*0.82 && g[i] < 200 && (d[i*4+2]-Math.max(d[i*4],d[i*4+1])) < 60) ? 1 : 0;
     }
   }
   return mask;
@@ -3615,7 +3334,7 @@ async function impLoadImage(f) {
   const url = URL.createObjectURL(f);
   try {
     const img = await new Promise((ok,ko) => { const im=new Image(); im.onload=()=>ok(im); im.onerror=()=>ko(new Error('immagine non leggibile')); im.src=url; });
-    const k = Math.min(1, 3500/Math.max(img.naturalWidth, img.naturalHeight));   // piu' grande non serve e su telefono finisce la memoria
+    const k = Math.min(1, 5000/Math.max(img.naturalWidth, img.naturalHeight));
     const c = document.createElement('canvas'); c.width=Math.round(img.naturalWidth*k); c.height=Math.round(img.naturalHeight*k);
     const cx = c.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,c.width,c.height); cx.drawImage(img,0,0,c.width,c.height);
     imp.src = c; imp.note = 'Immagine senza scala: usa "Calibra scala" e clicca due punti di distanza nota.';
@@ -3685,23 +3404,11 @@ async function impLoadPdf(f) {
 }
 
 // ── finestra di selezione ───────────────────────────────────
-// imp.ink = come leggere i tratti: 'dark' tratti scuri su fondo chiaro (catasto), 'light' tratti chiari su fondo scuro, 'photo' foto di carta
-function impAutoInk() {
-  if (!imp.src) return 'dark';
-  const k = Math.min(1, 160/Math.max(imp.src.width, imp.src.height)), w = Math.max(1,Math.round(imp.src.width*k)), h = Math.max(1,Math.round(imp.src.height*k));
-  const c = document.createElement('canvas'); c.width=w; c.height=h;
-  const cx = c.getContext('2d', {willReadFrequently:true}); cx.drawImage(imp.src,0,0,w,h);
-  const d = cx.getImageData(0,0,w,h).data, L = []; for (let i=0;i<w*h;i++) L.push(lumOf(d,i*4));
-  L.sort((a,b) => a-b);
-  return L[L.length>>1] < 110 ? 'light' : (imp.photo ? 'photo' : 'dark');
-}
 function impOpen() {
   $id('imp-overlay').classList.add('show');
-  if (!imp.ink) imp.ink = impAutoInk();
-  imp.prev = null; imp.ptrs.clear(); imp.pinch = null; imp.drag = null; imp.tap = null; imp.loupe = null;
   impResize(); impFit(); impUpdateBar(); impDraw();
 }
-function impClose() { $id('imp-overlay').classList.remove('show'); imp.src=null; imp.prev=null; imp.ink=null; }
+function impClose() { $id('imp-overlay').classList.remove('show'); imp.src=null; }
 function impResize() { $id('imp-overlay').classList.toggle('bottom', window.innerHeight > window.innerWidth); const r=impCv.getBoundingClientRect(); impCv.width=Math.round(r.width); impCv.height=Math.round(r.height); impDraw(); }
 function impFit() {
   if (!imp.src) return;
@@ -3711,166 +3418,21 @@ function impFit() {
 }
 function impZoom(f, cx, cy) {
   if (cx===undefined) { cx=impCv.width/2; cy=impCv.height/2; }
-  const v=imp.v, ns=Math.min(Math.max(v.s*f, 0.05), 24);
+  const v=imp.v, ns=Math.min(Math.max(v.s*f, 0.05), 12);
   v.ox = cx-(cx-v.ox)*ns/v.s; v.oy = cy-(cy-v.oy)*ns/v.s; v.s = ns; impDraw();
 }
-function impSetMode(m) { imp.mode=m; imp.calib=[]; if (m!=='quad') imp.quad=[]; if (m==='calib') impQuotesScan(); impUpdateBar(); impDraw(); }
-
-// ── linee di quota: linea sottile, orizzontale o verticale, con un tratto che la attraversa a entrambe le estremita'; di qualsiasi colore (anche blu).
-// L'app le propone, la misura la scrive l'utente (nessun riconoscimento del numero)
-function impQuotesScan() {
-  if (!imp.src || imp.quotesSrc===imp.src) return;
-  imp.quotes = null; imp.quotesBusy = true;
-  setTimeout(() => {
-    if (!imp.src) return;
-    try { imp.quotes = impFindQuotes(); } catch (e) { imp.quotes = []; }
-    imp.quotesSrc = imp.src; imp.quotesBusy = false; impUpdateBar(); impDraw();
-  }, 40);
-}
-function impFindQuotes() {
-  const src = imp.src, k = Math.min(1, 3000/Math.max(src.width, src.height));
-  const w = Math.round(src.width*k), h = Math.round(src.height*k);
-  const c = document.createElement('canvas'); c.width=w; c.height=h;
-  const cx = c.getContext('2d', {willReadFrequently:true}); cx.fillStyle='#fff'; cx.fillRect(0,0,w,h); cx.drawImage(src,0,0,w,h);
-  const d = cx.getImageData(0,0,w,h).data;
-  let m;
-  if (imp.ink==='light') { const t = otsuLum(d,w*h); m = new Uint8Array(w*h); for (let i=0;i<w*h;i++) m[i] = lumOf(d,i*4) > t ? 1 : 0; }
-  else m = adaptiveDark(d, w, h, 0.01, true);                 // anche i tratti blu del catasto
-  const out = [];
-  quoteScan(m, w, h, false, out);
-  const t = new Uint8Array(w*h); for (let y=0;y<h;y++) for (let x=0;x<w;x++) t[x*h+y] = m[y*w+x];
-  quoteScan(t, h, w, true, out);
-  out.sort((a,b) => b.len-a.len);
-  return out.slice(0,8).map(q => ({x0:q.x0/k, y0:q.y0/k, x1:q.x1/k, y1:q.y1/k}));
-}
-function quoteScan(m, W, H, vert, out) {
-  const minLen = Math.max(60, Math.round(W*0.12)), gap = Math.round(W*0.012)+2;
-  const mt = Math.max(24, Math.round(W*0.05));               // un tratto di estremita' e' corto: se l'inchiostro continua e' un muro o un bordo
-  const tickLen = (ex, c, dir) => {                           // quanto si estende l'inchiostro attorno all'estremita': vale anche per tratti obliqui e frecce
-    let y = dir<0 ? c.y0-1 : c.y1+1, len=0, miss=0;
-    while (y>=0 && y<H && len<=mt) {
-      let any=0; for (let x=Math.max(0,ex-6); x<=Math.min(W-1,ex+6); x++) if (m[y*W+x]) { any=1; break; }
-      if (any) { len++; miss=0; } else if (++miss>1) break;
-      y += dir;
-    }
-    return len;
-  };
-  const sideDensity = (c, dir) => {                           // lungo una quota ai lati c'e' carta: se c'e' inchiostro pieno e' il bordo di un muro
-    const oM = Math.max(12, Math.round(W*0.02)), a0 = c.x0+Math.round((c.x1-c.x0)*0.1), a1 = c.x1-Math.round((c.x1-c.x0)*0.1);
-    let ink=0, area=0;
-    for (let x=a0; x<=a1; x++) for (let o=4; o<=oM; o++) { const y = dir<0 ? c.y0-o : c.y1+o; if (y<0||y>=H) continue; area++; ink += m[y*W+x]; }
-    return area ? ink/area : 0;
-  };
-  const tick = (ex, c) => {
-    const u = tickLen(ex,c,-1), d = tickLen(ex,c,1);
-    return u>=4 && d>=4 && u<=mt && d<=mt && Math.max(u,d)/Math.min(u,d) <= 3.5;
-  };
-  const fin = c => {
-    if (c.y1-c.y0+1>4 || c.x1-c.x0+1<minLen || !tick(c.x0,c) || !tick(c.x1,c)) return;
-    if (sideDensity(c,-1)>0.5 || sideDensity(c,1)>0.5) return;
-    const yc = (c.y0+c.y1)/2;
-    out.push(vert ? {x0:yc, y0:c.x0, x1:yc, y1:c.x1, len:c.x1-c.x0} : {x0:c.x0, y0:yc, x1:c.x1, y1:yc, len:c.x1-c.x0});
-  };
-  let act = [];
-  for (let y=0; y<H; y++) {
-    const runs=[], row=y*W; let x=0;
-    while (x<W) {
-      if (!m[row+x]) { x++; continue; }
-      const s0=x; let e=x; x++;
-      while (x<W) {
-        if (m[row+x]) { e=x; x++; continue; }
-        let g=x; while (g<W && !m[row+g] && g-x<=gap) g++;
-        if (g<W && m[row+g] && g-x<=gap) x=g; else break;
-      }
-      if (e-s0+1>=minLen) runs.push([s0,e]);
-    }
-    const next=[];
-    runs.forEach(([s0,e]) => {
-      const c = act.find(a => a.y1===y-1 && Math.min(e,a.x1)-Math.max(s0,a.x0) >= 0.8*Math.min(e-s0, a.x1-a.x0));
-      if (c) { c.y1=y; c.x0=Math.min(c.x0,s0); c.x1=Math.max(c.x1,e); next.push(c); }
-      else next.push({x0:s0, x1:e, y0:y, y1:y});
-    });
-    act.forEach(a => { if (a.y1!==y) fin(a); });
-    act = next;
-  }
-  act.forEach(fin);
-}
-function impHitQuote(p) {
-  if (!imp.quotes) return null;
-  let best=null, bd = COARSE ? 30 : 12;
-  imp.quotes.forEach((q,i) => {
-    const ax=q.x0*imp.v.s+imp.v.ox, ay=q.y0*imp.v.s+imp.v.oy, bx=q.x1*imp.v.s+imp.v.ox, by=q.y1*imp.v.s+imp.v.oy;
-    const dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy || 1, t=Math.max(0, Math.min(1, ((p.x-ax)*dx+(p.y-ay)*dy)/L2));
-    const dd=Math.hypot(p.x-(ax+t*dx), p.y-(ay+t*dy)); if (dd<bd) { bd=dd; best=i; }
-  });
-  return best;
-}
-function impPoints() { return imp.mode==='calib' ? imp.calib : imp.mode==='quad' ? imp.quad : null; }
+function impSetMode(m) { imp.mode=m; imp.calib=[]; if (m!=='quad') imp.quad=[]; impUpdateBar(); impDraw(); }
 function impUpdateBar() {
   $id('imp-info').textContent = (imp.note||'') + (imp.mpp ? '' : '  Scala non impostata.');
   ['rect','pan','quad','calib'].forEach(m => $id('imp-m-'+m).classList.toggle('active', imp.mode===m));
   // mostra solo i comandi che servono: Raddrizza per le foto, Scala se non e' stata trovata (o per le foto)
   $id('imp-m-quad').style.display  = imp.photo ? '' : 'none';
   $id('imp-m-calib').style.display = (imp.photo || !imp.mpp) ? '' : 'none';
-  const nQ = imp.quad.length, nC = imp.calib.length;
-  $id('imp-m-ok').style.display = (imp.mode==='calib' && nC===2) || (imp.mode==='quad' && nQ===4) ? '' : 'none';
-  const dist = nC===2 ? ' Distanza sull\'immagine: '+Math.hypot(imp.calib[0].x-imp.calib[1].x, imp.calib[0].y-imp.calib[1].y).toFixed(1)+' px.' : '';
-  $id('imp-hint').textContent = imp.mode==='rect' ? 'Trascina per selezionare l\'appartamento, poi tocca Usa. Con due dita ingrandisci e sposti la pagina.'
+  $id('imp-hint').textContent = imp.mode==='rect' ? 'Trascina per selezionare l\'appartamento, poi tocca Usa. Con Sposta muovi la pagina.'
     : imp.mode==='pan' ? 'Trascina per spostare la pagina. Torna ad Area per selezionare.'
-    : imp.mode==='quad' ? (nQ<4 ? 'Tocca i 4 angoli del foglio ('+nQ+'/4). Con due dita ingrandisci.' : 'Trascina i punti per regolarli, poi tocca Conferma.')
-    : (nC<2 ? (imp.quotesBusy ? 'Cerco le linee di quota...' : imp.quotes && imp.quotes.length ? 'Ho trovato '+imp.quotes.length+' possibili linee di quota (verdi, numerate): tocca quella giusta, oppure tocca due punti a mano.'
-                : 'Tocca due punti di distanza nota ('+nC+'/2). Con due dita ingrandisci.')
-        : 'Trascina i punti per regolarli, poi tocca Conferma.'+dist);
-  const ctl = !!imp.sel && !(imp.drag && imp.drag.kind==='rect');
-  $id('imp-ctl').style.display = ctl ? 'flex' : 'none';
-  if (ctl) { $id('imp-ink').value = imp.ink; $id('imp-thr-wrap').style.display = imp.ink==='photo' ? 'none' : ''; }
-  $id('imp-text').style.display = (($id('imp-info').textContent + $id('imp-hint').textContent).trim()) || ctl ? 'block' : 'none';
-}
-
-// ritaglio della selezione (rimpicciolito per l'anteprima, intero per l'import vero)
-function impCrop(maxSide) {
-  const s = imp.sel; if (!s || !imp.src) return null;
-  const x0=Math.max(0,Math.round(Math.min(s.x0,s.x1))), x1=Math.min(imp.src.width, Math.round(Math.max(s.x0,s.x1)));
-  const y0=Math.max(0,Math.round(Math.min(s.y0,s.y1))), y1=Math.min(imp.src.height,Math.round(Math.max(s.y0,s.y1)));
-  const w=x1-x0, h=y1-y0; if (w<20 || h<20) return null;
-  const k=Math.min(1, maxSide/Math.max(w,h)), pw=Math.max(1,Math.round(w*k)), ph=Math.max(1,Math.round(h*k));
-  const c=document.createElement('canvas'); c.width=pw; c.height=ph;
-  const cx=c.getContext('2d', {willReadFrequently:true}); cx.fillStyle='#fff'; cx.fillRect(0,0,pw,ph); cx.drawImage(imp.src,x0,y0,w,h,0,0,pw,ph);
-  return {x0,y0,w,h,k,pw,ph,d:cx.getImageData(0,0,pw,ph).data};
-}
-function impDefaultThr(c) {
-  if (imp.ink==='light') return c ? otsuLum(c.d, c.pw*c.ph) : 90;
-  return DARK_THRESH;
-}
-function impSelChanged() {
-  imp.thr = impDefaultThr(impCrop(600));
-  $id('imp-thr').value = imp.thr;
-  impUpdateBar(); impPrevSchedule();
-}
-function impInkChange(v) { imp.ink = v; impSelChanged(); }
-function impThrChange(v) { imp.thr = v; impPrevSchedule(); }
-let _impPrevT = null;
-function impPrevSchedule() { clearTimeout(_impPrevT); _impPrevT = setTimeout(impPrevRun, 60); }
-function impPrevRun() {
-  imp.prev = null;
-  const c = $id('imp-prev').checked ? impCrop(1100) : null;
-  if (c) {
-    const m = inkMask(c.d, c.pw, c.ph, (imp.mpp||0.01)/c.k, imp.ink, imp.thr);
-    const o = document.createElement('canvas'); o.width=c.pw; o.height=c.ph;
-    const ox = o.getContext('2d'), im = ox.createImageData(c.pw,c.ph), d = im.data;
-    for (let i=0;i<m.length;i++) if (m[i]) { const k=i*4; d[k]=255; d[k+1]=120; d[k+2]=0; d[k+3]=235; }
-    ox.putImageData(im,0,0);
-    imp.prev = {cv:o, x0:c.x0, y0:c.y0, w:c.w, h:c.h};
-  }
-  impDraw();
-}
-
-// maniglia di taratura: mirino sottile al posto del pallino, cosi' il punto si legge bene anche ingrandito
-function impHandle(x, y, color) {
-  impCtx.strokeStyle=color; impCtx.lineWidth=1.5;
-  impCtx.beginPath(); impCtx.arc(x,y,13,0,Math.PI*2); impCtx.stroke();
-  impCtx.beginPath(); impCtx.moveTo(x-22,y); impCtx.lineTo(x+22,y); impCtx.moveTo(x,y-22); impCtx.lineTo(x,y+22); impCtx.stroke();
-  impCtx.fillStyle=color; impCtx.beginPath(); impCtx.arc(x,y,1.8,0,Math.PI*2); impCtx.fill();
+    : imp.mode==='quad' ? 'Tocca i 4 angoli del foglio ('+imp.quad.length+'/4).'
+    : 'Tocca due punti di distanza nota'+(imp.calib.length?' ('+imp.calib.length+'/2)':'')+'.';
+  $id('imp-text').style.display = (($id('imp-info').textContent + $id('imp-hint').textContent).trim()) ? 'block' : 'none';
 }
 function impDraw() {
   const W=impCv.width, H=impCv.height, v=imp.v;
@@ -3878,159 +3440,85 @@ function impDraw() {
   if (!imp.src) return;
   impCtx.imageSmoothingEnabled = v.s < 1;
   impCtx.drawImage(imp.src, v.ox, v.oy, imp.src.width*v.s, imp.src.height*v.s);
-  if (imp.prev) {                                   // anteprima: i tratti che l'app leggera' dalla selezione
-    impCtx.imageSmoothingEnabled = true;
-    impCtx.drawImage(imp.prev.cv, imp.prev.x0*v.s+v.ox, imp.prev.y0*v.s+v.oy, imp.prev.w*v.s, imp.prev.h*v.s);
-  }
-  if (imp.mode==='calib' && imp.quotes) {
-    imp.quotes.forEach((q,i) => {
-      const ax=q.x0*v.s+v.ox, ay=q.y0*v.s+v.oy, bx=q.x1*v.s+v.ox, by=q.y1*v.s+v.oy;
-      impCtx.strokeStyle = imp.calib.length===2 ? 'rgba(60,255,120,.35)' : 'rgba(60,255,120,.9)'; impCtx.lineWidth=5;
-      impCtx.beginPath(); impCtx.moveTo(ax,ay); impCtx.lineTo(bx,by); impCtx.stroke();
-      const mx=(ax+bx)/2, my=(ay+by)/2;
-      impCtx.fillStyle='#3cff78'; impCtx.beginPath(); impCtx.arc(mx,my,12,0,Math.PI*2); impCtx.fill();
-      impCtx.fillStyle='#000'; impCtx.font='bold 14px sans-serif'; impCtx.textAlign='center'; impCtx.textBaseline='middle'; impCtx.fillText(String(i+1), mx, my+1);
-    });
-  }
   if (imp.sel) {
     const x0=Math.min(imp.sel.x0,imp.sel.x1)*v.s+v.ox, x1=Math.max(imp.sel.x0,imp.sel.x1)*v.s+v.ox;
     const y0=Math.min(imp.sel.y0,imp.sel.y1)*v.s+v.oy, y1=Math.max(imp.sel.y0,imp.sel.y1)*v.s+v.oy;
-    impCtx.fillStyle='rgba(255,224,102,.12)'; impCtx.fillRect(x0,y0,x1-x0,y1-y0);
+    impCtx.fillStyle='rgba(255,224,102,.15)'; impCtx.fillRect(x0,y0,x1-x0,y1-y0);
     impCtx.strokeStyle='#ffe066'; impCtx.lineWidth=2; impCtx.setLineDash([8,5]); impCtx.strokeRect(x0,y0,x1-x0,y1-y0); impCtx.setLineDash([]);
   }
   if (imp.quad.length) {
-    impCtx.strokeStyle='#00e5ff'; impCtx.lineWidth=1.5; impCtx.beginPath();
+    impCtx.strokeStyle='#00e5ff'; impCtx.fillStyle='#00e5ff'; impCtx.lineWidth=2; impCtx.beginPath();
     imp.quad.forEach((p,k) => { const x=p.x*v.s+v.ox, y=p.y*v.s+v.oy; if (k) impCtx.lineTo(x,y); else impCtx.moveTo(x,y); });
-    if (imp.quad.length===4) impCtx.closePath();
     impCtx.stroke();
-    imp.quad.forEach(p => impHandle(p.x*v.s+v.ox, p.y*v.s+v.oy, '#00e5ff'));
+    imp.quad.forEach(p => { impCtx.beginPath(); impCtx.arc(p.x*v.s+v.ox, p.y*v.s+v.oy, 7, 0, Math.PI*2); impCtx.fill(); });
   }
+  impCtx.fillStyle='#e94560';
+  imp.calib.forEach(p => { impCtx.beginPath(); impCtx.arc(p.x*v.s+v.ox, p.y*v.s+v.oy, 6, 0, Math.PI*2); impCtx.fill(); });
   if (imp.calib.length===2) {
-    impCtx.strokeStyle='#e94560'; impCtx.lineWidth=1.5; impCtx.beginPath();
+    impCtx.strokeStyle='#e94560'; impCtx.lineWidth=2; impCtx.beginPath();
     impCtx.moveTo(imp.calib[0].x*v.s+v.ox, imp.calib[0].y*v.s+v.oy); impCtx.lineTo(imp.calib[1].x*v.s+v.ox, imp.calib[1].y*v.s+v.oy); impCtx.stroke();
   }
-  imp.calib.forEach(p => impHandle(p.x*v.s+v.ox, p.y*v.s+v.oy, '#e94560'));
-  if (imp.loupe) impDrawLoupe();
-}
-// lente: mentre si trascina un punto il dito lo copre, quindi sopra al dito compare un ingrandimento con il mirino al centro
-function impDrawLoupe() {
-  const L = imp.loupe, list = impPoints(), pt = list && list[L.i]; if (!pt) return;
-  const W = impCv.width, R = 62, ls = Math.min(Math.max(imp.v.s*3, 4), 24);
-  const cx = Math.min(Math.max(L.fx, R+6), W-R-6);
-  let cy = L.fy - 125; if (cy < R+6) cy = L.fy + 125;
-  impCtx.save();
-  impCtx.beginPath(); impCtx.arc(cx,cy,R,0,Math.PI*2); impCtx.clip();
-  impCtx.fillStyle='#000'; impCtx.fillRect(cx-R,cy-R,2*R,2*R);
-  impCtx.imageSmoothingEnabled = false;
-  impCtx.drawImage(imp.src, pt.x-R/ls, pt.y-R/ls, 2*R/ls, 2*R/ls, cx-R, cy-R, 2*R, 2*R);
-  impCtx.restore();
-  impCtx.strokeStyle='#fff'; impCtx.lineWidth=2; impCtx.beginPath(); impCtx.arc(cx,cy,R,0,Math.PI*2); impCtx.stroke();
-  impCtx.strokeStyle = imp.mode==='calib' ? '#e94560' : '#00e5ff'; impCtx.lineWidth=1;
-  impCtx.beginPath(); impCtx.moveTo(cx-R,cy); impCtx.lineTo(cx+R,cy); impCtx.moveTo(cx,cy-R); impCtx.lineTo(cx,cy+R); impCtx.stroke();
 }
 function impPos(e) { const r=impCv.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
 function impToSrc(p) { return {x:(p.x-imp.v.ox)/imp.v.s, y:(p.y-imp.v.oy)/imp.v.s}; }
-function impPinchRead() { const q=[...imp.ptrs.values()]; return {d:Math.hypot(q[0].x-q[1].x, q[0].y-q[1].y), mid:{x:(q[0].x+q[1].x)/2, y:(q[0].y+q[1].y)/2}}; }
-// maniglia piu' vicina al tocco (raggio largo: il dito non e' una punta)
-function impHitHandle(p) {
-  const list = impPoints(); if (!list) return null;
-  let best = null, bd = COARSE ? 40 : 16;
-  list.forEach((q,i) => { const d = Math.hypot(q.x*imp.v.s+imp.v.ox-p.x, q.y*imp.v.s+imp.v.oy-p.y); if (d<=bd) { bd=d; best=i; } });
-  return best;
-}
 
-// un dito lavora, due dita ingrandiscono e spostano la pagina (in ogni modalita')
 impCv.addEventListener('pointerdown', e => {
   impCv.setPointerCapture(e.pointerId);
   const p = impPos(e);
-  imp.ptrs.set(e.pointerId, p);
-  if (imp.ptrs.size===2) {
-    if (imp.drag && imp.drag.kind==='rect') imp.sel = imp.drag.prevSel;   // il primo dito non era una selezione: resta quella di prima
-    imp.drag=null; imp.tap=null; imp.loupe=null; imp.pinch = impPinchRead(); impUpdateBar(); impDraw(); return;
-  }
-  if (imp.ptrs.size>2) return;
-  imp.tap = null;
-  if (imp.mode==='pan' || e.button===1 || e.button===2 || e.altKey) { imp.drag = {kind:'pan', x:p.x, y:p.y, ox:imp.v.ox, oy:imp.v.oy}; return; }
-  if (imp.mode==='quad' || imp.mode==='calib') {
-    const hi = impHitHandle(p);
-    if (hi!==null) {                                       // afferro il punto e lo sposto, con la lente
-      const q = impPoints()[hi];
-      imp.drag = {kind:'handle', i:hi, dx:q.x*imp.v.s+imp.v.ox-p.x, dy:q.y*imp.v.s+imp.v.oy-p.y};
-      imp.loupe = {i:hi, fx:p.x, fy:p.y}; impDraw(); return;
-    }
-    imp.tap = {x:p.x, y:p.y};                              // tocco nel vuoto = nuovo punto, trascinamento = sposto la pagina
-    imp.drag = {kind:'pan', x:p.x, y:p.y, ox:imp.v.ox, oy:imp.v.oy}; return;
-  }
+  const panning = imp.mode==='pan' || e.button===1 || e.button===2 || e.altKey;
+  if (panning) { imp.drag = {kind:'pan', x:p.x, y:p.y, ox:imp.v.ox, oy:imp.v.oy}; return; }
   const s = impToSrc(p);
-  imp.drag = {kind:'rect', prevSel:imp.sel}; imp.sel = {x0:s.x, y0:s.y, x1:s.x, y1:s.y}; imp.prev = null; impUpdateBar(); impDraw();
-});
-impCv.addEventListener('pointermove', e => {
-  if (!imp.ptrs.has(e.pointerId)) return;
-  const p = impPos(e); imp.ptrs.set(e.pointerId, p);
-  if (imp.pinch) {
-    if (imp.ptrs.size===2) { const n = impPinchRead(); imp.v.ox += n.mid.x-imp.pinch.mid.x; imp.v.oy += n.mid.y-imp.pinch.mid.y; impZoom(n.d/imp.pinch.d, n.mid.x, n.mid.y); imp.pinch = n; }
+  if (imp.mode==='quad') {
+    if (imp.quad.length>=4) imp.quad=[];
+    imp.quad.push(s); impUpdateBar(); impDraw();
+    if (imp.quad.length===4) impQuadAsk();
     return;
   }
-  if (!imp.drag) return;
-  if (imp.tap && Math.hypot(p.x-imp.tap.x, p.y-imp.tap.y) > 10) imp.tap = null;
-  if (imp.drag.kind==='pan') { if (!imp.tap) { imp.v.ox = imp.drag.ox + p.x - imp.drag.x; imp.v.oy = imp.drag.oy + p.y - imp.drag.y; } }
-  else if (imp.drag.kind==='handle') {
-    const q = impPoints()[imp.drag.i], s = impToSrc({x:p.x+imp.drag.dx, y:p.y+imp.drag.dy});
-    q.x = s.x; q.y = s.y; imp.loupe.fx = p.x; imp.loupe.fy = p.y; impUpdateBar();
+  if (imp.mode==='calib') {
+    if (imp.calib.length>=2) imp.calib=[];
+    imp.calib.push(s); impUpdateBar(); impDraw();
+    if (imp.calib.length===2) impCalibAsk();
+    return;
   }
+  imp.sel = {x0:s.x, y0:s.y, x1:s.x, y1:s.y}; imp.drag = {kind:'rect'}; impDraw();
+});
+impCv.addEventListener('pointermove', e => {
+  if (!imp.drag) return;
+  const p = impPos(e);
+  if (imp.drag.kind==='pan') { imp.v.ox = imp.drag.ox + p.x - imp.drag.x; imp.v.oy = imp.drag.oy + p.y - imp.drag.y; }
   else { const s=impToSrc(p); imp.sel.x1=s.x; imp.sel.y1=s.y; }
   impDraw();
 });
-function impPtrEnd(e) {
-  if (!imp.ptrs.has(e.pointerId)) return;
-  imp.ptrs.delete(e.pointerId);
-  if (imp.pinch) { if (!imp.ptrs.size) imp.pinch = null; impDraw(); return; }       // fine di un gesto a due dita: non e' un tocco
-  if (imp.ptrs.size) return;
-  const d = imp.drag, tap = imp.tap; imp.drag = null; imp.tap = null; imp.loupe = null;
-  if (e.type==='pointerup' && tap) {                       // tocco nel vuoto: aggiunge un punto (max 2 in Scala, 4 in Raddrizza)
-    const list = impPoints(), max = imp.mode==='calib' ? 2 : 4, qi = imp.mode==='calib' ? impHitQuote(tap) : null;
-    if (qi!==null) { const q = imp.quotes[qi]; imp.calib = [{x:q.x0, y:q.y0}, {x:q.x1, y:q.y1}]; }     // linea di quota proposta: i due estremi, ancora regolabili
-    else if (list && list.length<max) list.push(impToSrc(tap));
-  }
-  if (d && d.kind==='rect') { if (e.type==='pointerup') impSelChanged(); else { imp.sel = d.prevSel; impUpdateBar(); } }
-  else impUpdateBar();
-  impDraw();
-}
-impCv.addEventListener('pointerup', impPtrEnd);
-impCv.addEventListener('pointercancel', impPtrEnd);
+impCv.addEventListener('pointerup', () => { imp.drag=null; });
 impCv.addEventListener('contextmenu', e => e.preventDefault());
 impCv.addEventListener('wheel', e => { e.preventDefault(); const p=impPos(e); impZoom(e.deltaY<0 ? 1.15 : 1/1.15, p.x, p.y); }, {passive:false});
 window.addEventListener('resize', () => { if ($id('imp-overlay').classList.contains('show')) impResize(); });
 document.addEventListener('keydown', e => { if (e.key==='Escape' && $id('imp-overlay').classList.contains('show') && !$id('dialog-overlay').classList.contains('show')) impClose(); });
 
-// Conferma: con i punti messi a posto si apre la domanda (misura reale / formato del foglio)
-function impPointsOk() { if (imp.mode==='calib' && imp.calib.length===2) impCalibAsk(); else if (imp.mode==='quad' && imp.quad.length===4) impQuadAsk(); }
 function impCalibAsk() {
   const [a,b] = imp.calib, px = Math.hypot(a.x-b.x, a.y-b.y);
   askDialog('Calibra scala', [{label:'Distanza reale tra i due punti (m)', id:'d', value:'', type:'number'}],
-    'Distanza sull\'immagine: '+px.toFixed(1)+' px. Esempio: il numero scritto sopra la linea di quota.', v => {
+    'Distanza sull\'immagine: '+px.toFixed(1)+' px.', v => {
       const d = parseFloat(v.d);
       if (isFinite(d) && d>0 && px>1) { imp.mpp = d/px; imp.note = 'Scala impostata a mano: 1 px = '+(imp.mpp*100).toFixed(2)+' cm.'; }
       imp.calib=[]; impSetMode('rect');
-    }, () => { impUpdateBar(); impDraw(); });                // annullo la domanda: i punti restano, si possono ancora regolare
+    }, () => { imp.calib=[]; impUpdateBar(); impDraw(); });
 }
 
 function impConfirm() {
   if (!imp.src) return;
-  if (!imp.mpp) { alert('Scala non impostata: usa "Scala".'); return; }
-  const c = impCrop(Infinity);
-  if (!c) { alert('Seleziona con un trascinamento l\'area dell\'appartamento.'); return; }
-  const mask = inkMask(c.d, c.pw, c.ph, imp.mpp, imp.ink, imp.thr);
-  const u = {mask, w:c.pw, h:c.ph, mpp:imp.mpp, x:0, y:c.ph*imp.mpp, alpha:0.6, visible:true};
+  if (!imp.mpp) { alert('Scala non impostata: usa "Calibra scala".'); return; }
+  if (!imp.sel || Math.abs(imp.sel.x1-imp.sel.x0)<20 || Math.abs(imp.sel.y1-imp.sel.y0)<20) { alert('Seleziona con il mouse l\'area dell\'appartamento.'); return; }
+  const x0=Math.max(0,Math.round(Math.min(imp.sel.x0,imp.sel.x1))), x1=Math.min(imp.src.width, Math.round(Math.max(imp.sel.x0,imp.sel.x1)));
+  const y0=Math.max(0,Math.round(Math.min(imp.sel.y0,imp.sel.y1))), y1=Math.min(imp.src.height,Math.round(Math.max(imp.sel.y0,imp.sel.y1)));
+  const w=x1-x0, h=y1-y0;
+  const d = imp.src.getContext('2d').getImageData(x0,y0,w,h).data, mask = new Uint8Array(w*h);
+  if (imp.photo) mask.set(adaptiveDark(d, w, h, imp.mpp));
+  else for (let i=0;i<w*h;i++) mask[i] = isDarkPx(d[i*4], d[i*4+1], d[i*4+2]) ? 1 : 0;
+  const u = {mask, w, h, mpp:imp.mpp, x:0, y:h*imp.mpp, alpha:0.6, visible:true};
   buildUnderlayView(u);
-  if (c.pw*c.ph <= 16e6) {                                // la base si vede anche com'era, a colori: tratti sottili, testi, nomi
-    const col = document.createElement('canvas'); col.width=c.pw; col.height=c.ph;
-    const cx = col.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,c.pw,c.ph); cx.drawImage(imp.src, c.x0, c.y0, c.w, c.h, 0, 0, c.pw, c.ph);
-    u.color = col; u.showColor = imp.ink==='light';
-  }
-  state.underlay = u; state.wallsPrev = null; state.moveBase = false;
+  state.underlay = u; state.wallsPrev = null;
   impClose(); refreshBasePanel(); fitUnderlay();
-  setTimeout(() => { try { underlayCorners(); } catch (e) {} }, 400);       // angoli della base per la calamita, pronti prima del primo uso
   setTip('Base importata. Usa "Ricalca ambienti" nel pannello a sinistra.');
 }
 
@@ -4073,15 +3561,14 @@ function wallsApply() {
     state.ambienti.push({ indices:idx, name:'Ambiente '+(n+1), h:2.70, color:AMB_COLORS[n%AMB_COLORS.length] });
   });
   const nR = (P.rooms||[]).length;
-  state.wallsPrev = null; state.moveBase = false; $id('walls-panel').classList.remove('show'); $id('base-panel').classList.remove('show');   // piu' spazio per lavorare; si riapre da File
+  state.wallsPrev = null; $id('walls-panel').classList.remove('show'); $id('base-panel').classList.remove('show');   // piu' spazio per lavorare; si riapre da File
   commit('Aggiunti '+nR+' ambienti ('+P.segs.length+' linee). Clic dentro un ambiente per rinominarlo o eliminarlo.');
 }
 
 // salvataggio della base dentro il progetto .json
 function underlayToJSON() {
   const u = state.underlay; if (!u) return null;
-  return { dataUrl:u.view.toDataURL('image/png'), colorUrl:u.color ? u.color.toDataURL('image/jpeg', 0.85) : null, showColor:!!u.showColor,
-           x:u.x, y:u.y, mpp:u.mpp, alpha:u.alpha, visible:u.visible };
+  return { dataUrl:u.view.toDataURL('image/png'), x:u.x, y:u.y, mpp:u.mpp, alpha:u.alpha, visible:u.visible };
 }
 function underlayFromJSON(o) {
   if (!o || !o.dataUrl) return;
@@ -4093,15 +3580,6 @@ function underlayFromJSON(o) {
     for (let i=0;i<mask.length;i++) mask[i] = d[i*4+3] > 128 ? 1 : 0;
     const u = {mask, w:c.width, h:c.height, x:o.x, y:o.y, mpp:o.mpp, alpha:o.alpha, visible:o.visible!==false};
     buildUnderlayView(u); state.underlay = u; refreshBasePanel(); draw();
-    setTimeout(() => { try { underlayCorners(); } catch (e) {} }, 400);
-    if (o.colorUrl) {                                     // base a colori salvata a parte (i vecchi progetti non ce l'hanno)
-      const ic = new Image();
-      ic.onload = () => {
-        const cc = document.createElement('canvas'); cc.width=ic.naturalWidth; cc.height=ic.naturalHeight; cc.getContext('2d').drawImage(ic,0,0);
-        if (state.underlay === u) { u.color = cc; u.showColor = !!o.showColor; refreshBasePanel(); draw(); }
-      };
-      ic.src = o.colorUrl;
-    }
   };
   im.src = o.dataUrl;
 }
@@ -4128,17 +3606,9 @@ window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 250));
 window.addEventListener('beforeunload', e => {
   if (state.points.length) {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot(true))); } catch (err) {}
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())); } catch (err) {}
   }
 });
-// su Android la scheda in secondo piano puo' essere chiusa senza avviso: si salva subito, senza aspettare i 400 ms
-function persistNow() {
-  clearTimeout(_persistTimer);
-  if (!state.points.length) return;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot(true))); } catch (err) {}
-}
-document.addEventListener('visibilitychange', () => { if (document.visibilityState==='hidden') persistNow(); });
-window.addEventListener('pagehide', persistNow);
 
 // ═══════════════════════════════════════════════════════════
 //  AVVIO
@@ -4158,8 +3628,8 @@ else { flagSaved('nuovo rilievo'); draw(); }
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '1.14';
-const APP_NOTE = ["App installata su Android: la tastiera compariva ma non scriveva nei campi. La selezione del testo non è più disattivata su tutta la pagina (solo su disegno, barra e pulsanti) e non c'è più il blocco dello scorrimento di pagina", "Tolto il tasto Indietro gestito dall'app (introdotto nella 1.12): Indietro torna a comportarsi come prima"];
+const APP_VERSION = '1.09';
+const APP_NOTE = ["Annulla: toccare una maniglia di scala o serramento, o \"Sposta selezione\", senza muovere nulla non lascia più un passo vuoto", "Sul telefono, se un gesto viene interrotto (notifica, chiamata, gesto di sistema) il trascinamento si chiude e non sposta più nulla al tocco successivo", "Centra vista e zona proposta per l'export comprendono anche etichette e matita", "App installata: con segnale debole un errore del server non sostituisce più la copia offline", "Codice ulteriormente snellito"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {
