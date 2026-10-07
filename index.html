@@ -97,6 +97,8 @@
     #exp-bar button.ok { background:#1a6a3a; border-color:#2a9a5a; }
     #exp-bar button:disabled { opacity:.4; cursor:not-allowed; }
     #exp-info { flex:1 1 220px; font-size:12px; }
+    #hand-btn { position:fixed; top:10px; right:10px; z-index:160; min-width:46px; height:46px; border-radius:23px; padding:0 14px; font-size:20px; background:rgba(22,33,62,.82); color:#fff; border:1px solid #4a9eff; box-shadow:0 2px 10px rgba(0,0,0,.45); }
+    #hand-btn.on { background:#1a6a3a; border-color:#2a9a5a; font-size:15px; }
     #snap-indicator {
       position:fixed; top:60px; left:50%; transform:translateX(-50%);
       background:rgba(255,224,102,.92); color:#333; border-radius:5px;
@@ -327,6 +329,7 @@
 </div>
 <div id="snap-indicator">⟂ 90°</div>
 <div id="hint-tooltip"></div>
+<button id="hand-btn" title="Mano: sposta la vista con un dito" onclick="toggleHand()">✋</button>
 <button id="move-base-btn" onclick="toggleMoveBase()" style="position:fixed;right:12px;bottom:calc(144px + var(--tb-h,0px));z-index:160;display:none;background:#1a6a3a;color:#fff;border:1px solid #2a9a5a;border-radius:22px;padding:12px 18px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5)">✥ Base in spostamento - tocca per finire</button>
 <button id="move-sel-btn" onclick="toggleMoveSel()" style="position:fixed;right:12px;bottom:calc(92px + var(--tb-h,0px));z-index:160;display:none;background:#0f3460;color:#fff;border:1px solid #4a9eff;border-radius:22px;padding:12px 18px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5)">✥ Sposta selezione</button>
 <button id="del-sel-btn" onclick="deleteSelection()" style="position:fixed;right:12px;bottom:calc(40px + var(--tb-h,0px));z-index:160;display:none;background:#e94560;color:#fff;border:none;border-radius:22px;padding:12px 18px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5)">🗑 Elimina selezione</button>
@@ -355,11 +358,12 @@
 //  Coordinate mondo in METRI. Y positiva verso l'alto.
 // ═══════════════════════════════════════════════════════════
 
+const COARSE       = !!(window.matchMedia && matchMedia('(pointer:coarse)').matches);   // schermo a dito (telefono): bersagli piu' larghi
 const SNAP_STEP    = 5;      // passo dell'angolo guidato (gradi)
 const SNAP_TOL_FINE = 1.5;   // tolleranza attorno ai passi da 5 gradi
 const SNAP_TOL_STRONG = 3;   // tolleranza attorno agli angoli notevoli (multipli di 15) e a quelli ortogonali ai muri vicini
-const SNAP_PT_PX   = 16;     // raggio in px per l'aggancio ai punti esistenti
-const COARSE       = !!(window.matchMedia && matchMedia('(pointer:coarse)').matches);   // schermo a dito (telefono): bersagli piu' larghi
+const SNAP_PT_PX   = COARSE ? 24 : 16;     // raggio in px per l'aggancio ai punti esistenti
+const HIT_HANDLE_PX = COARSE ? 24 : 14;    // maniglie di scale e serramenti, scelta delle intersezioni
 const HIT_PT_PX    = COARSE ? 24 : 15;
 const HIT_SEG_PX   = COARSE ? 20 : 12;
 const CLICK_SLOP   = COARSE ? 12 : 6;      // px sotto i quali un drag conta come click
@@ -592,7 +596,7 @@ function hitStairHandle(sx, sy) {
   const h = stairHandles(s);
   for (const k of ['a0','a1','c0','c1']) {
     const q = w2s(h[k].x, h[k].y);
-    if (Math.hypot(sx-q.x, sy-q.y) <= 14) return {idx:state.sel.idx, side:k};
+    if (Math.hypot(sx-q.x, sy-q.y) <= HIT_HANDLE_PX) return {idx:state.sel.idx, side:k};
   }
   return null;
 }
@@ -683,7 +687,7 @@ function resize() {
   canvas.width  = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // così disegniamo sempre in CSS px, ma nitido su schermi HiDPI
-  draw();
+  drawNow();
 }
 
 // posizione del puntatore relativa al canvas: niente offset hardcoded
@@ -773,7 +777,9 @@ function openingPos(i) {
 // ═══════════════════════════════════════════════════════════
 //  DISEGNO
 // ═══════════════════════════════════════════════════════════
-function draw() {
+let _drawRaf = 0;
+function draw() { if (!_drawRaf) _drawRaf = requestAnimationFrame(() => { _drawRaf = 0; drawNow(); }); }     // piu' richieste nello stesso fotogramma = un solo ridisegno
+function drawNow() {
   ctx.clearRect(0,0,W,H);
   drawGrid();
   drawUnderlay();
@@ -798,18 +804,23 @@ function draw() {
   // pulsante Elimina per la selezione a riquadro (sul telefono non c'e' il tasto Canc)
   const nSel = (state.selSet?state.selSet.size:0)+(state.selSeg?state.selSeg.size:0)+(state.selOpen?state.selOpen.size:0)+(state.selPen?state.selPen.size:0);
   const btn = document.getElementById('del-sel-btn');
-  if (btn) { btn.style.display = nSel && !state.selBox ? 'block' : 'none'; btn.textContent = '🗑 Elimina selezione ('+nSel+')'; }
+  if (btn) { setDisp(btn, nSel && !state.selBox ? 'block' : 'none'); setTxt(btn, '🗑 Elimina selezione ('+nSel+')'); }
   const mb = document.getElementById('move-sel-btn');
   if (!nSel) state.moveSel = false;
-  if (mb) { mb.style.display = nSel && !state.selBox ? 'block' : 'none';
-            mb.textContent = state.moveSel ? '✥ Trascina per spostare (tocca per finire)' : '✥ Sposta selezione';
-            mb.style.background = state.moveSel ? '#1a6a3a' : '#0f3460'; }
+  if (mb) { setDisp(mb, nSel && !state.selBox ? 'block' : 'none');
+            setTxt(mb, state.moveSel ? '✥ Trascina per spostare (tocca per finire)' : '✥ Sposta selezione');
+            const bg = state.moveSel ? '#1a6a3a' : '#0f3460'; if (mb.style.background !== bg) mb.style.background = bg; }
   const bm = document.getElementById('base-move');
   if (bm) bm.classList.toggle('ok', !!state.moveBase);
   const mbb = document.getElementById('move-base-btn');
-  if (mbb) mbb.style.display = state.moveBase ? 'block' : 'none';       // il blocco "sposta base" deve sempre vedersi, anche a pannello chiuso
+  if (mbb) setDisp(mbb, state.moveBase ? 'block' : 'none');       // il blocco "sposta base" deve sempre vedersi, anche a pannello chiuso
+  const hb = document.getElementById('hand-btn');
+  if (hb) { setTxt(hb, state.handMode ? '✋ Mano attiva - tocca per finire' : '✋'); hb.classList.toggle('on', !!state.handMode); }
   updateValid();
 }
+
+function setDisp(el, v) { if (el.style.display !== v) el.style.display = v; }
+function setTxt(el, t) { if (el.textContent !== t) el.textContent = t; }
 
 function drawGrid() {
   const step = state.zoom;
@@ -852,8 +863,9 @@ function drawScale() {
   state.scale.forEach((s,i) => drawStair(s, PRINT ? '' : isSel('scala',i) ? 'sel' : (state.hoverScala===i ? 'hover' : '')));
   if (!PRINT && state.sel && state.sel.kind==='scala' && state.scale[state.sel.idx]) {       // maniglie
     const h = stairHandles(state.scale[state.sel.idx]);
+    const hs = COARSE ? 9 : 6;
     ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#e94560'; ctx.lineWidth=2;
-    ['a0','a1','c0','c1'].forEach(k => { const q = w2s(h[k].x, h[k].y); ctx.fillRect(q.x-6,q.y-6,12,12); ctx.strokeRect(q.x-6,q.y-6,12,12); });
+    ['a0','a1','c0','c1'].forEach(k => { const q = w2s(h[k].x, h[k].y); ctx.fillRect(q.x-hs,q.y-hs,hs*2,hs*2); ctx.strokeRect(q.x-hs,q.y-hs,hs*2,hs*2); });
     ctx.restore();
   }
 }
@@ -998,7 +1010,7 @@ function drawWallPreview() {
   if (state.tool!=='wall' || state.wallOrigin===null || !state.wallPreview) return;
   const A  = state.points[state.wallOrigin]; if (!A) return;
   const sa = w2s(A.x,A.y), sb = w2s(state.wallPreview.x, state.wallPreview.y);
-  const snapped = state.wallSnapAngle!==null || state.wallSnapPoint!==null;
+  const snapped = state.wallSnapAngle!==null || state.wallSnapPoint!==null || !!(state.assist && state.assist.guides && state.assist.guides.length);
   ctx.strokeStyle = snapped?'#ffe066':'#aaaaff'; ctx.lineWidth=2;
   ctx.setLineDash(snapped?[]:[6,4]);
   ctx.beginPath(); ctx.moveTo(sa.x,sa.y); ctx.lineTo(sb.x,sb.y); ctx.stroke(); ctx.setLineDash([]);
@@ -1115,8 +1127,8 @@ function isSel(kind, idx) { return state.sel && state.sel.kind===kind && state.s
 //  TOOL
 // ═══════════════════════════════════════════════════════════
 const TIPS = {
-  select:   'Clicca un\'entità per il menu. Trascina nel vuoto = selezione a riquadro (poi Canc). Vista: rotella/tasto destro o due dita.',
-  wall:     'Muro come polilinea: clic sul punto di partenza, poi un clic per ogni vertice (snap ogni 15° e sui punti esistenti). Fine: clic sull\'ultimo punto, doppio clic o ESC.',
+  select:   'Tocca un\'entità per il menu. Trascina nel vuoto = selezione a riquadro. Vista: due dita, oppure il pulsante ✋ in alto a destra.',
+  wall:     'Muro come polilinea: clic sul punto di partenza, poi un clic per ogni vertice (angolo guidato ogni 5°, forte sui 15°, sugli angoli della base e sui punti esistenti). Fine: clic sull\'ultimo punto, doppio clic o ESC.',
   point:    'Clicca per aggiungere punti, quanti ne vuoi. Seleziona per uscire.',
   connect:  'Clicca il punto A, poi il punto B.',
   trilatere:'Clicca il 1° punto e dai il raggio: se la circonferenza incontra dei muri compaiono i punti numerati, altrimenti clicca un 2° punto, dai il raggio e scegli l\'intersezione.',
@@ -1158,7 +1170,7 @@ function setTool(t) {
   state.trilStep=0; state.trilPoints=[]; state.circles=[]; state.pending=null; state.cand=null;
   state.wallOrigin=null; state.wallPreview=null; state.wallSnapAngle=null; state.wallSnapPoint=null;
   state.openingDrag=null; state.drag=null; state.rectDraw=null; state.selBox=null; state.selSet=null; state.selOpen=null; state.selSeg=null;
-  state.moveBase=false;                     // cambiare strumento chiude lo spostamento della base: altrimenti ogni tocco la trascina
+  state.moveBase=false; state.handMode=false;       // cambiare strumento chiude lo spostamento della base e la mano: altrimenti ogni tocco li ripete
   if (state.pencilCurrent) {
     if (state.pencilCurrent.pts.length>1) { saveHistory(); state.pencilLines.push(state.pencilCurrent); }
     state.pencilCurrent=null;
@@ -1228,8 +1240,8 @@ function nearCorners(sx, sy) {
   return r.length ? r.slice(0,16) : null;
 }
 function setAssist(sx, sy, o) {
-  const loupe = state.touchMode && state.pointers.size>0 ? {fx:sx, fy:sy, px:o.tx, py:o.ty} : null;
-  state.assist = {sx, sy, corner:o.corner||null, guides:o.guides||null, loupe, near:nearCorners(sx,sy)};
+  const loupe = state.touchMode && state.pointers.size>0 && !o.noLoupe ? {fx:sx, fy:sy, px:o.tx, py:o.ty} : null;
+  state.assist = {sx, sy, corner:o.corner||null, guides:o.guides||null, marks:o.marks||null, loupe, near:nearCorners(sx,sy)};
 }
 function clearAssist() { state.assist=null; const si=document.getElementById('snap-indicator'); if (si) si.style.display='none'; }
 function drawAssist() {
@@ -1243,6 +1255,7 @@ function drawAssist() {
   });
   ctx.setLineDash([]);
   (a.near||[]).forEach(w => { const q=w2s(w.x,w.y); ctx.strokeStyle='rgba(0,229,255,.8)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(q.x,q.y-5); ctx.lineTo(q.x+5,q.y); ctx.lineTo(q.x,q.y+5); ctx.lineTo(q.x-5,q.y); ctx.closePath(); ctx.stroke(); });
+  (a.marks||[]).forEach(P => { const q=w2s(P.x,P.y); ctx.strokeStyle='rgba(127,224,255,.9)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(q.x,q.y,11,0,Math.PI*2); ctx.stroke(); });
   if (a.corner) { const q=w2s(a.corner.x,a.corner.y); ctx.strokeStyle='#00e5ff'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(q.x,q.y,13,0,Math.PI*2); ctx.stroke(); }
   if (a.loupe) {                                       // lente: il dito copre il punto, quindi sopra al dito compare l'ingrandimento della zona
     const L = a.loupe, R = 62, ls = 2.6, dpr = window.devicePixelRatio || 1;
@@ -1260,36 +1273,76 @@ function drawAssist() {
   ctx.restore();
 }
 
-// spostando un punto collegato: l'angolo con i muri vicini si aggancia come in Muro; con due vincoli (es. orizzontale e verticale) il punto va all'incrocio
+// risolve i vincoli vicini al dito: angoli con i muri collegati (angCons) e allineamenti in X o in Y con gli altri punti.
+// Con due vincoli non paralleli il punto va all'incrocio (es. orizzontale con un punto e verticale con un altro)
+function snapResolve(sx, sy, w, angCons, excl) {
+  const tol = COARSE ? 12 : 7, cand = [];
+  angCons.forEach(c => { const r = c.sn.a*Math.PI/180; cand.push({kind:'ang', score:c.sn.score, N:c.N, sn:c.sn, p0:{x:c.N.x, y:c.N.y}, d:{x:Math.cos(r), y:Math.sin(r)}, text:c.sn.text}); });
+  let bx=null, by=null;
+  state.points.forEach((P,j) => {
+    if (excl.has(j)) return;
+    const q = w2s(P.x,P.y), dx = Math.abs(q.x-sx), dy = Math.abs(q.y-sy);
+    if (dx<=tol && (!bx || dx<bx.d)) bx = {d:dx, P};
+    if (dy<=tol && (!by || dy<by.d)) by = {d:dy, P};
+  });
+  if (bx) cand.push({kind:'x', score:bx.d/tol, P:bx.P, p0:{x:bx.P.x, y:bx.P.y}, d:{x:0, y:1}, text:'allineato in X con '+bx.P.label});
+  if (by) cand.push({kind:'y', score:by.d/tol, P:by.P, p0:{x:by.P.x, y:by.P.y}, d:{x:1, y:0}, text:'allineato in Y con '+by.P.label});
+  if (!cand.length) return null;
+  cand.sort((p,q) => p.score-q.score);
+  const c1 = cand[0];
+  const guide = c => c.kind==='ang' ? {ox:c.N.x, oy:c.N.y, angle:c.sn.a, kind:c.sn.kind} : {ox:c.P.x, oy:c.P.y, angle:c.kind==='x'?90:0, kind:'align'};
+  const mark  = c => c.kind==='ang' ? null : c.P;
+  for (let k=1; k<cand.length; k++) {
+    const c2 = cand[k], det = c1.d.x*c2.d.y - c1.d.y*c2.d.x;
+    if (Math.abs(det) < 0.2) continue;
+    const t = ((c2.p0.x-c1.p0.x)*c2.d.y - (c2.p0.y-c1.p0.y)*c2.d.x)/det;
+    const pt = {x:c1.p0.x+t*c1.d.x, y:c1.p0.y+t*c1.d.y}, q = w2s(pt.x,pt.y);
+    if (Math.hypot(q.x-sx, q.y-sy) > 70) continue;
+    return {x:pt.x, y:pt.y, guides:[guide(c1), guide(c2)], marks:[mark(c1), mark(c2)].filter(Boolean), text:c1.text+'  +  '+c2.text, ang: c1.kind==='ang' ? c1.sn.a : c2.kind==='ang' ? c2.sn.a : null};
+  }
+  let pt;
+  if (c1.kind==='ang') { const d = Math.hypot(w.x-c1.N.x, w.y-c1.N.y); pt = {x:c1.N.x+d*c1.d.x, y:c1.N.y+d*c1.d.y}; }
+  else if (c1.kind==='x') pt = {x:c1.P.x, y:w.y};
+  else pt = {x:w.x, y:c1.P.y};
+  return {x:pt.x, y:pt.y, guides:[guide(c1)], marks:[mark(c1)].filter(Boolean), text:c1.text, ang: c1.kind==='ang' ? c1.sn.a : null};
+}
+
+// spostando un punto: angolo con i muri collegati e allineamento con i punti vicini; vicino a un angolo della base vince la calamita
 function dragPointTo(i, w, sx, sy) {
   const P = state.points[i], si = document.getElementById('snap-indicator');
-  let x=w.x, y=w.y, guides=null, corner=null, text=null;
+  let x=w.x, y=w.y, guides=null, marks=null, corner=null, text=null;
   const bs = baseSnap(sx,sy);
   if (bs) { x=bs.x; y=bs.y; corner=bs; text='\u25c8 angolo della base'; }
   else {
-    const cons=[];
-    neighborsOf(i).forEach(j => { const N=state.points[j], sn=angleSnapAt(N, w.x, w.y, refAnglesAt(j,i)); if (sn) cons.push({N, sn}); });
-    cons.sort((p,q) => p.sn.score-q.sn.score);
-    if (cons.length) {
-      const c1=cons[0], c2=cons[1];
-      const dir = c => ({x:Math.cos(c.sn.a*Math.PI/180), y:Math.sin(c.sn.a*Math.PI/180)});
-      let pt=null;
-      if (c2) {
-        const d1=dir(c1), d2=dir(c2), det = d2.x*d1.y - d1.x*d2.y;
-        if (Math.abs(det)>0.05) {
-          const bx=c2.N.x-c1.N.x, by=c2.N.y-c1.N.y, t=(d2.x*by - d2.y*bx)/det;
-          pt={x:c1.N.x+t*d1.x, y:c1.N.y+t*d1.y};
-          const q=w2s(pt.x,pt.y); if (Math.hypot(q.x-sx,q.y-sy)>70) pt=null;
-        }
-      }
-      if (pt) { guides=[c1,c2].map(c => ({ox:c.N.x, oy:c.N.y, angle:c.sn.a, kind:c.sn.kind})); text=c1.sn.text+'  +  '+c2.sn.text; }
-      else { const d=Math.hypot(w.x-c1.N.x, w.y-c1.N.y), dv=dir(c1); pt={x:c1.N.x+d*dv.x, y:c1.N.y+d*dv.y}; guides=[{ox:c1.N.x, oy:c1.N.y, angle:c1.sn.a, kind:c1.sn.kind}]; text=c1.sn.text; }
-      x=pt.x; y=pt.y;
-    }
+    const angCons=[], excl=new Set([i]);
+    neighborsOf(i).forEach(j => { excl.add(j); const N=state.points[j], sn=angleSnapAt(N, w.x, w.y, refAnglesAt(j,i)); if (sn) angCons.push({N, sn}); });
+    const r = snapResolve(sx, sy, w, angCons, excl);
+    if (r) { x=r.x; y=r.y; guides=r.guides; marks=r.marks; text=r.text; }
   }
   P.x=x; P.y=y;
   if (text) { si.textContent=text; si.style.display='block'; } else si.style.display='none';
-  const t=w2s(x,y); setAssist(sx,sy,{corner,guides,tx:t.x,ty:t.y});
+  const t=w2s(x,y); setAssist(sx,sy,{corner,guides,marks,tx:t.x,ty:t.y});
+}
+
+// Sposta selezione: i punti spostati si allineano in X o in Y con quelli che non si muovono
+function alignMulti(d, dx, dy, sx, sy) {
+  const sel = new Set(d.pts.map(p => p.i)), tol = (COARSE ? 12 : 7)/state.zoom;
+  let bx=null, by=null;
+  d.pts.forEach(p => {
+    const x = p.x+dx, y = p.y+dy;
+    state.points.forEach((Q,j) => {
+      if (sel.has(j)) return;
+      const ex = Q.x-x, ey = Q.y-y;
+      if (Math.abs(ex)<=tol && (!bx || Math.abs(ex)<Math.abs(bx.e))) bx = {e:ex, Q};
+      if (Math.abs(ey)<=tol && (!by || Math.abs(ey)<Math.abs(by.e))) by = {e:ey, Q};
+    });
+  });
+  const si = document.getElementById('snap-indicator'), guides=[], marks=[], txt=[];
+  if (bx) { dx += bx.e; guides.push({ox:bx.Q.x, oy:bx.Q.y, angle:90, kind:'align'}); marks.push(bx.Q); txt.push('allineato in X con '+bx.Q.label); }
+  if (by) { dy += by.e; guides.push({ox:by.Q.x, oy:by.Q.y, angle:0,  kind:'align'}); marks.push(by.Q); txt.push('allineato in Y con '+by.Q.label); }
+  if (txt.length) { si.textContent = txt.join('  +  '); si.style.display='block'; setAssist(sx, sy, {guides, marks, noLoupe:true}); }
+  else { si.style.display='none'; state.assist = null; }
+  return {dx, dy};
 }
 
 function nearestPoint(sx, sy, exclude) {
@@ -1319,23 +1372,21 @@ function updateWallPreview(sx, sy) {
   state.wallSnapPoint = null;
 
   // priorità 2: angolo del disegno importato; priorità 3: angolo guidato (passo 5°, notevoli 15°, ortogonali ai muri vicini)
-  let w = s2w(sx,sy), guides = null, corner = null;
+  let w = s2w(sx,sy), guides = null, marks = null, corner = null;
   const bs = baseSnap(sx, sy);
   if (bs) {
     w = {x:bs.x, y:bs.y}; corner = bs; state.wallSnapAngle = null;
     si.textContent = '\u25c8 angolo della base'; si.style.display='block';
   } else {
     const sn = angleSnapAt(O, w.x, w.y, refAnglesAt(state.wallOrigin));
-    state.wallSnapAngle = sn ? sn.a : null;
-    if (sn) {
-      const d = Math.hypot(w.x-O.x, w.y-O.y), r = sn.a*Math.PI/180;
-      w = { x: O.x + d*Math.cos(r), y: O.y + d*Math.sin(r) };
-      guides = [{ox:O.x, oy:O.y, angle:sn.a, kind:sn.kind}];
-      si.textContent = sn.text; si.style.display='block';
-    } else si.style.display='none';
+    const excl = new Set([state.wallOrigin].concat(neighborsOf(state.wallOrigin)));
+    const r = snapResolve(sx, sy, w, sn ? [{N:O, sn}] : [], excl);
+    state.wallSnapAngle = r && r.ang!==null ? r.ang : null;
+    if (r) { w = {x:r.x, y:r.y}; guides = r.guides; marks = r.marks; si.textContent = r.text; si.style.display='block'; }
+    else si.style.display='none';
   }
   state.wallPreview = w;
-  const t = w2s(w.x,w.y); setAssist(sx, sy, {corner, guides, tx:t.x, ty:t.y});
+  const t = w2s(w.x,w.y); setAssist(sx, sy, {corner, guides, marks, tx:t.x, ty:t.y});
   draw();
 }
 
@@ -1445,15 +1496,16 @@ function openingEnds(i) {
 function hitOpeningHandle(sx, sy) {
   if (!state.sel || state.sel.kind!=='opening') return null;
   const i = state.sel.idx, e = openingEnds(i); if (!e) return null;
-  if (Math.hypot(sx-e.a.x, sy-e.a.y) <= 12) return {idx:i, fixT:e.t1};
-  if (Math.hypot(sx-e.b.x, sy-e.b.y) <= 12) return {idx:i, fixT:e.t0};
+  if (Math.hypot(sx-e.a.x, sy-e.a.y) <= HIT_HANDLE_PX) return {idx:i, fixT:e.t1};
+  if (Math.hypot(sx-e.b.x, sy-e.b.y) <= HIT_HANDLE_PX) return {idx:i, fixT:e.t0};
   return null;
 }
 function drawOpeningHandles() {
   if (!state.sel || state.sel.kind!=='opening') return;
   const e = openingEnds(state.sel.idx); if (!e) return;
   ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#e94560'; ctx.lineWidth=2;
-  [e.a, e.b].forEach(p => { ctx.fillRect(p.x-6,p.y-6,12,12); ctx.strokeRect(p.x-6,p.y-6,12,12); });
+  const hs = COARSE ? 9 : 6;
+  [e.a, e.b].forEach(p => { ctx.fillRect(p.x-hs,p.y-hs,hs*2,hs*2); ctx.strokeRect(p.x-hs,p.y-hs,hs*2,hs*2); });
   ctx.restore();
 }
 
@@ -1678,7 +1730,8 @@ function setWallLength(si, m) {
 //  MENU
 // ═══════════════════════════════════════════════════════════
 const MENU_IDS = ['quota-context','seg-context','amb-context','context-menu','opening-context','entity-context','group-draw','group-ins','file-submenu'];
-function showMenu(id, x, y, above) {
+let _menuOpenedAt = 0;
+function showMenu(id, x, y, above, avoid) {
   hideAllMenus();
   if (id==='entity-context') document.getElementById('ent-edit').style.display = state.sel && state.sel.kind==='pencil' ? 'none' : '';
   if (id==='quota-context' && state.sel && state.sel.kind==='quota') {
@@ -1689,11 +1742,30 @@ function showMenu(id, x, y, above) {
     document.getElementById('qm-reset').style.display = g && g.qo ? '' : 'none';
   }
   const m = document.getElementById(id);
-  m.style.display='block';
-  const r = m.getBoundingClientRect();
-  m.style.left = Math.max(4, Math.min(x, window.innerWidth  - r.width  - 6)) + 'px';
-  m.style.top  = Math.max(4, Math.min(above ? y - r.height - 6 : y, window.innerHeight - r.height - 6)) + 'px';
+  m.style.display='block'; _menuOpenedAt = Date.now();
+  const r = m.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight, clamp = (v,a,b) => Math.max(a, Math.min(v, b));
+  let left, top;
+  if (!avoid) {
+    left = clamp(x, 4, vw - r.width - 6);
+    top  = clamp(above ? y - r.height - 6 : y, 4, vh - r.height - 6);
+  } else {                                   // menu aperto da un tocco: non deve mai coprire il dito, altrimenti il clic che segue sceglie una voce
+    const fx = avoid.x, fy = avoid.y, gap = 14;
+    left = x; top = y;
+    if (left + r.width > vw - 6) left = fx - r.width - gap;
+    if (top + r.height > vh - 6) top = fy - r.height - gap;
+    left = clamp(left, 4, vw - r.width - 6); top = clamp(top, 4, vh - r.height - 6);
+    if (fx >= left-10 && fx <= left+r.width+10 && fy >= top-10 && fy <= top+r.height+10) {
+      if (fy - r.height - gap >= 4) top = fy - r.height - gap;
+      else if (fy + gap + r.height <= vh - 6) top = fy + gap;
+      else left = fx < vw/2 ? Math.min(fx + gap, vw - r.width - 6) : Math.max(4, fx - r.width - gap);
+    }
+  }
+  m.style.left = left + 'px'; m.style.top = top + 'px';
 }
+// il clic sintetico che il browser genera dopo un tocco non deve cadere su un menu appena aperto
+document.addEventListener('click', e => {
+  if (Date.now() - _menuOpenedAt < 350 && e.target instanceof Element && MENU_IDS.some(id => document.getElementById(id).contains(e.target))) { e.stopPropagation(); e.preventDefault(); }
+}, true);
 function hideAllMenus(){ MENU_IDS.forEach(id => document.getElementById(id).style.display='none'); }
 function toggleMenu(id, btn) {
   const m = document.getElementById(id);
@@ -1926,7 +1998,7 @@ function handleClick(sx, sy, clientX, clientY) {
   if (state.pending) {
     for (const p of state.pending.pts) {
       const s = w2s(p.x,p.y);
-      if (Math.hypot(sx-s.x, sy-s.y) <= 16) { addPoint(p); return; }
+      if (Math.hypot(sx-s.x, sy-s.y) <= HIT_HANDLE_PX+2) { addPoint(p); return; }
     }
     return;
   }
@@ -1952,7 +2024,7 @@ function handleClick(sx, sy, clientX, clientY) {
     if (pick) {
       state.sel = {kind:pick[0], idx:pick[1]};
       if (pick[0]==='segment') state.sel.t = segmentT(pick[1], sx, sy);
-      draw(); showMenu(pick[2], clientX+8, clientY+8); return;
+      draw(); showMenu(pick[2], clientX+8, clientY+8, false, {x:clientX, y:clientY}); return;
     }
     state.sel=null; state.selSet=null; state.selOpen=null; state.selSeg=null; draw(); return;
   }
@@ -2026,7 +2098,7 @@ function handleClick(sx, sy, clientX, clientY) {
     if (state.trilStep===2) {
       if (state.cand) for (const p of state.cand) {            // punto proposto sul muro
         const s = w2s(p.x,p.y);
-        if (Math.hypot(sx-s.x, sy-s.y) <= 16) { addPoint(p); return; }
+        if (Math.hypot(sx-s.x, sy-s.y) <= HIT_HANDLE_PX+2) { addPoint(p); return; }
       }
       if (pi!==null && !state.trilPoints.includes(pi)) {
         state.trilPoints.push(pi);
@@ -2113,6 +2185,8 @@ canvas.addEventListener('pointerdown', e => {
   state.moved   = false;
   const keep = {sel:state.sel, selSet:state.selSet, selOpen:state.selOpen, selSeg:state.selSeg, selPen:state.selPen};   // selezione da ripristinare se arriva il secondo dito
 
+  // mano: un dito sposta la vista, qualunque sia lo strumento
+  if (state.handMode) { startPan(e.clientX, e.clientY); return; }
   // sposta base o selezione: il trascinamento sposta, non disegna
   if (state.moveBase && state.underlay) { const w=s2w(sx,sy); state.drag={kind:'base', x0:w.x, y0:w.y, ux:state.underlay.x, uy:state.underlay.y}; return; }
   if (state.moveSel) {
@@ -2237,7 +2311,7 @@ canvas.addEventListener('pointermove', e => {
     const d = state.drag;
     if (d.kind!=='base') dragSnap();                           // la base non entra nell'annulla
     if (d.kind==='point')    dragPointTo(d.idx, w, sx, sy);
-    if (d.kind==='multi')    { const dx=w.x-d.x0, dy=w.y-d.y0;
+    if (d.kind==='multi')    { const m = alignMulti(d, w.x-d.x0, w.y-d.y0, sx, sy), dx=m.dx, dy=m.dy;
       d.pts.forEach(p => { state.points[p.i].x=p.x+dx; state.points[p.i].y=p.y+dy; });
       d.pen.forEach(q => { state.pencilLines[q.i].pts = q.o.map(p => ({x:p.x+dx, y:p.y+dy})); }); }
     if (d.kind==='base')     { state.underlay.x=d.ux+w.x-d.x0; state.underlay.y=d.uy+w.y-d.y0; }
@@ -2283,6 +2357,7 @@ function endPointer(e) {
   // fine di uno zoom a due dita: non e' un clic, la selezione resta com'e'
   if (state.pinchUsed) { state.pinchUsed=false; state.drag=null; state.selBox=null; dragEnd(true); endPan(); draw(); return; }
   if (state.exp) { state.exp.drag=null; endPan(); draw(); return; }
+  if (state.handMode) { endPan(); draw(); return; }
 
   const {x:sx, y:sy} = evtPos(e);
   endPan();
@@ -2442,6 +2517,7 @@ function centerView() {
 }
 function updateZoomLabel(){ document.getElementById('sb-zoom').textContent = 'Zoom: '+Math.round(state.zoom*100/150)+'%'; }
 function updateCoords(p){
+  if (COARSE) return;                        // su telefono la barra non la mostra
   const w = s2w(p.x,p.y);
   document.getElementById('sb-coords').textContent = 'X:'+w.x.toFixed(2)+' Y:'+w.y.toFixed(2);
 }
@@ -2463,14 +2539,32 @@ function clearAll() {
 const SNAP_KEYS = ['points','segments','ambienti','openings','pilastri','scale','labels','pencilLines'];
 const COUNTERS  = ['pilastroCounter','scalaCounter','pointCounter'];   // numeri che non si riusano (PIL, SCALA, P)
 
-function snapshot() {
+// le foto dei punti pesano: nelle copie di Annulla ce n'e' una per passo (fino a 60), quindi i dati stanno in un deposito unico (pid)
+// e le copie portano solo il riferimento; il salvataggio vero (inline=true) le porta intere
+const photoStore = new Map(); let photoSeq = 0;
+function snapshot(inline) {
   const o = {};
   SNAP_KEYS.concat(COUNTERS).forEach(k => o[k] = state[k]);
+  o.points = state.points.map(p => {
+    if (!p.photo || !p.photo.data) return p;
+    if (!p.photo.pid) p.photo.pid = ++photoSeq;
+    photoStore.set(p.photo.pid, p.photo.data);
+    return inline ? p : Object.assign({}, p, {photo:{pid:p.photo.pid, note:p.photo.note}});
+  });
   return JSON.parse(JSON.stringify(o));
 }
+function photosIn(points) {                          // dopo un ripristino: dati presi dal deposito, o nuovo riferimento per le foto lette da file
+  points.forEach(p => {
+    if (!p.photo) return;
+    if (p.photo.data) { p.photo.pid = ++photoSeq; photoStore.set(p.photo.pid, p.photo.data); }
+    else if (p.photo.pid && photoStore.has(p.photo.pid)) p.photo.data = photoStore.get(p.photo.pid);
+    else p.photo = null;
+  });
+}
 function restore(o) {
-  SNAP_KEYS.forEach(k => { if (o[k]) state[k] = o[k]; });
+  SNAP_KEYS.forEach(k => { state[k] = o[k] || []; });               // una parte mancante nel file significa vuota, non "resta quella di prima"
   COUNTERS.forEach(k => state[k] = o[k] || 0);
+  photosIn(state.points);
   if (!state.pointCounter) state.pointCounter = state.points.length;
   state.scale.forEach(stairFix);
   legacyConvert(o);
@@ -2511,7 +2605,7 @@ function persist() {
   clearTimeout(_persistTimer);
   _persistTimer = setTimeout(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot()));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot(true)));
       flagSaved('salvato ' + new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}));
     } catch (err) {
       flagSaved('⚠ spazio esaurito — usa Salva progetto', true);
@@ -2553,7 +2647,7 @@ function stamp() {
 }
 function saveProject() {
   hideAllMenus();
-  const snap = snapshot(); snap.underlay = underlayToJSON();
+  const snap = snapshot(true); snap.underlay = underlayToJSON();
   download(stamp()+'_rilievo.json', JSON.stringify(snap, null, 1), 'application/json');
   setTip('Progetto salvato. Riaprilo con "Apri progetto" per riprendere il rilievo.');
 }
@@ -2569,7 +2663,8 @@ document.getElementById('file-json').addEventListener('change', e => {
     try {
       const o = JSON.parse(rd.result);
       if (!o || !Array.isArray(o.points)) throw new Error('formato non valido');
-      saveHistory(); restore(o); if (o.underlay) underlayFromJSON(o.underlay); centerView(); commit('Progetto caricato.');
+      saveHistory(); restore(o); state.underlay = null; state.wallsPrev = null; state.moveBase = false; refreshBasePanel();
+      if (o.underlay) underlayFromJSON(o.underlay); centerView(); commit('Progetto caricato.');
     } catch (err) { alert('File non valido: '+err.message); }
   };
   rd.readAsText(f);
@@ -2996,14 +3091,14 @@ document.getElementById('dialog-overlay').addEventListener('keydown', e => {
 
 function wxRemoveSmall(mask, w, h, minPx) {
   const lab = new Int32Array(w*h), out = new Uint8Array(w*h);
-  const stack = new Int32Array(w*h);
+  const stack = new Int32Array(w*h), buf = new Int32Array(w*h);     // buf: i pixel di ogni componente, uno dopo l'altro
   let id = 0;
   for (let i=0;i<w*h;i++) {
     if (!mask[i] || lab[i]) continue;
     id++; let sp=0; stack[sp++]=i; lab[i]=id;
-    let x0=w,x1=0,y0=h,y1=0; const members=[];
+    let x0=w,x1=0,y0=h,y1=0, bp=0;
     while (sp) {
-      const p=stack[--sp]; members.push(p);
+      const p=stack[--sp]; buf[bp++]=p;
       const px=p%w, py=(p-px)/w;
       if (px<x0)x0=px; if (px>x1)x1=px; if (py<y0)y0=py; if (py>y1)y1=py;
       for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++) {
@@ -3014,7 +3109,7 @@ function wxRemoveSmall(mask, w, h, minPx) {
         if (mask[q] && !lab[q]) { lab[q]=id; stack[sp++]=q; }
       }
     }
-    if (Math.max(x1-x0+1, y1-y0+1) >= minPx) for (const p of members) out[p]=1;
+    if (Math.max(x1-x0+1, y1-y0+1) >= minPx) for (let k=0;k<bp;k++) out[buf[k]]=1;
   }
   return out;
 }
@@ -3398,6 +3493,7 @@ function refreshBasePanel() {
   $id('base-alpha').value = Math.round(u.alpha*100);
   $id('base-info').textContent = u.w+'x'+u.h+' px  |  '+(u.mpp*100).toFixed(2)+' cm/px  |  '+(u.w*u.mpp).toFixed(1)+' x '+(u.h*u.mpp).toFixed(1)+' m';
 }
+function toggleHand() { state.handMode = !state.handMode; state.moveBase = false; state.moveSel = false; clearAssist(); setTip(state.handMode ? 'Mano: trascina con un dito per spostare la vista. Tocca di nuovo ✋ per finire.' : (TIPS[state.tool] || '')); draw(); }
 function toggleMoveSel()  { state.moveSel = !state.moveSel; state.moveBase = false; setTip(state.moveSel ? 'Trascina in un punto qualsiasi: si sposta tutta la selezione. Tocca di nuovo il pulsante per finire.' : 'Spostamento terminato.'); draw(); }
 function toggleMoveBase() { if (!state.underlay) return; state.moveBase = !state.moveBase; state.moveSel = false; setTip(state.moveBase ? 'Trascina per spostare la base sotto il disegno. Tocca di nuovo "Sposta base" per finire.' : 'Base posizionata.'); draw(); }
 function toggleBasePanel() { hideAllMenus(); if (!state.underlay) { setTip('Nessuna base planimetria caricata.'); return; } if ($id('base-panel').classList.contains('show')) closeBasePanel(); else $id('base-panel').classList.add('show'); }
@@ -3512,7 +3608,7 @@ async function impLoadImage(f) {
   const url = URL.createObjectURL(f);
   try {
     const img = await new Promise((ok,ko) => { const im=new Image(); im.onload=()=>ok(im); im.onerror=()=>ko(new Error('immagine non leggibile')); im.src=url; });
-    const k = Math.min(1, 5000/Math.max(img.naturalWidth, img.naturalHeight));
+    const k = Math.min(1, 3500/Math.max(img.naturalWidth, img.naturalHeight));   // piu' grande non serve e su telefono finisce la memoria
     const c = document.createElement('canvas'); c.width=Math.round(img.naturalWidth*k); c.height=Math.round(img.naturalHeight*k);
     const cx = c.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,c.width,c.height); cx.drawImage(img,0,0,c.width,c.height);
     imp.src = c; imp.note = 'Immagine senza scala: usa "Calibra scala" e clicca due punti di distanza nota.';
@@ -4025,9 +4121,17 @@ window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 250));
 window.addEventListener('beforeunload', e => {
   if (state.points.length) {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())); } catch (err) {}
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot(true))); } catch (err) {}
   }
 });
+// su Android la scheda in secondo piano puo' essere chiusa senza avviso: si salva subito, senza aspettare i 400 ms
+function persistNow() {
+  clearTimeout(_persistTimer);
+  if (!state.points.length) return;
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot(true))); } catch (err) {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState==='hidden') persistNow(); });
+window.addEventListener('pagehide', persistNow);
 
 // ═══════════════════════════════════════════════════════════
 //  AVVIO
@@ -4044,11 +4148,32 @@ if (recovered) { centerView(); setTip('Rilievo precedente ripristinato: '+state.
 else { flagSaved('nuovo rilievo'); draw(); }
 
 // ═══════════════════════════════════════════════════════════
+//  TASTO INDIETRO DI ANDROID: chiude finestre e menu prima di uscire dall'app
+// ═══════════════════════════════════════════════════════════
+let _backAt = 0, _leaving = false;
+try { history.pushState({k:'app'}, ''); } catch (e) {}
+window.addEventListener('popstate', () => {
+  if (_leaving) { _leaving = false; history.back(); return; }
+  try { history.pushState({k:'app'}, ''); } catch (e) {}
+  const shown = id => $id(id).classList.contains('show');
+  if (shown('dialog-overlay'))  { dialogCancel(); return; }
+  if (shown('photo-viewer'))    { closePhoto(); return; }
+  if (shown('imp-overlay'))     { impClose(); return; }
+  if (state.exp)                { expCancel(); return; }
+  if (MENU_IDS.some(id => $id(id).style.display==='block')) { hideAllMenus(); return; }
+  if (state.handMode)           { toggleHand(); return; }
+  if (state.tool!=='select')    { setTool('select'); return; }
+  const now = Date.now();
+  if (now - _backAt < 2000) { _leaving = true; history.go(-1); return; }
+  _backAt = now; setTip('Premi di nuovo Indietro per uscire (il rilievo è salvato).');
+});
+
+// ═══════════════════════════════════════════════════════════
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '1.11';
-const APP_NOTE = ["Spostando un punto o tracciando un muro col dito compare una lente d'ingrandimento sopra il dito", "Zoom a due dita verificato anche con lo strumento Misura", "Scala: l'app propone da sola le linee di quota dell'immagine (linee sottili con un tratto a ogni estremità, anche blu come nel catasto): si tocca quella giusta e si scrive la misura", "Calamita: un punto spostato o un muro tracciato vicino a un angolo della planimetria importata si aggancia a quell'angolo", "Muro: angolo guidato ogni 5° (prima 15°); gli angoli notevoli (0°, 90° e multipli di 15°) e quelli ortogonali o in linea con i muri vicini agganciano con più forza e mostrano una guida tratteggiata", "Spostando un punto collegato ai muri valgono gli stessi suggerimenti; con due vincoli (per esempio orizzontale con un muro e verticale con l'altro) il punto va all'incrocio"];
+const APP_VERSION = '1.12';
+const APP_NOTE = ["Menu del punto: non si apre più sotto il dito, quindi toccare un punto in basso o a destra non fa più partire un comando da solo", "Spostando un punto, trascinando la selezione o tracciando un muro, il punto si allinea in orizzontale o in verticale con gli altri punti vicini, con guida tratteggiata e cerchio sul punto di riferimento; con due allineamenti va all'incrocio", "Pulsante ✋ in alto a destra: con un dito si sposta la vista in qualunque strumento (tocca di nuovo per finire)", "Apri progetto: le parti mancanti nel file non restano più quelle del disegno di prima, e la base importata di prima viene tolta", "Più fluido: il disegno si aggiorna una sola volta per fotogramma", "Il rilievo si salva subito quando l'app va in secondo piano", "Maniglie di scale e serramenti e scelta tra le due intersezioni più larghe da toccare", "Le foto dei punti non vengono più copiate a ogni passo di Annulla (meno memoria)", "Foto e immagini importate ridotte a 3500 punti sul lato lungo, per non saturare la memoria del telefono", "Tasto Indietro di Android: chiude prima finestre, menu, mano e strumento attivo; per uscire due pressioni ravvicinate", "Aiuti a video aggiornati (angolo guidato ogni 5°, vista con due dita o con la mano)"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {
