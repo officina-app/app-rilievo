@@ -192,8 +192,8 @@
   <div class="menu-item hi" onclick="photoPlan()">📷 Fotografa planimetria</div>
   <div class="menu-item" onclick="toggleBasePanel()">🗺 Mostra/nascondi pannello base</div>
   <div class="menu-item" onclick="exportDXF()">📐 Esporta DXF</div>
-  <div class="menu-item" onclick="startExport('jpg')">🖼 Esporta JPG</div>
-  <div class="menu-item" onclick="startExport('pdf')">📄 Esporta PDF</div>
+  <div class="menu-item" onclick="exportJPG()">🖼 Esporta JPG</div>
+  <div class="menu-item" onclick="exportPDF()">📄 Esporta PDF</div>
   <div class="menu-item hi" onclick="saveProject()">💾 Salva progetto (.json)</div>
   <div class="menu-item hi" onclick="loadProject()">📂 Apri progetto (.json)</div>
   <div class="menu-item" onclick="clearAll()">🗑 Cancella tutto</div>
@@ -373,7 +373,7 @@ const state = {
   trilStep:0, trilPoints:[], circles:[], cand:null,   // cand = punti proposti sull'incrocio con i muri
   wallOrigin:null, wallPreview:null, wallSnapAngle:null, wallSnapPoint:null,
   openingType:null, openingDrag:null,
-  pilastroCounter:0, scalaCounter:0, pointCounter:0,
+  openingCounters:{F:0,PF:0,P:0}, pilastroCounter:0, scalaCounter:0, pointCounter:0,
   rectDraw:null,          // {x0,y0,x1,y1} anteprima Scala
   dragSnap:null,          // stato prima di un trascinamento, per l'Annulla
   drag:null,              // {kind,idx,...} trascinamento generico
@@ -1697,8 +1697,21 @@ function deleteSelection(noHist) {
   state.segments.forEach((s,i) => { if (segDel.has(i)) return; deg.set(s.a,(deg.get(s.a)||0)+1); deg.set(s.b,(deg.get(s.b)||0)+1); });
   segDel.forEach(i => { const s = state.segments[i]; [s.a,s.b].forEach(p => { const P = state.points[p]; if (!deg.get(p) && P && !P.note && !P.photo) pts.add(p); }); });
 
+  const map = {}; let k = 0;
+  state.points.forEach((_,i) => { if (!pts.has(i)) map[i] = k++; });
+  const segMap = {}, newSegs = [];
+  state.segments.forEach((s,i) => { if (segDel.has(i)) return; segMap[i] = newSegs.length; newSegs.push({...s, a:map[s.a], b:map[s.b]}); });
+  state.openings = state.openings
+    .filter((o,i) => !ops.has(i) && segMap[o.segIdx]!==undefined)
+    .map(o => ({...o, segIdx: segMap[o.segIdx]}));
+  state.ambienti = state.ambienti
+    .filter(a => !a.indices.some(i => pts.has(i)))
+    .map(a => ({...a, indices: a.indices.map(i => map[i])}));
+  state.pilastri.forEach(p => { if (p.ancora!==undefined) p.ancora = map[p.ancora]; });
   const pen = state.selPen || new Set(); state.pencilLines = state.pencilLines.filter((_,i) => !pen.has(i)); state.selPen = null;
-  removeItems(pts, segDel, ops);
+  state.points   = state.points.filter((_,i) => !pts.has(i));
+  state.segments = newSegs;
+  state.sel = null; state.selSet = null; state.selOpen = null; state.selSeg = null;
   commit('Eliminati '+segDel.size+' linee, '+pts.size+' punti, '+ops.size+' serramenti.');
 }
 
@@ -1706,27 +1719,34 @@ function deletePoints(indices, noHist) {
   const del = new Set(indices);
   if (!del.size) return;
   if (!noHist) saveHistory();
-  removeItems(del, new Set(), new Set());
-  commit(indices.length>1 ? indices.length+' punti eliminati.' : 'Punto eliminato.');
-}
 
-// toglie punti, linee e serramenti e rinumera tutto quello che vi fa riferimento:
-// le linee perdono i punti eliminati, i serramenti seguono la loro linea (o spariscono con lei),
-// gli ambienti con un vertice eliminato spariscono, i pilastri perdono l'ancoraggio
-function removeItems(pts, segDel, ops) {
+  // nuovo indice di ogni punto superstite
   const map = {}; let k = 0;
-  state.points.forEach((_,i) => { if (!pts.has(i)) map[i] = k++; });
-  const segMap = {}, newSegs = [];
+  state.points.forEach((_,i) => { if (!del.has(i)) map[i] = k++; });
+
+  // quali segmenti sopravvivono, e come si rinumerano
+  const segMap = {}; const newSegs = [];
   state.segments.forEach((s,i) => {
-    if (segDel.has(i) || pts.has(s.a) || pts.has(s.b)) return;
-    segMap[i] = newSegs.length; newSegs.push({...s, a:map[s.a], b:map[s.b]});
+    if (del.has(s.a) || del.has(s.b)) return;
+    segMap[i] = newSegs.length;
+    newSegs.push({ ...s, a: map[s.a], b: map[s.b] });
   });
-  state.openings = state.openings.filter((o,i) => !ops.has(i) && segMap[o.segIdx]!==undefined).map(o => ({...o, segIdx:segMap[o.segIdx]}));
-  state.ambienti = state.ambienti.filter(a => !a.indices.some(i => pts.has(i))).map(a => ({...a, indices:a.indices.map(i => map[i])}));
+
+  // i serramenti seguono il proprio segmento, o spariscono con esso
+  state.openings = state.openings
+    .filter(o => segMap[o.segIdx] !== undefined)
+    .map(o => ({ ...o, segIdx: segMap[o.segIdx] }));
+
+  state.ambienti = state.ambienti
+    .filter(a => !a.indices.some(i => del.has(i)))
+    .map(a => ({ ...a, indices: a.indices.map(i => map[i]) }));
+
   state.pilastri.forEach(p => { if (p.ancora!==undefined) p.ancora = map[p.ancora]; });
-  state.points   = state.points.filter((_,i) => !pts.has(i));
+
+  state.points   = state.points.filter((_,i) => !del.has(i));
   state.segments = newSegs;
   state.sel = null; state.selSet = null; state.selOpen = null; state.selSeg = null;
+  commit(indices.length>1 ? indices.length+' punti eliminati.' : 'Punto eliminato.');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1789,24 +1809,21 @@ function handleClick(sx, sy, clientX, clientY) {
   switch (state.tool) {
 
   case 'select': {
-    // il primo elemento toccato, in ordine di priorita', viene selezionato e apre il suo menu
-    const pick = [
-      ['opening',  pi===null ? hitOpening(sx,sy) : null, 'opening-context'],
-      ['point',    pi,                    'context-menu'],
-      ['label',    hitLabel(sx,sy),       'entity-context'],
-      ['opening',  hitOpeningQuota(sx,sy),'opening-context'],
-      ['quota',    hitQuota(sx,sy),       'quota-context'],
-      ['pilastro', hitPilastro(sx,sy),    'entity-context'],
-      ['scala',    hitScala(sx,sy),       'entity-context'],
-      ['pencil',   hitPencil(sx,sy),      'entity-context'],
-      ['segment',  hitSegment(sx,sy),     'seg-context'],
-      ['ambiente', hitAmbiente(sx,sy),    'amb-context'],
-    ].find(h => h[1]!==null);
-    if (pick) {
-      state.sel = {kind:pick[0], idx:pick[1]};
-      if (pick[0]==='segment') state.sel.t = segmentT(pick[1], sx, sy);
-      draw(); showMenu(pick[2], clientX+8, clientY+8); return;
+    const oi = pi===null ? hitOpening(sx,sy) : null;
+    if (oi!==null) { state.sel={kind:'opening',idx:oi}; draw(); showMenu('opening-context', clientX+8, clientY+8); return; }
+    if (pi!==null) {
+      state.sel={kind:'point',idx:pi}; draw();
+      // se il punto ha una foto, il menu la mostra; altrimenti menu standard
+      showMenu('context-menu', clientX+8, clientY+8); return;
     }
+    const li = hitLabel(sx,sy); if (li!==null) { state.sel={kind:'label',idx:li}; draw(); showMenu('entity-context', clientX+8, clientY+8); return; }
+    const oqi = hitOpeningQuota(sx,sy); if (oqi!==null) { state.sel={kind:'opening',idx:oqi}; draw(); showMenu('opening-context', clientX+8, clientY+8); return; }
+    const gqi = hitQuota(sx,sy);   if (gqi!==null) { state.sel={kind:'quota',idx:gqi}; draw(); showMenu('quota-context', clientX+8, clientY+8); return; }
+    const qi = hitPilastro(sx,sy); if (qi!==null) { state.sel={kind:'pilastro',idx:qi}; draw(); showMenu('entity-context', clientX+8, clientY+8); return; }
+    const ci = hitScala(sx,sy);    if (ci!==null) { state.sel={kind:'scala',idx:ci};    draw(); showMenu('entity-context', clientX+8, clientY+8); return; }
+    const mi = hitPencil(sx,sy);   if (mi!==null) { state.sel={kind:'pencil',idx:mi};   draw(); showMenu('entity-context', clientX+8, clientY+8); return; }
+    const gi = hitSegment(sx,sy);  if (gi!==null) { state.sel={kind:'segment',idx:gi,t:segmentT(gi,sx,sy)}; draw(); showMenu('seg-context', clientX+8, clientY+8); return; }
+    const ai = hitAmbiente(sx,sy); if (ai!==null) { state.sel={kind:'ambiente',idx:ai}; draw(); showMenu('amb-context', clientX+8, clientY+8); return; }
     state.sel=null; state.selSet=null; state.selOpen=null; state.selSeg=null; draw(); return;
   }
 
@@ -1970,6 +1987,7 @@ canvas.addEventListener('pointerdown', e => {
   if (state.moveSel) {
     const w=s2w(sx,sy), ids=new Set(state.selSet||[]);
     (state.selSeg||[]).forEach(k => { const g=state.segments[k]; if (g) { ids.add(g.a); ids.add(g.b); } });
+    saveHistory();
     state.drag={kind:'multi', x0:w.x, y0:w.y,
       pts:[...ids].filter(i=>state.points[i]).map(i=>({i, x:state.points[i].x, y:state.points[i].y})),
       pen:[...(state.selPen||[])].filter(i=>state.pencilLines[i]).map(i=>({i, o:state.pencilLines[i].pts.map(p=>({x:p.x, y:p.y}))}))};
@@ -1984,15 +2002,15 @@ canvas.addEventListener('pointerdown', e => {
     case 'stair':  { const w=s2w(sx,sy); state.rectDraw={x0:w.x,y0:w.y,x1:w.x,y1:w.y}; return; }
     case 'wall':   return;                  // i vertici si mettono al clic (handleClick)
     case 'opening': {
-      const hh = hitOpeningHandle(sx,sy); if (hh) { state.openingResize=hh; return; }
+      const hh = hitOpeningHandle(sx,sy); if (hh) { saveHistory(); state.openingResize=hh; return; }
       const oi = hitOpening(sx,sy);
       if (oi!==null) { state.openingDrag={idx:oi}; state.sel={kind:'opening',idx:oi}; }
       return;
     }
     case 'select': {
       if (e.shiftKey) { state.selBox={x0:sx,y0:sy,x1:sx,y1:sy,keep}; state.selSet=new Set(); return; }
-      const hh = hitOpeningHandle(sx,sy); if (hh) { state.openingResize=hh; return; }
-      const sh = hitStairHandle(sx,sy);   if (sh) { state.stairResize=sh; return; }
+      const hh = hitOpeningHandle(sx,sy); if (hh) { saveHistory(); state.openingResize=hh; return; }
+      const sh = hitStairHandle(sx,sy);   if (sh) { saveHistory(); state.stairResize=sh; return; }
       const oi = hitPoint(sx,sy)===null ? hitOpening(sx,sy) : null;
       if (oi!==null) { state.openingDrag={idx:oi}; state.sel={kind:'opening',idx:oi}; return; }
       const pi = hitPoint(sx,sy);
@@ -2059,13 +2077,11 @@ canvas.addEventListener('pointermove', e => {
 
   if (state.stairResize) {                   // maniglie della scala: la lunghezza va a gradini interi
     const r = state.stairResize, sc = state.scale[r.idx];
-    dragSnap();
     if (sc) { stairResize(sc, r.side, s2w(sx,sy)); showTooltip(sc.n+' gradini - H '+stairHeight(sc).toFixed(2)+' m', e.clientX, e.clientY); }
     draw(); return;
   }
   if (state.openingResize) {                 // maniglia: un estremo resta fermo, l'altro segue il puntatore
     const r = state.openingResize, op = state.openings[r.idx], len = segLength(op.segIdx);
-    dragSnap();
     let t = Math.max(0, Math.min(1, segmentT(op.segIdx, sx, sy)));
     if (Math.abs(t-r.fixT)*len < 0.30) t = r.fixT + Math.sign(t-r.fixT || 1)*0.30/len;
     op.width = +(Math.abs(t-r.fixT)*len).toFixed(2); op.t = (t+r.fixT)/2;
@@ -2085,7 +2101,7 @@ canvas.addEventListener('pointermove', e => {
   if (state.drag) {
     const w = s2w(sx,sy);
     const d = state.drag;
-    if (d.kind!=='base') dragSnap();                           // la base non entra nell'annulla
+    if (d.kind!=='multi' && d.kind!=='base') dragSnap();      // 'multi' salva gia' alla pressione, la base non entra nell'annulla
     if (d.kind==='point')    { state.points[d.idx].x=w.x;    state.points[d.idx].y=w.y; }
     if (d.kind==='multi')    { const dx=w.x-d.x0, dy=w.y-d.y0;
       d.pts.forEach(p => { state.points[p.i].x=p.x+dx; state.points[p.i].y=p.y+dy; });
@@ -2113,15 +2129,7 @@ canvas.addEventListener('pointermove', e => {
 });
 
 canvas.addEventListener('pointerup', endPointer);
-// gesto interrotto dal sistema (notifica, chiamata, gesto del telefono): si chiude tutto quello che era in corso,
-// lo spostamento gia' fatto resta e si puo' annullare
-canvas.addEventListener('pointercancel', e => {
-  state.pointers.delete(e.pointerId); endPan(); hideTooltip();
-  state.pinchDist=null; state.pinchMid=null; state.selBox=null; if (!state.pointers.size) state.pinchUsed=false;
-  state.drag=null; state.openingDrag=null; state.openingResize=null; state.stairResize=null; state.rectDraw=null; state.pencilCurrent=null;
-  if (state.dragSnap) { dragEnd(true); persist(); }
-  draw();
-});
+canvas.addEventListener('pointercancel', e => { state.pointers.delete(e.pointerId); endPan(); state.pinchDist=null; state.pinchMid=null; state.selBox=null; if (!state.pointers.size) state.pinchUsed=false; });
 
 function endPointer(e) {
   if (!state.pointers.has(e.pointerId)) return;
@@ -2155,7 +2163,8 @@ function endPointer(e) {
     setTip(state.selSet.size || nO || nS ? nS+' linee, '+state.selSet.size+' punti e '+nO+' serramenti selezionati — Canc per eliminarli.' : 'Nessun elemento nella selezione.');
     draw(); return;
   }
-  if (state.stairResize || state.openingResize) { hideTooltip(); state.stairResize=null; state.openingResize=null; dragEnd(true); persist(); draw(); return; }
+  if (state.stairResize) { hideTooltip(); state.stairResize=null; persist(); draw(); return; }
+  if (state.openingResize) { hideTooltip(); state.openingResize=null; persist(); draw(); return; }
   if (state.openingDrag) {
     hideTooltip();
     dragEnd(state.moved); if (state.moved) persist();
@@ -2163,7 +2172,7 @@ function endPointer(e) {
     if (!state.moved) handleClick(sx, sy, e.clientX, e.clientY);
     draw(); return;
   }
-  if (state.drag && (state.drag.kind==='multi' || state.drag.kind==='base')) { state.drag=null; dragEnd(true); persist(); draw(); return; }
+  if (state.drag && (state.drag.kind==='multi' || state.drag.kind==='base')) { state.drag=null; persist(); draw(); return; }
   if (state.drag) {
     const wasMoved = state.moved;
     state.drag=null; dragEnd(wasMoved);
@@ -2281,12 +2290,19 @@ function doZoom(f, sx, sy) {
   draw(); updateZoomLabel();
 }
 function centerView() {
-  const b = drawingBounds();
-  if (!b) { state.zoom=150; state.panX=W/2; state.panY=H/2; draw(); updateZoomLabel(); return; }
-  const sw=Math.max(b.maxX-b.minX, 0.5), sh=Math.max(b.maxY-b.minY, 0.5);
-  state.zoom = Math.min(Math.max(Math.min((W-90)/sw, (H-90)/sh), 4), 2000);
-  state.panX = W/2 - ((b.minX+b.maxX)/2)*state.zoom;
-  state.panY = H/2 + ((b.minY+b.maxY)/2)*state.zoom;
+  const all = [
+    ...state.points,
+    ...state.pilastri.flatMap(r => [{x:r.x,y:r.y},{x:r.x+r.w,y:r.y-r.h}]),
+    ...state.scale.flatMap(r => [{x:r.x,y:r.y},{x:r.x+r.w,y:r.y-r.h}]),
+  ];
+  if (!all.length) { state.zoom=150; state.panX=W/2; state.panY=H/2; draw(); updateZoomLabel(); return; }
+  const xs=all.map(p=>p.x), ys=all.map(p=>p.y);
+  const minX=Math.min(...xs), maxX=Math.max(...xs), minY=Math.min(...ys), maxY=Math.max(...ys);
+  const sw=Math.max(maxX-minX, 0.5), sh=Math.max(maxY-minY, 0.5);
+  state.zoom = Math.min((W-90)/sw, (H-90)/sh);
+  state.zoom = Math.min(Math.max(state.zoom, 4), 2000);
+  state.panX = W/2 - ((minX+maxX)/2)*state.zoom;
+  state.panY = H/2 + ((minY+maxY)/2)*state.zoom;
   draw(); updateZoomLabel();
 }
 function updateZoomLabel(){ document.getElementById('sb-zoom').textContent = 'Zoom: '+Math.round(state.zoom*100/150)+'%'; }
@@ -2301,7 +2317,7 @@ function clearAll() {
   saveHistory();
   state.points=[]; state.segments=[]; state.ambienti=[]; state.openings=[];
   state.pilastri=[]; state.scale=[]; state.labels=[]; state.pencilLines=[];
-  COUNTERS.forEach(k => state[k] = 0);
+  state.openingCounters={F:0,PF:0,P:0}; state.pilastroCounter=0; state.scalaCounter=0; state.pointCounter=0;
   state.sel=null; state.selSet=null; state.selOpen=null; state.selSeg=null;
   commit('Disegno azzerato.');
 }
@@ -2310,17 +2326,22 @@ function clearAll() {
 //  UNDO + SALVATAGGIO AUTOMATICO
 // ═══════════════════════════════════════════════════════════
 const SNAP_KEYS = ['points','segments','ambienti','openings','pilastri','scale','labels','pencilLines'];
-const COUNTERS  = ['pilastroCounter','scalaCounter','pointCounter'];   // numeri che non si riusano (PIL, SCALA, P)
 
 function snapshot() {
   const o = {};
-  SNAP_KEYS.concat(COUNTERS).forEach(k => o[k] = state[k]);
+  SNAP_KEYS.forEach(k => o[k] = state[k]);
+  o.openingCounters = state.openingCounters;
+  o.pilastroCounter = state.pilastroCounter;
+  o.scalaCounter    = state.scalaCounter;
+  o.pointCounter    = state.pointCounter;
   return JSON.parse(JSON.stringify(o));
 }
 function restore(o) {
   SNAP_KEYS.forEach(k => { if (o[k]) state[k] = o[k]; });
-  COUNTERS.forEach(k => state[k] = o[k] || 0);
-  if (!state.pointCounter) state.pointCounter = state.points.length;
+  state.openingCounters = o.openingCounters || {F:0,PF:0,P:0};
+  state.pilastroCounter = o.pilastroCounter || 0;
+  state.scalaCounter    = o.scalaCounter    || 0;
+  state.pointCounter    = o.pointCounter    || state.points.length;
   state.scale.forEach(stairFix);
   legacyConvert(o);
   state.ambienti.forEach(a => { delete a.area; delete a.volume; });   // superficie e volume si ricalcolano sempre (ambNet)
@@ -2424,19 +2445,20 @@ document.getElementById('file-json').addEventListener('change', e => {
   rd.readAsText(f);
 });
 
+function exportJPG() { startExport('jpg'); }
+function exportPDF() { startExport('pdf'); }
+
 // ═══════════════════════════════════════════════════════════
 //  EXPORT PDF / JPG: zona scelta a video, A4 in scala (1:50, 1:100, 1:200), fondo bianco, colori scuri
 // ═══════════════════════════════════════════════════════════
 const A4U = { port:{w:190, h:259}, land:{w:277, h:172} };      // area utile in mm: margini 10, piede di pagina 18
 
-// ingombro di tutto il disegno (punti, etichette, matita, pilastri, scale): per Centra vista e per la zona di export
 function drawingBounds() {
-  const b = { minX:Infinity, maxX:-Infinity, minY:Infinity, maxY:-Infinity };
-  const add = p => { if (p.x<b.minX) b.minX=p.x; if (p.x>b.maxX) b.maxX=p.x; if (p.y<b.minY) b.minY=p.y; if (p.y>b.maxY) b.maxY=p.y; };
-  state.points.forEach(add); state.labels.forEach(add);
-  state.pencilLines.forEach(l => l.pts.forEach(add));
-  state.pilastri.concat(state.scale).forEach(r => { add({x:r.x, y:r.y}); add({x:r.x+r.w, y:r.y-r.h}); });
-  return b.minX===Infinity ? null : b;
+  const pts = [...state.points, ...state.labels];
+  state.pilastri.concat(state.scale).forEach(r => { pts.push({x:r.x, y:r.y}, {x:r.x+r.w, y:r.y-r.h}); });
+  if (!pts.length) return null;
+  const xs = pts.map(q=>q.x), ys = pts.map(q=>q.y);
+  return { minX:Math.min(...xs), maxX:Math.max(...xs), minY:Math.min(...ys), maxY:Math.max(...ys) };
 }
 function startExport(kind) {
   hideAllMenus();
@@ -3628,8 +3650,8 @@ else { flagSaved('nuovo rilievo'); draw(); }
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '1.09';
-const APP_NOTE = ["Annulla: toccare una maniglia di scala o serramento, o \"Sposta selezione\", senza muovere nulla non lascia più un passo vuoto", "Sul telefono, se un gesto viene interrotto (notifica, chiamata, gesto di sistema) il trascinamento si chiude e non sposta più nulla al tocco successivo", "Centra vista e zona proposta per l'export comprendono anche etichette e matita", "App installata: con segnale debole un errore del server non sostituisce più la copia offline", "Codice ulteriormente snellito"];
+const APP_VERSION = '1.08';
+const APP_NOTE = ["Il progetto salvato non contiene più superficie e volume fissi degli ambienti: vengono sempre ricalcolati dai muri attuali, come già a video e negli export"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {
