@@ -14,7 +14,7 @@
     * { margin:0; padding:0; box-sizing:border-box; }
     body { background:#1a1a2e; color:#eee; font-family:'Segoe UI',system-ui,sans-serif; overflow:hidden; height:100vh; height:var(--vh,100vh); width:100vw; }
     /* niente selezione del testo con la pressione lunga solo dove si disegna e sui comandi: sul resto della pagina (campi, finestre) tutto normale */
-    #canvas, #imp-canvas, #toolbar, #statusbar, #menu-tab, #hand-btn, #exp-bar, #imp-bar, .floating-menu, #info-tip, #move-sel-btn, #del-sel-btn, #move-base-btn, .tool-btn, .menu-item
+    #canvas, #imp-canvas, #toolbar, #statusbar, #menu-tab, #hand-btn, #mag-btn, #exp-bar, #imp-bar, .floating-menu, #info-tip, #move-sel-btn, #del-sel-btn, #move-base-btn, .tool-btn, .menu-item
       { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent; }
 
     #toolbar {
@@ -99,6 +99,8 @@
     #exp-info { flex:1 1 220px; font-size:12px; }
     #hand-btn { position:fixed; top:10px; right:10px; z-index:160; min-width:46px; height:46px; border-radius:23px; padding:0 14px; font-size:20px; background:rgba(22,33,62,.82); color:#fff; border:1px solid #4a9eff; box-shadow:0 2px 10px rgba(0,0,0,.45); }
     #hand-btn.on { background:#1a6a3a; border-color:#2a9a5a; font-size:15px; }
+    #mag-btn { position:fixed; top:64px; right:10px; z-index:160; min-width:46px; height:46px; border-radius:23px; padding:0 14px; font-size:20px; background:rgba(22,33,62,.82); color:#fff; border:1px solid #4a9eff; box-shadow:0 2px 10px rgba(0,0,0,.45); }
+    #mag-btn.off { background:#6a1a2a; border-color:#e94560; font-size:15px; }
     #snap-indicator {
       position:fixed; top:60px; left:50%; transform:translateX(-50%);
       background:rgba(255,224,102,.92); color:#333; border-radius:5px;
@@ -330,6 +332,7 @@
 <div id="snap-indicator">⟂ 90°</div>
 <div id="hint-tooltip"></div>
 <button id="hand-btn" title="Mano: sposta la vista con un dito" onclick="toggleHand()">✋</button>
+<button id="mag-btn" title="Calamita: angoli, ortogonali e allineamenti" onclick="toggleMagnet()">🧲</button>
 <button id="move-base-btn" onclick="toggleMoveBase()" style="position:fixed;right:12px;bottom:calc(144px + var(--tb-h,0px));z-index:160;display:none;background:#1a6a3a;color:#fff;border:1px solid #2a9a5a;border-radius:22px;padding:12px 18px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5)">✥ Base in spostamento - tocca per finire</button>
 <button id="move-sel-btn" onclick="toggleMoveSel()" style="position:fixed;right:12px;bottom:calc(92px + var(--tb-h,0px));z-index:160;display:none;background:#0f3460;color:#fff;border:1px solid #4a9eff;border-radius:22px;padding:12px 18px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5)">✥ Sposta selezione</button>
 <button id="del-sel-btn" onclick="deleteSelection()" style="position:fixed;right:12px;bottom:calc(40px + var(--tb-h,0px));z-index:160;display:none;background:#e94560;color:#fff;border:none;border-radius:22px;padding:12px 18px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5)">🗑 Elimina selezione</button>
@@ -360,8 +363,10 @@
 
 const COARSE       = !!(window.matchMedia && matchMedia('(pointer:coarse)').matches);   // schermo a dito (telefono): bersagli piu' larghi
 const SNAP_STEP    = 5;      // passo dell'angolo guidato (gradi)
-const SNAP_TOL_FINE = 1.5;   // tolleranza attorno ai passi da 5 gradi
-const SNAP_TOL_STRONG = 3;   // tolleranza attorno agli angoli notevoli (multipli di 15) e a quelli ortogonali ai muri vicini
+const SNAP_TOL_FINE = 1;   // tolleranza attorno ai passi da 5 gradi
+const SNAP_TOL_STRONG = 2;   // tolleranza attorno agli angoli notevoli (multipli di 15) e a quelli ortogonali ai muri vicini
+let magnetOn = true;       // calamita (angoli, ortogonali, allineamenti, angoli della base): si spegne col pulsante 🧲 e resta com'e' alla riapertura
+try { if (localStorage.getItem('app_rilievo_magnete')==='0') magnetOn = false; } catch (e) {}
 const SNAP_PT_PX   = COARSE ? 24 : 16;     // raggio in px per l'aggancio ai punti esistenti
 const HIT_HANDLE_PX = COARSE ? 24 : 14;    // maniglie di scale e serramenti, scelta delle intersezioni
 const HIT_PT_PX    = COARSE ? 24 : 15;
@@ -819,6 +824,7 @@ function drawNow() {
   if (bm) bm.classList.toggle('ok', !!state.moveBase);
   const mbb = document.getElementById('move-base-btn');
   if (mbb) setDisp(mbb, state.moveBase ? 'block' : 'none');       // il blocco "sposta base" deve sempre vedersi, anche a pannello chiuso
+  updateMagnetBtn();
   const hb = document.getElementById('hand-btn');
   if (hb) { setTxt(hb, state.handMode ? '✋ Mano attiva - tocca per finire' : '✋'); hb.classList.toggle('on', !!state.handMode); }
   updateValid();
@@ -1202,6 +1208,7 @@ function neighborsOf(i, skip) {
 }
 function refAnglesAt(i, skip) { const O=state.points[i]; return neighborsOf(i,skip).map(j => angleDeg(O.x,O.y,state.points[j].x,state.points[j].y)); }
 function angleSnapAt(O, wx, wy, refs) {
+  if (!magnetOn) return null;
   const raw = angleDeg(O.x,O.y,wx,wy); let best=null;
   const consider = (a, tol, kind, label) => {
     const dev = Math.abs(angDiff(raw,a)); if (dev>tol) return;
@@ -1233,9 +1240,9 @@ function underlayCorners() {
 }
 function cornerWorld(c) { const u=state.underlay; return {x:u.x + c.px*u.mpp, y:u.y - c.py*u.mpp}; }
 function baseSnap(sx, sy) {
-  const u = state.underlay; if (!u || !u.visible) return null;
+  const u = state.underlay; if (!u || !u.visible || !magnetOn) return null;
   const list = underlayCorners(); if (!list) return null;
-  let best=null, bd = COARSE ? 26 : 14;
+  let best=null, bd = COARSE ? 16 : 10;
   list.forEach(c => { const w=cornerWorld(c), q=w2s(w.x,w.y), d=Math.hypot(q.x-sx, q.y-sy); if (d<bd) { bd=d; best=w; } });
   return best;
 }
@@ -1281,7 +1288,8 @@ function drawAssist() {
 // risolve i vincoli vicini al dito: angoli con i muri collegati (angCons) e allineamenti in X o in Y con gli altri punti.
 // Con due vincoli non paralleli il punto va all'incrocio (es. orizzontale con un punto e verticale con un altro)
 function snapResolve(sx, sy, w, angCons, excl) {
-  const tol = COARSE ? 12 : 7, cand = [];
+  if (!magnetOn) return null;
+  const tol = COARSE ? 8 : 5, cand = [];
   angCons.forEach(c => { const r = c.sn.a*Math.PI/180; cand.push({kind:'ang', score:c.sn.score, N:c.N, sn:c.sn, p0:{x:c.N.x, y:c.N.y}, d:{x:Math.cos(r), y:Math.sin(r)}, text:c.sn.text}); });
   let bx=null, by=null;
   state.points.forEach((P,j) => {
@@ -1302,7 +1310,7 @@ function snapResolve(sx, sy, w, angCons, excl) {
     if (Math.abs(det) < 0.2) continue;
     const t = ((c2.p0.x-c1.p0.x)*c2.d.y - (c2.p0.y-c1.p0.y)*c2.d.x)/det;
     const pt = {x:c1.p0.x+t*c1.d.x, y:c1.p0.y+t*c1.d.y}, q = w2s(pt.x,pt.y);
-    if (Math.hypot(q.x-sx, q.y-sy) > 70) continue;
+    if (Math.hypot(q.x-sx, q.y-sy) > 40) continue;
     return {x:pt.x, y:pt.y, guides:[guide(c1), guide(c2)], marks:[mark(c1), mark(c2)].filter(Boolean), text:c1.text+'  +  '+c2.text, ang: c1.kind==='ang' ? c1.sn.a : c2.kind==='ang' ? c2.sn.a : null};
   }
   let pt;
@@ -1331,7 +1339,8 @@ function dragPointTo(i, w, sx, sy) {
 
 // Sposta selezione: i punti spostati si allineano in X o in Y con quelli che non si muovono
 function alignMulti(d, dx, dy, sx, sy) {
-  const sel = new Set(d.pts.map(p => p.i)), tol = (COARSE ? 12 : 7)/state.zoom;
+  if (!magnetOn) { const si0 = document.getElementById('snap-indicator'); si0.style.display='none'; state.assist = null; return {dx, dy}; }
+  const sel = new Set(d.pts.map(p => p.i)), tol = (COARSE ? 8 : 5)/state.zoom;
   let bx=null, by=null;
   d.pts.forEach(p => {
     const x = p.x+dx, y = p.y+dy;
@@ -3500,6 +3509,13 @@ function refreshBasePanel() {
   $id('base-alpha').value = Math.round(u.alpha*100);
   $id('base-info').textContent = u.w+'x'+u.h+' px  |  '+(u.mpp*100).toFixed(2)+' cm/px  |  '+(u.w*u.mpp).toFixed(1)+' x '+(u.h*u.mpp).toFixed(1)+' m';
 }
+function toggleMagnet() {
+  magnetOn = !magnetOn;
+  try { localStorage.setItem('app_rilievo_magnete', magnetOn ? '1' : '0'); } catch (e) {}
+  clearAssist(); setTip(magnetOn ? 'Calamita accesa: angoli, ortogonali e allineamenti ti guidano.' : 'Calamita spenta: movimento libero, nessun aggancio ad angoli, ortogonali e allineamenti.');
+  updateMagnetBtn(); draw();
+}
+function updateMagnetBtn() { const b = document.getElementById('mag-btn'); if (b) { setTxt(b, magnetOn ? '🧲' : '🧲 spenta'); b.classList.toggle('off', !magnetOn); } }
 function toggleHand() { state.handMode = !state.handMode; state.moveBase = false; state.moveSel = false; clearAssist(); setTip(state.handMode ? 'Mano: trascina con un dito per spostare la vista. Tocca di nuovo ✋ per finire.' : (TIPS[state.tool] || '')); draw(); }
 function toggleMoveSel()  { state.moveSel = !state.moveSel; state.moveBase = false; setTip(state.moveSel ? 'Trascina in un punto qualsiasi: si sposta tutta la selezione. Tocca di nuovo il pulsante per finire.' : 'Spostamento terminato.'); draw(); }
 function toggleMoveBase() { if (!state.underlay) return; state.moveBase = !state.moveBase; state.moveSel = false; setTip(state.moveBase ? 'Trascina per spostare la base sotto il disegno. Tocca di nuovo "Sposta base" per finire.' : 'Base posizionata.'); draw(); }
@@ -4158,8 +4174,8 @@ else { flagSaved('nuovo rilievo'); draw(); }
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '1.14';
-const APP_NOTE = ["App installata su Android: la tastiera compariva ma non scriveva nei campi. La selezione del testo non è più disattivata su tutta la pagina (solo su disegno, barra e pulsanti) e non c'è più il blocco dello scorrimento di pagina", "Tolto il tasto Indietro gestito dall'app (introdotto nella 1.12): Indietro torna a comportarsi come prima"];
+const APP_VERSION = '1.15';
+const APP_NOTE = ["Nuovo pulsante 🧲 sotto la mano: spegne la calamita (angoli a 5 e 15 gradi, ortogonali ai muri, allineamenti con altri punti, angoli della base importata) per muovere i punti in piena libertà; lo stato resta alla riapertura", "Calamita accesa più debole: tolleranze degli angoli e degli allineamenti ridotte, così non trattiene più il punto", "Resta sempre attivo l'aggancio a un punto esistente quando si disegna un muro"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {
