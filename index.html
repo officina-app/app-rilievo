@@ -1714,10 +1714,25 @@ function resolveIntersections(pts) {
   setTip('Clicca ① o ② per scegliere il punto corretto (ESC per annullare).');
   draw();
 }
+// un punto che cade su un muro esistente (entro 1 cm, non su un suo estremo): il segmento che tiene
+function wallAt(p, eps) {
+  for (let i=0; i<state.segments.length; i++) {
+    const g = state.segments[i], A = state.points[g.a], B = state.points[g.b];
+    if (!A || !B) continue;
+    const dx=B.x-A.x, dy=B.y-A.y, L2=dx*dx+dy*dy; if (L2<1e-9) continue;
+    const t = ((p.x-A.x)*dx + (p.y-A.y)*dy) / L2;
+    if (t<0 || t>1) continue;
+    const d = Math.hypot(p.x-(A.x+t*dx), p.y-(A.y+t*dy));
+    if (d<eps && Math.hypot(p.x-A.x,p.y-A.y)>=eps && Math.hypot(p.x-B.x,p.y-B.y)>=eps) return {si:i, t};
+  }
+  return null;
+}
 function addPoint(p) {
+  state.pending=null; state.cand=null; state.circles=[]; state.trilStep=0; state.trilPoints=[];
+  const w = wallAt(p, 0.01);                      // cade su un muro gia' tracciato: diventa un suo vertice, non un punto staccato
+  if (w) { splitSegment(w.si, w.t); commit('Punto aggiunto sul muro: inserito come suo vertice.'); return; }
   saveHistory();
   state.points.push({ x:p.x, y:p.y, label:nextLabel(), note:'', photo:null });
-  state.pending=null; state.cand=null; state.circles=[]; state.trilStep=0; state.trilPoints=[];
   commit('Punto '+state.points[state.points.length-1].label+' aggiunto.');
 }
 
@@ -4293,8 +4308,8 @@ else { flagSaved('nuovo rilievo'); draw(); }
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '1.17';
-const APP_NOTE = ["Dati energetici del serramento: aggiunte le dimensioni di una specchiatura (larghezza/altezza), il numero di vetri e di eventuali pannelli ciechi", "Calcolate in automatico la superficie vetrata (specchiatura x numero vetri) e quella del telaio per differenza dalla bucatura - comparse nel messaggio di conferma e come colonne nell'elenco serramenti CSV"];
+const APP_VERSION = '1.18';
+const APP_NOTE = ["Trilaterazione/Circonferenza: se il punto trovato cade su un muro già tracciato, ora entra automaticamente come suo vertice invece di restare un punto staccato sopra la linea"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {
