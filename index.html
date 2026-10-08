@@ -14,7 +14,7 @@
     * { margin:0; padding:0; box-sizing:border-box; }
     body { background:#1a1a2e; color:#eee; font-family:'Segoe UI',system-ui,sans-serif; overflow:hidden; height:100vh; height:var(--vh,100vh); width:100vw; }
     /* niente selezione del testo con la pressione lunga solo dove si disegna e sui comandi: sul resto della pagina (campi, finestre) tutto normale */
-    #canvas, #imp-canvas, #toolbar, #statusbar, #menu-tab, #hand-btn, #mag-btn, #exp-bar, #imp-bar, .floating-menu, #info-tip, #move-sel-btn, #del-sel-btn, #move-base-btn, .tool-btn, .menu-item
+    #canvas, #imp-canvas, #toolbar, #statusbar, #menu-tab, #hand-btn, #mag-btn, #exp-bar, #imp-bar, .floating-menu, #info-tip, #move-sel-btn, #del-sel-btn, #move-base-btn, #wall-thick-btn, .tool-btn, .menu-item
       { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent; }
 
     #toolbar {
@@ -205,6 +205,7 @@
   <div class="menu-item" onclick="toggleBasePanel()">🗺 Mostra/nascondi pannello base</div>
   <div class="menu-item" onclick="exportDXF()">📐 Esporta DXF</div>
   <div class="menu-item" onclick="exportOpeningsCSV()">🪟 Esporta elenco serramenti (CSV)</div>
+  <div class="menu-item" onclick="exportSuperficieCommerciale()">🏠 Esporta superficie commerciale (CSV)</div>
   <div class="menu-item" onclick="startExport('jpg')">🖼 Esporta JPG</div>
   <div class="menu-item" onclick="startExport('pdf')">📄 Esporta PDF</div>
   <div class="menu-item hi" onclick="saveProject()">💾 Salva progetto (.json)</div>
@@ -236,6 +237,7 @@
   <div class="menu-item" onclick="segMenuAction('F')">🪟 Inserisci finestra qui</div>
   <div class="menu-item" onclick="segMenuAction('PF')">🚪 Inserisci porta-finestra qui</div>
   <div class="menu-item" onclick="segMenuAction('move')">✥ Sposta</div>
+  <div class="menu-item" onclick="segMenuAction('thick')">📏 Spessore e tipo</div>
   <div class="menu-item" onclick="segMenuAction('split')">✂ Spezza qui</div>
   <div class="menu-item" onclick="segMenuAction('delete')">🗑 Elimina linea</div>
 </div>
@@ -339,6 +341,7 @@
 <button id="move-base-btn" onclick="toggleMoveBase()" style="position:fixed;right:12px;bottom:calc(144px + var(--tb-h,0px));z-index:160;display:none;background:#1a6a3a;color:#fff;border:1px solid #2a9a5a;border-radius:22px;padding:12px 18px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5)">✥ Base in spostamento - tocca per finire</button>
 <button id="move-sel-btn" onclick="toggleMoveSel()" style="position:fixed;right:12px;bottom:calc(92px + var(--tb-h,0px));z-index:160;display:none;background:#0f3460;color:#fff;border:1px solid #4a9eff;border-radius:22px;padding:12px 18px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5)">✥ Sposta selezione</button>
 <button id="del-sel-btn" onclick="deleteSelection()" style="position:fixed;right:12px;bottom:calc(40px + var(--tb-h,0px));z-index:160;display:none;background:#e94560;color:#fff;border:none;border-radius:22px;padding:12px 18px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5)">🗑 Elimina selezione</button>
+<button id="wall-thick-btn" onclick="wallThickMenuAction()" style="position:fixed;right:12px;bottom:calc(144px + var(--tb-h,0px));z-index:160;display:none;background:#5a3d8a;color:#fff;border:1px solid #9f7fd1;border-radius:22px;padding:12px 18px;font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.5)">📏 Spessore/tipo muri</button>
 
 <div id="statusbar">
   <span id="sb-tool">Seleziona</span>
@@ -388,8 +391,8 @@ const state = {
 
   // --- entita' del rilievo
   points:      [],   // {x,y,label,note,photo}
-  segments:    [],   // {a,b}  indici in points[]
-  ambienti:    [],   // {indices,name,h,color,lo,outdoor}   superficie e volume: sempre ricalcolati (ambNet); outdoor (balcone/terrazza/loggia) = niente volume
+  segments:    [],   // {a,b,layer,commType,thick}  indici in points[]; commType/thick = tipo e spessore muro per la superficie commerciale
+  ambienti:    [],   // {indices,name,h,color,lo,outdoor,category}   superficie e volume: sempre ricalcolati (ambNet); outdoor = niente volume; category = voce di COMM_CAT per la superficie commerciale
   openings:    [],   // {type,segIdx,t,width,hb,h0,spessore,label,energy}  hb = altezza bucatura, spessore = profondita' nicchia, energy = scheda energetica facoltativa
   pilastri:    [],   // {x,y,w,h,label,ancora}
   scale:       [],   // {x,y,w,h,ax,sgn,n,pedata,alzata,label}  ax = asse di salita, sgn = verso, n gradini
@@ -823,6 +826,8 @@ function drawNow() {
   if (mb) { setDisp(mb, nSel && !state.selBox ? 'block' : 'none');
             setTxt(mb, state.moveSel ? '✥ Trascina per spostare (tocca per finire)' : '✥ Sposta selezione');
             const bg = state.moveSel ? '#1a6a3a' : '#0f3460'; if (mb.style.background !== bg) mb.style.background = bg; }
+  const wtb = document.getElementById('wall-thick-btn');
+  if (wtb) setDisp(wtb, (state.selSeg && state.selSeg.size && !state.selBox) ? 'block' : 'none');
   const bm = document.getElementById('base-move');
   if (bm) bm.classList.toggle('ok', !!state.moveBase);
   const mbb = document.getElementById('move-base-btn');
@@ -896,7 +901,59 @@ function segMenuAction(action) {
     draw(); return;
   }
   if (action==='F' || action==='PF') { state.openingType = action; insertOpening(s.idx, s.t); }
+  if (action==='thick') { wallThickMenuAction(); return; }
 }
+
+// spessore e tipo muro (Interno/Perimetrale/In comunione), per la superficie commerciale: dalla selezione multipla
+// di linee (selSeg) se c'e', altrimenti dalla singola linea selezionata
+function wallThickMenuAction() {
+  hideAllMenus();
+  const idxs = (state.selSeg && state.selSeg.size) ? [...state.selSeg] : (state.sel && state.sel.kind==='segment' ? [state.sel.idx] : []);
+  if (!idxs.length) return;
+  const first = state.segments[idxs[0]] || {};
+  askDialog('Spessore e tipo muro'+(idxs.length>1 ? ' ('+idxs.length+')' : ''), [
+    {label:'Tipo', id:'ct', type:'select', value:first.commType||'', options:WALL_TYPES},
+    {label:'Spessore (m)', id:'th', value:first.thick?String(first.thick):'', type:'number'},
+  ], idxs.length>1 ? 'Si applica a tutti i '+idxs.length+' muri selezionati.' : '', v => {
+    const th = parseFloat(v.th);
+    saveHistory();
+    idxs.forEach(i => { const g = state.segments[i]; if (!g) return; g.commType = v.ct || undefined; if (isFinite(th) && th>0) g.thick = th; });
+    commit('Spessore/tipo aggiornato su '+idxs.length+' mur'+(idxs.length>1 ? 'i' : 'o')+'.');
+  });
+}
+
+// Codice delle Valutazioni Immobiliari - Tecnoborsa (V/VI edizione): coefficienti di ragguaglio per la superficie commerciale.
+// kEcc = incidenza sulla quota che eccede i 25 mq, dove prevista. Se cambiano edizione/valori, si aggiorna solo questa tabella.
+const COMM_CAT = {
+  utile:         {label:'Superficie utile netta calpestabile', k:1},
+  mansarde:      {label:'Mansarde (H media min. 2,40 m)', k:0.75},
+  sottotetto:    {label:'Sottotetti non abitabili', k:0.35},
+  soppalcoAb:    {label:'Soppalchi abitabili', k:0.8},
+  soppalcoNonAb: {label:'Soppalchi non abitabili', k:0.15},
+  verandaFin:    {label:'Verande con finiture come i vani principali', k:0.8},
+  verandaSempl:  {label:'Verande senza finiture come i vani principali', k:0.6},
+  taverna:       {label:'Taverne e seminterrati abitabili collegati', k:0.6},
+  balconi:       {label:'Balconi e lastrici solari', k:0.25, kEcc:0.10},
+  terrazziLogge: {label:'Terrazzi e logge', k:0.35, kEcc:0.10},
+  terrazzoTasca: {label:'Terrazzi di attici a tasca', k:0.4, kEcc:0.10},
+  portici:       {label:'Portici e patii', k:0.35, kEcc:0.10},
+  corti:         {label:'Corti e cortili', k:0.1, kEcc:0.02},
+  giardinoApp:   {label:'Giardino di pertinenza - Appartamento', k:0.15, kEcc:0.05},
+  giardinoVilla: {label:'Giardino di pertinenza - Ville e villini', k:0.1, kEcc:0.02},
+  cantine:       {label:'Cantine, soffitte, locali accessori non collegati', k:0.2},
+  localeColl:    {label:'Locali accessori collegati ai vani principali', k:0.35},
+  localeTecnico: {label:'Locali tecnici', k:0.15},
+  boxAutorim:    {label:'Box in autorimessa collettiva', k:0.45},
+  boxNonColl:    {label:'Box non collegato ai vani principali', k:0.5},
+  boxColl:       {label:'Box collegato ai vani principali', k:0.6},
+  postoCoperto:  {label:'Posto auto coperto in autorimessa collettiva', k:0.35},
+  postoScoperto: {label:'Posto auto scoperto', k:0.2},
+};
+const WALL_TYPES = [
+  {value:'',            label:'Interno (non conta per la superficie commerciale)'},
+  {value:'perimetrale', label:'Perimetrale (100% fino a 50 cm)'},
+  {value:'comunione',   label:'In comunione (50% fino a 25 cm)'},
+];
 
 function hitAmbiente(sx, sy) {
   const w = s2w(sx,sy);
@@ -924,10 +981,13 @@ function ambMenuAction(action) {
       {label:'Altezza netta (m)', id:'h',    value:amb.h.toFixed(2),  type:'number'},
       {label:'Tipo', id:'outdoor', type:'select', value:amb.outdoor?'si':'no',
         options:[{value:'no',label:'Interno (con volume)'},{value:'si',label:'Balcone/terrazza/loggia (senza volume)'}]},
+      {label:'Categoria superficie commerciale', id:'cat', type:'select', value:amb.category||'',
+        options:[{value:'',label:'Non classificato'}].concat(Object.keys(COMM_CAT).map(k => ({value:k, label:COMM_CAT[k].label})))},
     ], 'Superficie '+ambNet(amb).toFixed(2)+' m²', v => {
       const hh = parseFloat(v.h); saveHistory();
       amb.name = v.name || amb.name; if (isFinite(hh) && hh>0) amb.h = hh;
       amb.outdoor = v.outdoor==='si';
+      amb.category = v.cat || undefined;
       commit('Ambiente aggiornato.');
     });
   }
@@ -3157,6 +3217,51 @@ function exportOpeningsCSV() {
   setTip('Elenco serramenti esportato (CSV, apribile in Excel): '+state.openings.length+' righe.');
 }
 
+// superficie commerciale in CSV, con i coefficienti Tecnoborsa gia' applicati (vedi COMM_CAT):
+// un totale per categoria (scaglione oltre i 25 mq compreso), piu' i muri classificati e il promemoria delle parti condominiali
+function exportSuperficieCommerciale() {
+  hideAllMenus();
+  const classificato = state.ambienti.some(a => a.category) || state.segments.some(s => s.commType);
+  if (!classificato) { setTip('Niente da esportare: classifica almeno un ambiente o un muro (Categoria / Spessore e tipo).'); return; }
+
+  const tot = {};
+  state.ambienti.forEach(a => { if (!a.category) return; tot[a.category] = (tot[a.category]||0) + ambNet(a); });
+
+  let muriPerim = 0, muriCom = 0;
+  state.segments.forEach(g => {
+    if (!g.commType || !g.thick) return;
+    const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return;
+    const len = Math.hypot(B.x-A.x, B.y-A.y);
+    if (g.commType==='perimetrale') muriPerim += len * Math.min(g.thick, 0.50);
+    if (g.commType==='comunione')   muriCom   += len * Math.min(g.thick, 0.25);
+  });
+
+  const rows = [['Categoria','Incidenza','Mq rilevati','Mq commerciali','Note']];
+  let totComm = 0;
+  Object.keys(COMM_CAT).forEach(key => {
+    const c = COMM_CAT[key], S = tot[key]||0;
+    if (!S) return;                                   // categoria non usata: non sporca l'elenco
+    let mq, nota;
+    if (c.kEcc!=null) {
+      mq = Math.min(S,25)*c.k + Math.max(0,S-25)*c.kEcc;
+      nota = 'fino a 25 mq al '+Math.round(c.k*100)+'%, oltre al '+Math.round(c.kEcc*100)+'%';
+    } else { mq = S*c.k; nota = ''; }
+    rows.push([c.label, c.k, S.toFixed(2), mq.toFixed(2), nota]);
+    totComm += mq;
+  });
+  if (muriPerim>0) { rows.push(['Muri perimetrali', 1, '', muriPerim.toFixed(2), 'spessore fino a 50 cm, 100%']); totComm += muriPerim; }
+  if (muriCom>0)   { rows.push(['Muri in comunione', 0.5, '', muriCom.toFixed(2), 'spessore fino a 25 cm, 50%']); totComm += muriCom; }
+  rows.push(['Parti condominiali', '', '', '', 'quota millesimale: da inserire a mano, non calcolabile dal rilievo']);
+  rows.push(['Totale mq commerciali', '', '', totComm.toFixed(2), '']);
+
+  const csv = rows.map(r => r.map(c => {
+    const s = String(c);
+    return /[;"\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  }).join(';')).join('\r\n');
+  download(stamp()+'_superficie_commerciale.csv', '﻿'+csv, 'text/csv');
+  setTip('Superficie commerciale esportata (CSV): '+totComm.toFixed(2)+' mq commerciali (esclusa quota millesimale).');
+}
+
 // ═══════════════════════════════════════════════════════════
 //  DIALOG
 // ═══════════════════════════════════════════════════════════
@@ -4308,8 +4413,8 @@ else { flagSaved('nuovo rilievo'); draw(); }
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '1.18';
-const APP_NOTE = ["Trilaterazione/Circonferenza: se il punto trovato cade su un muro già tracciato, ora entra automaticamente come suo vertice invece di restare un punto staccato sopra la linea"];
+const APP_VERSION = '1.19';
+const APP_NOTE = ["Nuova \"Categoria superficie commerciale\" sull'ambiente (coefficienti Codice Tecnoborsa) e \"Spessore e tipo\" sul muro (Interno/Perimetrale/In comunione, anche su più muri selezionati insieme)", "Nuovo export \"Superficie commerciale\" (CSV): un totale per categoria con l'incidenza già applicata, scaglione automatico oltre i 25 mq, muri perimetrali e in comunione, promemoria delle parti condominiali da inserire a mano"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {
