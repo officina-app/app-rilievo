@@ -204,6 +204,7 @@
   <div class="menu-item hi" onclick="photoPlan()">📷 Fotografa planimetria</div>
   <div class="menu-item" onclick="toggleBasePanel()">🗺 Mostra/nascondi pannello base</div>
   <div class="menu-item" onclick="exportDXF()">📐 Esporta DXF</div>
+  <div class="menu-item" onclick="exportOpeningsCSV()">🪟 Esporta elenco serramenti (CSV)</div>
   <div class="menu-item" onclick="startExport('jpg')">🖼 Esporta JPG</div>
   <div class="menu-item" onclick="startExport('pdf')">📄 Esporta PDF</div>
   <div class="menu-item hi" onclick="saveProject()">💾 Salva progetto (.json)</div>
@@ -225,6 +226,7 @@
 <div id="opening-context" class="floating-menu">
   <div class="menu-item" onclick="openingMenuAction('setdist')">📏 Imposta distanza</div>
   <div class="menu-item" onclick="openingMenuAction('edit')">✎ Modifica misure</div>
+  <div class="menu-item" onclick="openingMenuAction('energy')">📋 Dati energetici</div>
   <div class="menu-item" onclick="openingMenuAction('delete')">🗑 Elimina</div>
   <div class="menu-item" onclick="openingMenuAction('editall')">✎ Modifica tutti quelli dello stesso tipo</div>
   <div class="menu-item" onclick="openingMenuAction('renum')">🔢 Rinumera F, PF e P</div>
@@ -233,6 +235,7 @@
 <div id="seg-context" class="floating-menu">
   <div class="menu-item" onclick="segMenuAction('F')">🪟 Inserisci finestra qui</div>
   <div class="menu-item" onclick="segMenuAction('PF')">🚪 Inserisci porta-finestra qui</div>
+  <div class="menu-item" onclick="segMenuAction('move')">✥ Sposta</div>
   <div class="menu-item" onclick="segMenuAction('split')">✂ Spezza qui</div>
   <div class="menu-item" onclick="segMenuAction('delete')">🗑 Elimina linea</div>
 </div>
@@ -386,8 +389,8 @@ const state = {
   // --- entita' del rilievo
   points:      [],   // {x,y,label,note,photo}
   segments:    [],   // {a,b}  indici in points[]
-  ambienti:    [],   // {indices,name,h,color,lo}   superficie e volume: sempre ricalcolati (ambNet)
-  openings:    [],   // {type,segIdx,t,width,hb,h0,spessore,label}  hb = altezza bucatura, spessore = profondita' nicchia
+  ambienti:    [],   // {indices,name,h,color,lo,outdoor}   superficie e volume: sempre ricalcolati (ambNet); outdoor (balcone/terrazza/loggia) = niente volume
+  openings:    [],   // {type,segIdx,t,width,hb,h0,spessore,label,energy}  hb = altezza bucatura, spessore = profondita' nicchia, energy = scheda energetica facoltativa
   pilastri:    [],   // {x,y,w,h,label,ancora}
   scale:       [],   // {x,y,w,h,ax,sgn,n,pedata,alzata,label}  ax = asse di salita, sgn = verso, n gradini
   labels:      [],   // {x,y,text}
@@ -403,7 +406,7 @@ const state = {
   connectFrom:    null,
   trilStep:0, trilPoints:[], circles:[], cand:null,   // cand = punti proposti sull'incrocio con i muri
   wallOrigin:null, wallPreview:null, wallSnapAngle:null, wallSnapPoint:null, assist:null, touchMode:false,
-  openingType:null, openingDrag:null,
+  openingType:null, openingDrag:null, lastEnergy:null,   // lastEnergy = ultima scheda energetica compilata, per riproporla come predefinita
   pilastroCounter:0, scalaCounter:0, pointCounter:0,
   rectDraw:null,          // {x0,y0,x1,y1} anteprima Scala
   dragSnap:null,          // stato prima di un trascinamento, per l'Annulla
@@ -886,6 +889,12 @@ function segMenuAction(action) {
   const s = state.sel; if (!s || s.kind!=='segment' || !state.segments[s.idx]) return;
   if (action==='split')  { splitSegment(s.idx, s.t); return; }
   if (action==='delete') { state.selSeg = new Set([s.idx]); state.selSet = null; state.selOpen = null; state.selPen = null; deleteSelection(); return; }
+  if (action==='move') {
+    state.selSeg = new Set([s.idx]); state.selSet = null; state.selOpen = null; state.selPen = null;
+    state.moveSel = true;
+    setTip('Trascina in un punto qualsiasi: si sposta la linea. Tocca di nuovo il pulsante per finire.');
+    draw(); return;
+  }
   if (action==='F' || action==='PF') { state.openingType = action; insertOpening(s.idx, s.t); }
 }
 
@@ -913,9 +922,12 @@ function ambMenuAction(action) {
     askDialog('Modifica '+amb.name, [
       {label:'Nome',              id:'name', value:amb.name,          type:'text'},
       {label:'Altezza netta (m)', id:'h',    value:amb.h.toFixed(2),  type:'number'},
+      {label:'Tipo', id:'outdoor', type:'select', value:amb.outdoor?'si':'no',
+        options:[{value:'no',label:'Interno (con volume)'},{value:'si',label:'Balcone/terrazza/loggia (senza volume)'}]},
     ], 'Superficie '+ambNet(amb).toFixed(2)+' m²', v => {
       const hh = parseFloat(v.h); saveHistory();
       amb.name = v.name || amb.name; if (isFinite(hh) && hh>0) amb.h = hh;
+      amb.outdoor = v.outdoor==='si';
       commit('Ambiente aggiornato.');
     });
   }
@@ -938,7 +950,7 @@ function drawAmbienti() {
     ctx.fillStyle=C.ambName; ctx.font=prFont(14, 2.5, true); ctx.fillText(amb.name, c.x, c.y-dy);
     ctx.fillStyle=C.ambArea; ctx.font=prFont(13, 2, true);   ctx.fillText(area.toFixed(2)+' m²', c.x, c.y);
     ctx.fillStyle=C.ambH;    ctx.font=prFont(13, 2, true);   ctx.fillText('H. '+Number(amb.h).toFixed(2)+' m', c.x, c.y+dy);
-    ctx.fillStyle=C.ambVol;  ctx.font=prFont(11, 1.8);       ctx.fillText((area*amb.h).toFixed(2)+' m³', c.x, c.y+2*dy);
+    if (!amb.outdoor) { ctx.fillStyle=C.ambVol; ctx.font=prFont(11, 1.8); ctx.fillText((area*amb.h).toFixed(2)+' m³', c.x, c.y+2*dy); }
   });
 }
 
@@ -1565,6 +1577,41 @@ function openingMenuAction(action) {
       const tt = clampOpeningT(op, d/len), cl = Math.abs(tt - d/len) > 1e-6;
       saveHistory(); op.t = tt;
       commit(cl ? 'Serramento riposizionato al limite: deve restare dentro la parete.' : 'Serramento riposizionato.');
+    });
+    return;
+  }
+  if (action==='energy') {
+    const e0 = op.energy || {}, d = state.lastEnergy || {};
+    const pf = (k, def) => (e0[k]!==undefined ? e0[k] : (d[k]!==undefined ? d[k] : def));
+    askDialog('Dati energetici - '+op.label, [
+      {label:'Vetro', id:'vetro', type:'select', value:pf('vetro','D'),
+        options:[{value:'S',label:'Singolo (S)'},{value:'D',label:'Doppio (D)'},{value:'T',label:'Triplo (T)'}]},
+      {label:'Spessore vetro (mm)', id:'spVetro', type:'number', value:pf('spVetro','')},
+      {label:'Tipo distanziatore', id:'distanz', type:'text', value:pf('distanz','')},
+      {label:'Cassonetto presente', id:'cass', type:'select', value:pf('cass','no'),
+        options:[{value:'no',label:'No'},{value:'si',label:'Sì'}]},
+      {label:'Cassonetto isolato', id:'cassIso', type:'select', value:pf('cassIso','no'),
+        options:[{value:'no',label:'No'},{value:'si',label:'Sì'}]},
+      {label:'Cassonetto altezza (cm)', id:'cassH', type:'number', value:pf('cassH','')},
+      {label:'Cassonetto profondità (cm)', id:'cassP', type:'number', value:pf('cassP','')},
+      {label:'Telaio', id:'telaio', type:'select', value:pf('telaio','PVC'),
+        options:[{value:'All',label:'Alluminio'},{value:'PVC',label:'PVC'},{value:'Leg',label:'Legno'}]},
+      {label:'Spessore telaio (mm)', id:'spTelaio', type:'number', value:pf('spTelaio','')},
+      {label:'Oscurante', id:'oscurante', type:'select', value:pf('oscurante','avv'),
+        options:[{value:'pers',label:'Persiana'},{value:'avv',label:'Avvolgibile'},{value:'scuri',label:'Scuri'},{value:'no',label:'Nessuno'}]},
+      {label:'Conformazione', id:'conf', type:'select', value:pf('conf','1'),
+        options:[{value:'1',label:'Singola luce'},{value:'2',label:'Doppia specchiatura'},{value:'2p',label:'Doppia + pannello'},{value:'3',label:'Tripla/multipla'},{value:'arco',label:'Forma curva/arco'},{value:'altro',label:'Altro (vedi note)'}]},
+      {label:'Note', id:'note', type:'textarea', value:pf('note','')},
+    ], 'Facoltativo: lascia così per riusare gli stessi valori dell\'ultimo serramento compilato.', v => {
+      saveHistory();
+      op.energy = {
+        vetro:v.vetro, spVetro:v.spVetro?parseFloat(v.spVetro):undefined, distanz:v.distanz||undefined,
+        cass:v.cass, cassIso:v.cassIso, cassH:v.cassH?parseFloat(v.cassH):undefined, cassP:v.cassP?parseFloat(v.cassP):undefined,
+        telaio:v.telaio, spTelaio:v.spTelaio?parseFloat(v.spTelaio):undefined, oscurante:v.oscurante,
+        conf:v.conf, note:v.note||undefined,
+      };
+      state.lastEnergy = op.energy;
+      commit('Dati energetici di '+op.label+' salvati.');
     });
     return;
   }
@@ -2896,7 +2943,7 @@ function exportDXF() {
   const n = v => (Math.round(v*10000)/10000).toFixed(4);
 
   const LAYERS = [['MURI',7],['MURI_EST',1],['QUOTE',2],['SERRAMENTI',5],
-                  ['AMBIENTI',4],['PILASTRI',8],['SCALE',6],['SCALE_TESTO',8],['ETICHETTE',1],['MATITA',30]];
+                  ['AMBIENTI',4],['PILASTRI',8],['SCALE',6],['SCALE_TESTO',8],['ETICHETTE',1],['MATITA',30],['TABELLE',3]];
 
   // --- HEADER
   g(0,'SECTION'); g(2,'HEADER');
@@ -2961,8 +3008,26 @@ function exportDXF() {
     const cc = ambCenter(a), cx = cc.x+(a.lo?a.lo.x:0), cy = cc.y+(a.lo?a.lo.y:0), net = ambNet(a);
     text('AMBIENTI', cx, cy, 0.16, a.name, true);
     text('AMBIENTI', cx, cy-0.22, 0.12,
-         net.toFixed(2)+' mq  h='+a.h+' m  '+(net*a.h).toFixed(2)+' mc', true);
+         net.toFixed(2)+' mq  h='+a.h+' m'+(a.outdoor ? '' : '  '+(net*a.h).toFixed(2)+' mc'), true);
   });
+
+  // tabella ambienti: nome, area, altezza, volume e totali, utile per controllare al volo errori o dimenticanze
+  if (state.ambienti.length) {
+    const bx = Math.max(...state.points.map(p=>p.x), 0) + 1;
+    let by = Math.max(...state.points.map(p=>p.y), 0);
+    const rowH = 0.22;
+    text('TABELLE', bx, by, 0.16, 'AMBIENTI', false); by -= rowH*1.4;
+    let totArea = 0, totVol = 0;
+    state.ambienti.forEach(a => {
+      const net = ambNet(a), vol = net*a.h;
+      totArea += net; if (!a.outdoor) totVol += vol;
+      text('TABELLE', bx, by, 0.11,
+           a.name+'  '+net.toFixed(2)+' mq  H '+a.h.toFixed(2)+' m  '+(a.outdoor ? '-' : vol.toFixed(2)+' mc'), false);
+      by -= rowH;
+    });
+    by -= rowH*0.4;
+    text('TABELLE', bx, by, 0.13, 'Totale  '+totArea.toFixed(2)+' mq  '+totVol.toFixed(2)+' mc', false);
+  }
 
   // serramenti
   state.openings.forEach(op => {
@@ -3020,7 +3085,40 @@ function exportDXF() {
   g(0,'ENDSEC'); g(0,'EOF');
 
   download(stamp()+'_rilievo.dxf', L.join('\r\n'), 'application/dxf');
-  setTip('DXF esportato in formato R12, unità metri. Layer separati per muri, quote, serramenti, pilastri, scale.');
+  setTip('DXF esportato in formato R12, unità metri. Layer separati per muri, quote, serramenti, pilastri, scale, ambienti (con tabella riassuntiva).');
+}
+
+// elenco serramenti in CSV (apribile in Excel): dimensioni sempre presenti, dati energetici solo dove compilati
+function exportOpeningsCSV() {
+  hideAllMenus();
+  if (!state.openings.length) { setTip('Nessun serramento da esportare.'); return; }
+  const TIPO = {F:'Finestra', PF:'Porta-finestra', P:'Porta'};
+  const VETRO = {S:'Singolo', D:'Doppio', T:'Triplo'};
+  const TELAIO = {All:'Alluminio', PVC:'PVC', Leg:'Legno'};
+  const OSC = {pers:'Persiana', avv:'Avvolgibile', scuri:'Scuri', no:'Nessuno'};
+  const CONF = {'1':'Singola luce', '2':'Doppia specchiatura', '2p':'Doppia + pannello', '3':'Tripla/multipla', arco:'Forma curva/arco', altro:'Altro'};
+  const SI = {si:'Sì', no:'No'};
+  const head = ['Label','Tipo','Larghezza foro (m)','Altezza foro (m)','Altezza sottofinestra (m)','Profondità nicchia (m)',
+    'Vetro','Spessore vetro (mm)','Distanziatore','Cassonetto','Cassonetto isolato','Cassonetto H (cm)','Cassonetto Prof (cm)',
+    'Telaio','Spessore telaio (mm)','Oscurante','Conformazione','Note'];
+  const rows = [head];
+  state.openings.forEach(op => {
+    const e = op.energy || {};
+    rows.push([
+      op.label, TIPO[op.type]||op.type,
+      op.width.toFixed(2), op.hb!=null ? (+op.hb).toFixed(2) : '',
+      (op.type==='F' && op.h0) ? (+op.h0).toFixed(2) : '', op.spessore ? (+op.spessore).toFixed(2) : '',
+      e.vetro ? VETRO[e.vetro] : '', e.spVetro ?? '', e.distanz || '',
+      e.cass ? SI[e.cass] : '', e.cassIso ? SI[e.cassIso] : '', e.cassH ?? '', e.cassP ?? '',
+      e.telaio ? TELAIO[e.telaio] : '', e.spTelaio ?? '', e.oscurante ? OSC[e.oscurante] : '', e.conf ? CONF[e.conf] : '', e.note || '',
+    ]);
+  });
+  const csv = rows.map(r => r.map(c => {
+    const s = String(c);
+    return /[;"\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  }).join(';')).join('\r\n');
+  download(stamp()+'_serramenti.csv', '﻿'+csv, 'text/csv');
+  setTip('Elenco serramenti esportato (CSV, apribile in Excel): '+state.openings.length+' righe.');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4174,8 +4272,8 @@ else { flagSaved('nuovo rilievo'); draw(); }
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '1.15';
-const APP_NOTE = ["Nuovo pulsante 🧲 sotto la mano: spegne la calamita (angoli a 5 e 15 gradi, ortogonali ai muri, allineamenti con altri punti, angoli della base importata) per muovere i punti in piena libertà; lo stato resta alla riapertura", "Calamita accesa più debole: tolleranze degli angoli e degli allineamenti ridotte, così non trattiene più il punto", "Resta sempre attivo l'aggancio a un punto esistente quando si disegna un muro"];
+const APP_VERSION = '1.16';
+const APP_NOTE = ["Nuova voce \"Dati energetici\" nel menu del serramento: vetro, telaio, cassonetto, oscurante e conformazione (quante ante, pannello, forma) - facoltativa, i valori restano quelli dell'ultimo serramento compilato finché non li cambi", "Nuovo export \"Elenco serramenti\" (CSV per Excel) con le dimensioni di tutti i serramenti e i dati energetici dove presenti", "Il DXF ora porta anche una tabella con nome, superficie, altezza e volume di ogni ambiente, più i totali", "Gli ambienti possono essere segnati come \"Balcone/terrazza/loggia\": niente volume calcolato, l'altezza resta solo come promemoria", "Dal menu di una linea, \"Sposta\" la sposta trascinandola da un punto qualsiasi, senza dover passare dalla selezione multipla"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {
