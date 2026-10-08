@@ -1484,6 +1484,15 @@ function insertPilastro(ptIdx, at) {
 // ═══════════════════════════════════════════════════════════
 //  SERRAMENTI
 // ═══════════════════════════════════════════════════════════
+// superficie di bucatura, vetrata (se la scheda energetica ha le dimensioni di una specchiatura) e telaio per differenza
+function openingAreas(op) {
+  const bucatura = op.width * (op.hb ?? (op.type==='F' ? 1.40 : op.type==='PF' ? 2.40 : 2.10));
+  const e = op.energy || {};
+  if (!e.vetroL || !e.vetroH) return {bucatura, vetrata:null, telaio:null};
+  const vetrata = e.vetroL * e.vetroH * (e.vetri || 1);
+  return {bucatura, vetrata, telaio: bucatura - vetrata};
+}
+
 function selectOpeningType(type) {
   hideAllMenus();
   setTool('opening');
@@ -1599,19 +1608,28 @@ function openingMenuAction(action) {
       {label:'Spessore telaio (mm)', id:'spTelaio', type:'number', value:pf('spTelaio','')},
       {label:'Oscurante', id:'oscurante', type:'select', value:pf('oscurante','avv'),
         options:[{value:'pers',label:'Persiana'},{value:'avv',label:'Avvolgibile'},{value:'scuri',label:'Scuri'},{value:'no',label:'Nessuno'}]},
-      {label:'Conformazione', id:'conf', type:'select', value:pf('conf','1'),
-        options:[{value:'1',label:'Singola luce'},{value:'2',label:'Doppia specchiatura'},{value:'2p',label:'Doppia + pannello'},{value:'3',label:'Tripla/multipla'},{value:'arco',label:'Forma curva/arco'},{value:'altro',label:'Altro (vedi note)'}]},
+      {label:'Vetri (numero di specchiature)', id:'vetri', value:pf('vetri','1'), type:'number'},
+      {label:'Pannelli ciechi (numero, eventuali)', id:'pannelli', value:pf('pannelli','0'), type:'number'},
+      {label:'Larghezza di una specchiatura (m)', id:'vetroL', value:pf('vetroL',''), type:'number'},
+      {label:'Altezza di una specchiatura (m)',   id:'vetroH', value:pf('vetroH',''), type:'number'},
       {label:'Note', id:'note', type:'textarea', value:pf('note','')},
-    ], 'Facoltativo: lascia così per riusare gli stessi valori dell\'ultimo serramento compilato.', v => {
+    ], 'Facoltativo: lascia così per riusare gli stessi valori dell\'ultimo serramento compilato. Situazioni particolari: nota + foto.', v => {
       saveHistory();
+      const vetroL = parseFloat(v.vetroL), vetroH = parseFloat(v.vetroH);
+      const vetri = parseInt(v.vetri), pannelli = parseInt(v.pannelli);
       op.energy = {
         vetro:v.vetro, spVetro:v.spVetro?parseFloat(v.spVetro):undefined, distanz:v.distanz||undefined,
         cass:v.cass, cassIso:v.cassIso, cassH:v.cassH?parseFloat(v.cassH):undefined, cassP:v.cassP?parseFloat(v.cassP):undefined,
         telaio:v.telaio, spTelaio:v.spTelaio?parseFloat(v.spTelaio):undefined, oscurante:v.oscurante,
-        conf:v.conf, note:v.note||undefined,
+        vetri:(isFinite(vetri)&&vetri>0)?vetri:1, pannelli:(isFinite(pannelli)&&pannelli>0)?pannelli:0,
+        vetroL:(isFinite(vetroL)&&vetroL>0)?vetroL:undefined, vetroH:(isFinite(vetroH)&&vetroH>0)?vetroH:undefined,
+        note:v.note||undefined,
       };
       state.lastEnergy = op.energy;
-      commit('Dati energetici di '+op.label+' salvati.');
+      const ar = openingAreas(op);
+      commit(ar.vetrata!=null
+        ? 'Dati energetici di '+op.label+' salvati. Bucatura '+ar.bucatura.toFixed(2)+' mq, vetro '+ar.vetrata.toFixed(2)+' mq ('+Math.round(100*ar.vetrata/ar.bucatura)+'%), telaio '+ar.telaio.toFixed(2)+' mq.'
+        : 'Dati energetici di '+op.label+' salvati.');
     });
     return;
   }
@@ -3096,21 +3114,24 @@ function exportOpeningsCSV() {
   const VETRO = {S:'Singolo', D:'Doppio', T:'Triplo'};
   const TELAIO = {All:'Alluminio', PVC:'PVC', Leg:'Legno'};
   const OSC = {pers:'Persiana', avv:'Avvolgibile', scuri:'Scuri', no:'Nessuno'};
-  const CONF = {'1':'Singola luce', '2':'Doppia specchiatura', '2p':'Doppia + pannello', '3':'Tripla/multipla', arco:'Forma curva/arco', altro:'Altro'};
   const SI = {si:'Sì', no:'No'};
   const head = ['Label','Tipo','Larghezza foro (m)','Altezza foro (m)','Altezza sottofinestra (m)','Profondità nicchia (m)',
     'Vetro','Spessore vetro (mm)','Distanziatore','Cassonetto','Cassonetto isolato','Cassonetto H (cm)','Cassonetto Prof (cm)',
-    'Telaio','Spessore telaio (mm)','Oscurante','Conformazione','Note'];
+    'Telaio','Spessore telaio (mm)','Oscurante','Vetri (numero)','Pannelli (numero)','Larghezza specchiatura (m)','Altezza specchiatura (m)',
+    'Superficie bucatura (mq)','Superficie vetrata (mq)','Superficie telaio (mq)','Note'];
   const rows = [head];
   state.openings.forEach(op => {
-    const e = op.energy || {};
+    const e = op.energy || {}, ar = openingAreas(op);
     rows.push([
       op.label, TIPO[op.type]||op.type,
       op.width.toFixed(2), op.hb!=null ? (+op.hb).toFixed(2) : '',
       (op.type==='F' && op.h0) ? (+op.h0).toFixed(2) : '', op.spessore ? (+op.spessore).toFixed(2) : '',
       e.vetro ? VETRO[e.vetro] : '', e.spVetro ?? '', e.distanz || '',
       e.cass ? SI[e.cass] : '', e.cassIso ? SI[e.cassIso] : '', e.cassH ?? '', e.cassP ?? '',
-      e.telaio ? TELAIO[e.telaio] : '', e.spTelaio ?? '', e.oscurante ? OSC[e.oscurante] : '', e.conf ? CONF[e.conf] : '', e.note || '',
+      e.telaio ? TELAIO[e.telaio] : '', e.spTelaio ?? '', e.oscurante ? OSC[e.oscurante] : '',
+      e.vetri ?? '', e.pannelli ?? '', e.vetroL ?? '', e.vetroH ?? '',
+      ar.bucatura.toFixed(2), ar.vetrata!=null ? ar.vetrata.toFixed(2) : '', ar.telaio!=null ? ar.telaio.toFixed(2) : '',
+      e.note || '',
     ]);
   });
   const csv = rows.map(r => r.map(c => {
@@ -4272,8 +4293,8 @@ else { flagSaved('nuovo rilievo'); draw(); }
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '1.16';
-const APP_NOTE = ["Nuova voce \"Dati energetici\" nel menu del serramento: vetro, telaio, cassonetto, oscurante e conformazione (quante ante, pannello, forma) - facoltativa, i valori restano quelli dell'ultimo serramento compilato finché non li cambi", "Nuovo export \"Elenco serramenti\" (CSV per Excel) con le dimensioni di tutti i serramenti e i dati energetici dove presenti", "Il DXF ora porta anche una tabella con nome, superficie, altezza e volume di ogni ambiente, più i totali", "Gli ambienti possono essere segnati come \"Balcone/terrazza/loggia\": niente volume calcolato, l'altezza resta solo come promemoria", "Dal menu di una linea, \"Sposta\" la sposta trascinandola da un punto qualsiasi, senza dover passare dalla selezione multipla"];
+const APP_VERSION = '1.17';
+const APP_NOTE = ["Dati energetici del serramento: aggiunte le dimensioni di una specchiatura (larghezza/altezza), il numero di vetri e di eventuali pannelli ciechi", "Calcolate in automatico la superficie vetrata (specchiatura x numero vetri) e quella del telaio per differenza dalla bucatura - comparse nel messaggio di conferma e come colonne nell'elenco serramenti CSV"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {
