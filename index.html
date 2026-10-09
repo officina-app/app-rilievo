@@ -14,7 +14,7 @@
     * { margin:0; padding:0; box-sizing:border-box; }
     body { background:#1a1a2e; color:#eee; font-family:'Segoe UI',system-ui,sans-serif; overflow:hidden; height:100vh; height:var(--vh,100vh); width:100vw; }
     /* niente selezione del testo con la pressione lunga solo dove si disegna e sui comandi: sul resto della pagina (campi, finestre) tutto normale */
-    #canvas, #imp-canvas, #toolbar, #statusbar, #menu-tab, #hand-btn, #mag-btn, #exp-bar, #imp-bar, .floating-menu, #info-tip, .fab, .tool-btn, .menu-item
+    #canvas, #imp-canvas, #toolbar, #statusbar, #menu-tab, #hand-btn, #mag-btn, #exp-bar, #imp-bar, .floating-menu, #info-tip, .fab, .tool-btn, .menu-item, #sel-bar
       { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent; }
 
     #toolbar {
@@ -102,6 +102,14 @@
     #mag-btn { position:fixed; top:64px; right:10px; z-index:160; min-width:46px; height:46px; border-radius:23px; padding:0 14px; font-size:20px; background:rgba(22,33,62,.82); color:#fff; border:1px solid #4a9eff; box-shadow:0 2px 10px rgba(0,0,0,.45); }
     #mag-btn.off { background:#6a1a2a; border-color:#e94560; font-size:15px; }
     .fab { position:fixed; right:12px; z-index:160; display:none; color:#fff; border-radius:22px; padding:12px 18px; font-size:15px; box-shadow:0 4px 14px rgba(0,0,0,.5); }
+    /* azioni della selezione multipla: compaiono vicino all'ultimo elemento toccato, mai sotto il dito */
+    #sel-bar { position:fixed; left:0; top:0; z-index:165; display:none; align-items:center; gap:4px; flex-wrap:wrap; max-width:94vw;
+      background:rgba(22,33,62,.96); border:1px solid #4a9eff; border-radius:10px; padding:4px 6px; box-shadow:0 4px 14px rgba(0,0,0,.5); font-size:13px; color:#ddd; }
+    #sel-bar button { background:#0f3460; color:#eee; border:1px solid #1a4a7a; border-radius:6px; padding:6px 9px; font-size:13px; cursor:pointer; white-space:nowrap; }
+    #sel-bar button.on  { background:#1a6a3a; border-color:#2a9a5a; }
+    #sel-bar button.del { background:#e94560; border-color:#e94560; }
+    #selb-n { padding:0 4px; color:#ffe066; white-space:nowrap; }
+    @media (pointer:coarse) { #sel-bar { gap:3px; padding:4px; } #sel-bar button { padding:9px 7px; } }
     #snap-indicator {
       position:fixed; top:60px; left:50%; transform:translateX(-50%);
       background:rgba(255,224,102,.92); color:#333; border-radius:5px;
@@ -185,6 +193,7 @@
 
 <div id="group-draw" class="floating-menu">
   <div class="menu-item tool-item" id="ti-wall" onclick="pickTool('wall')"><span class="ti">▭</span><span class="tt"><b>Muro</b><small>Traccia i muri, un vertice dopo l'altro</small></span></div>
+  <div class="menu-item tool-item" id="ti-room" onclick="pickTool('room')"><span class="ti">⬚</span><span class="tt"><b>Stanza rettangolare</b><small>Trascina un rettangolo: 4 muri e l'ambiente in un colpo</small></span></div>
   <div class="menu-item tool-item" id="ti-trilatere" onclick="pickTool('trilatere')"><span class="ti">◎</span><span class="tt"><b>Trilatera</b><small>Trova un punto da due distanze misurate</small></span></div>
   <div class="menu-item tool-item" id="ti-measure" onclick="pickTool('measure')"><span class="ti">📏</span><span class="tt"><b>Misura</b><small>Legge la distanza tra due punti</small></span></div>
   <div class="menu-item tool-item" id="ti-split" onclick="pickTool('split')"><span class="ti">✂</span><span class="tt"><b>Spezza</b><small>Divide un muro con un nuovo punto</small></span></div>
@@ -223,9 +232,11 @@
   <div class="menu-item"    onclick="menuAction('photo')">📷 Fai foto</div>
   <div class="menu-item"    onclick="menuAction('note')">📝 Inserisci nota</div>
   <div class="menu-item"    onclick="menuAction('absorb')">⟷ Riassorbi punto nella linea</div>
+  <div class="menu-item"    onclick="menuAction('multi')">➕ Selezione multipla</div>
   <div class="menu-item"    onclick="menuAction('delete')">🗑 Elimina punto</div>
 </div>
 <div id="opening-context" class="floating-menu">
+  <div class="menu-item" onclick="openingMenuAction('multi')">➕ Selezione multipla</div>
   <div class="menu-item" onclick="openingMenuAction('setdist')">📏 Imposta distanza</div>
   <div class="menu-item" onclick="openingMenuAction('edit')">✎ Modifica misure</div>
   <div class="menu-item" onclick="openingMenuAction('energy')">📋 Dati energetici</div>
@@ -235,6 +246,8 @@
   <div class="menu-item" onclick="openingMenuAction('deldoors')">🗑 Elimina tutte le porte (P)</div>
 </div>
 <div id="seg-context" class="floating-menu">
+  <div class="menu-item hi" id="sm-conf" onclick="segMenuAction('confirm')"></div>
+  <div class="menu-item" onclick="segMenuAction('multi')">➕ Selezione multipla</div>
   <div class="menu-item" onclick="segMenuAction('F')">🪟 Inserisci finestra qui</div>
   <div class="menu-item" onclick="segMenuAction('PF')">🚪 Inserisci porta-finestra qui</div>
   <div class="menu-item" onclick="segMenuAction('move')">✥ Sposta</div>
@@ -340,15 +353,22 @@
 <button id="hand-btn" title="Mano: sposta la vista con un dito" onclick="toggleHand()">✋</button>
 <button id="mag-btn" title="Calamita: angoli, ortogonali e allineamenti" onclick="toggleMagnet()">🧲</button>
 <button id="move-base-btn"  class="fab" onclick="toggleMoveBase()"      style="bottom:calc(144px + var(--tb-h,0px));background:#1a6a3a;border:1px solid #2a9a5a">✥ Base in spostamento - tocca per finire</button>
-<button id="move-sel-btn"   class="fab" onclick="toggleMoveSel()"       style="bottom:calc(92px + var(--tb-h,0px));background:#0f3460;border:1px solid #4a9eff">✥ Sposta selezione</button>
-<button id="del-sel-btn"    class="fab" onclick="deleteSelection()"     style="bottom:calc(40px + var(--tb-h,0px));background:#e94560;border:none">🗑 Elimina selezione</button>
-<button id="wall-thick-btn" class="fab" onclick="wallThickMenuAction()" style="bottom:calc(196px + var(--tb-h,0px));background:#5a3d8a;border:1px solid #9f7fd1">📏 Spessore/tipo muri</button>
+<div id="sel-bar">
+  <span id="selb-n" title="Elementi selezionati"></span>
+  <button id="selb-add" title="Ogni tocco aggiunge o toglie un elemento" onclick="toggleMulti()">➕ Aggiungi</button>
+  <button id="selb-conf" title="Conferma il tipo proposto ai muri esterni da validare" onclick="confirmProposals()">✔ Conferma</button>
+  <button id="selb-thick" title="Spessore e tipo dei muri selezionati" onclick="wallThickMenuAction()">📏 Spessore</button>
+  <button id="selb-move" title="Sposta la selezione trascinando" onclick="toggleMoveSel()">✥ Sposta</button>
+  <button id="selb-del" class="del" title="Elimina la selezione" onclick="deleteSelection()">🗑</button>
+  <button title="Fine selezione" onclick="clearSelection()">✖</button>
+</div>
 
 <div id="statusbar">
   <span id="sb-tool">Seleziona</span>
   <span id="sb-points">Punti: 0</span>
   <span id="sb-segments">Segmenti: 0</span>
   <span id="sb-valid">Misure validate: 0/0</span>
+  <span id="sb-dubbi" style="display:none;color:#ffb35c;cursor:pointer" title="Seleziona i muri esterni da validare" onclick="selectDubbi()"></span>
   <span id="sb-ambienti">Ambienti: 0</span>
   <span id="sb-coords">X:0.00 Y:0.00</span>
   <span id="sb-zoom">Zoom: 100%</span>
@@ -418,6 +438,9 @@ const state = {
   measureFrom:null, hoverScala:null, stairResize:null, exp:null,   // exp = selezione della zona da esportare
   measureShow:null,       // {ax,ay,bx,by,d}: ultima misura, tratteggio temporaneo fino alla prossima azione
   selBox:null,
+  multi:false,            // selezione multipla attiva: ogni tocco aggiunge o toglie un elemento invece di aprirne il menu
+  selAnchor:null,         // {x,y} mondo: dove compare la barra della selezione (ultimo elemento toccato)
+  roomDraw:null,          // {x0,y0,x1,y1,a} anteprima Stanza rettangolare (a = punto esistente agganciato all'angolo di partenza)
   pencilCurrent:null,
   pointers:new Map(), pinchDist:null, isPanning:false, panStart:null, panOrigin:null,
   downPos:null, moved:false,
@@ -439,6 +462,7 @@ const COL_PRINT = {
   stair:'#333', stairArrow:'#000',
 };
 let C = COL_SCREEN, PRINT = false;
+let PLAY = null;   // solo durante l'esportazione: posizioni dei testi spostati perche' non si sovrappongano {q:{}, op:{}, amb:Map}
 // export in scala: spessori e caratteri in mm di carta (1 px logico = 1/96 di pollice); a video restano in pixel
 const PX_MM = 96/25.4, PRINT_U = 0.62;            // PRINT_U accorcia in stampa le distanze fisse tra testi e linee
 function prLw(px, mm) { return PRINT ? mm*PX_MM : px; }
@@ -451,6 +475,9 @@ const OPENING_DEF = { F:{width:1.20, hb:1.40, h0:0.90}, PF:{width:1.20, hb:2.40,
 function opHb(op) { return op.hb ?? OPENING_DEF[op.type].hb; }
 
 function newPoint(x, y) { state.points.push({x, y, label:nextLabel(), note:'', photo:null}); return state.points.length-1; }
+// valori in sequenza: il nuovo elemento propone quelli dell'ultimo dello stesso tipo, si conferma con un tocco
+function lastAmbH()   { const a = state.ambienti[state.ambienti.length-1]; return a && a.h > 0 ? a.h : 2.70; }
+function lastStair()  { const s = state.scale[state.scale.length-1]; return s ? {p:s.pedata, a:s.alzata} : {p:STAIR_PEDATA, a:STAIR_ALZATA}; }
 function resetTril() { state.trilStep=0; state.trilPoints=[]; state.circles=[]; state.pending=null; state.cand=null; }
 
 function inPoly(pts, x, y) {
@@ -476,9 +503,39 @@ function ambCenter(am) {
   return { x: pts.reduce((t,p)=>t+p.x,0)/pts.length, y: pts.reduce((t,p)=>t+p.y,0)/pts.length };
 }
 function ambLabelPos(am) {
+  if (PRINT && PLAY && PLAY.amb.has(am)) return PLAY.amb.get(am);          // esportazione: posizione libera da sovrapposizioni
   const c = ambCenter(am); if (!c) return null;
   const lo = am.lo || {x:0,y:0};
   return w2s(c.x+lo.x, c.y+lo.y);
+}
+// ingombro (schermo) del blocco nome / superficie / altezza / volume centrato in c
+function ambBlockBox(am, c) {
+  const dy = prU(16), hn = PRINT ? 2.5*PX_MM : 14, hs = PRINT ? 2*PX_MM : 13;
+  ctx.font = prFont(14, 2.5, true); let w = ctx.measureText(am.name).width;
+  ctx.font = prFont(13, 2, true);   w = Math.max(w, ctx.measureText(ambNet(am).toFixed(2)+' m²').width, ctx.measureText('H. '+Number(am.h).toFixed(2)+' m').width);
+  return { x0:c.x-w/2, x1:c.x+w/2, y0:c.y-dy-hn*0.6, y1:c.y+(ambNoVol(am) ? dy : 2*dy)+hs*0.6 };
+}
+// punto della linea S->c dove entra nel riquadro b (null se S e' gia' dentro)
+function boxEntry(S, c, b) {
+  if (S.x>=b.x0 && S.x<=b.x1 && S.y>=b.y0 && S.y<=b.y1) return null;
+  const dx = c.x-S.x, dy = c.y-S.y; let t = 0;
+  if (dx) t = Math.max(t, ((dx>0 ? b.x0 : b.x1) - S.x)/dx);
+  if (dy) t = Math.max(t, ((dy>0 ? b.y0 : b.y1) - S.y)/dy);
+  return {x:S.x+dx*Math.min(t,1), y:S.y+dy*Math.min(t,1)};
+}
+// etichetta dell'ambiente portata fuori dal suo poligono: punto di partenza della linea di richiamo, appena dentro l'ambiente
+// (dal bordo piu' vicino all'etichetta), in coordinate mondo; null se l'etichetta sta dentro
+function ambLeaderStart(pts, lw) {
+  if (inPoly(pts, lw.x, lw.y)) return null;
+  let best = null, bd = Infinity;
+  for (let i=0; i<pts.length; i++) {
+    const a = pts[i], b = pts[(i+1)%pts.length], dx = b.x-a.x, dy = b.y-a.y, l2 = dx*dx+dy*dy || 1;
+    const t = Math.max(0, Math.min(1, ((lw.x-a.x)*dx + (lw.y-a.y)*dy)/l2)), q = {x:a.x+dx*t, y:a.y+dy*t};
+    const d = Math.hypot(lw.x-q.x, lw.y-q.y); if (d < bd) { bd = d; best = q; }
+  }
+  if (!best || bd < 1e-6) return best;
+  const inn = {x: best.x + (best.x-lw.x)/bd*0.15, y: best.y + (best.y-lw.y)/bd*0.15};    // 15 cm dentro l'ambiente
+  return inPoly(pts, inn.x, inn.y) ? inn : best;
 }
 function hitAmbLabel(sx, sy) {
   ctx.font = 'bold 14px Segoe UI';
@@ -500,12 +557,13 @@ function quotaInfo(i) {
   let ang = Math.atan2(sb.y-sa.y, sb.x-sa.x);
   if (ang >  Math.PI/2) ang -= Math.PI;
   if (ang < -Math.PI/2) ang += Math.PI;
-  let cx, cy;
-  if (g.qo) { const c = w2s((A.x+B.x)/2+g.qo.x, (A.y+B.y)/2+g.qo.y); cx = c.x; cy = c.y; }
+  let cx, cy, auto = false;
+  if (PRINT && PLAY && PLAY.q[i]) { cx = PLAY.q[i].x; cy = PLAY.q[i].y; auto = true; }          // spostata dall'esportazione
+  else if (g.qo) { const c = w2s((A.x+B.x)/2+g.qo.x, (A.y+B.y)/2+g.qo.y); cx = c.x; cy = c.y; }
   else { const o = prU(10); cx = (sa.x+sb.x)/2 + Math.sin(ang)*o; cy = (sa.y+sb.y)/2 - Math.cos(ang)*o; }   // sopra la linea
   const len = Math.hypot(B.x-A.x, B.y-A.y), txt = len.toFixed(2)+' m';
   ctx.font = quoteFont();
-  return { cx, cy, ang, sa, sb, len, txt, w: ctx.measureText(txt).width, ok: segOk(g, len) };
+  return { cx, cy, ang, sa, sb, len, txt, w: ctx.measureText(txt).width, ok: segOk(g, len), auto };
 }
 function hitQuota(sx, sy) {
   for (let i=state.segments.length-1; i>=0; i--) {
@@ -519,7 +577,7 @@ function hitQuota(sx, sy) {
 function drawQuota(i) {
   const q = quotaInfo(i); if (!q) return;
   const g = state.segments[i];
-  if (g.qo) {                                  // quota allontanata: linea di richiamo che la segue
+  if (g.qo || q.auto) {                        // quota allontanata (a mano o dall'esportazione): linea di richiamo che la segue
     const d = distPtSeg(q.cx, q.cy, q.sa.x, q.sa.y, q.sb.x, q.sb.y);
     if (d > prU(26)) {
       const dx = q.sb.x-q.sa.x, dy = q.sb.y-q.sa.y, l2 = dx*dx+dy*dy || 1;
@@ -544,6 +602,8 @@ function updateValid() {
   });
   const el = document.getElementById('sb-valid'), txt = 'Misure validate: '+n+'/'+t;
   if (el && el.textContent !== txt) el.textContent = txt;
+  const nd = state.segments.filter(g => g.cv==='dubbio').length, ed = document.getElementById('sb-dubbi');
+  if (ed) { setDisp(ed, nd ? '' : 'none'); setTxt(ed, '⚠ Muri da validare: '+nd); }
 }
 
 // ---- quota dei serramenti: spostabile, con la linea di richiamo sempre tracciata
@@ -555,6 +615,7 @@ function openingCenterW(i) {
 function openingQuotaPos(i) {
   const p = openingPos(i); if (!p) return null;
   const op = state.openings[i];
+  if (PRINT && PLAY && PLAY.op[i]) return PLAY.op[i];
   if (op.qo) { const c = openingCenterW(i), q = w2s(c.x+op.qo.x, c.y+op.qo.y); return {x:q.x, y:q.y}; }
   return { x: p.sx, y: p.sy-prU(22) };
 }
@@ -582,14 +643,14 @@ function stairSetPedata(s, p) {             // la lunghezza si adatta, la parten
 }
 function stairFromDrag(r) {                  // null se il trascinamento non arriva a un gradino
   const dx = r.x1-r.x0, dy = r.y1-r.y0, ax = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
-  const d = ax==='x' ? dx : dy, sgn = d >= 0 ? 1 : -1, p = STAIR_PEDATA;
+  const ls = lastStair(), d = ax==='x' ? dx : dy, sgn = d >= 0 ? 1 : -1, p = ls.p;
   const n = Math.floor(Math.abs(d)/p + 1e-9);
   if (n < 1) return null;
   const aS = ax==='x' ? r.x0 : r.y0, aE = aS + sgn*n*p;
   const cS = ax==='x' ? r.y0 : r.x0, cE = ax==='x' ? r.y1 : r.x1;
   let c0 = Math.min(cS,cE), c1 = Math.max(cS,cE);
   if (c1-c0 < STAIR_MINW) { const m = (c0+c1)/2; c0 = m-STAIR_MINW/2; c1 = m+STAIR_MINW/2; }
-  const s = { ax, sgn, n, pedata:p, alzata:STAIR_ALZATA, x:0, y:0, w:0, h:0 };
+  const s = { ax, sgn, n, pedata:p, alzata:ls.a, x:0, y:0, w:0, h:0 };
   stairSet(s, Math.min(aS,aE), Math.max(aS,aE), c0, c1);
   return s;
 }
@@ -719,15 +780,16 @@ function hitPoint(sx, sy) {
   }
   return null;
 }
-function hitSegment(sx, sy) {
+function hitSegment(sx, sy) {            // la linea piu' vicina al dito: con lo zoom piccolo le due facce di un muro sono a pochi pixel
+  let best = null, bd = HIT_SEG_PX;
   for (let i = state.segments.length-1; i >= 0; i--) {
     const g = state.segments[i];
     const A = state.points[g.a], B = state.points[g.b];
     if (!A || !B) continue;
-    const sa = w2s(A.x,A.y), sb = w2s(B.x,B.y);
-    if (distPtSeg(sx,sy,sa.x,sa.y,sb.x,sb.y) <= HIT_SEG_PX) return i;
+    const sa = w2s(A.x,A.y), sb = w2s(B.x,B.y), d = distPtSeg(sx,sy,sa.x,sa.y,sb.x,sb.y);
+    if (d <= bd) { bd = d; best = i; }
   }
-  return null;
+  return best;
 }
 function hitOpening(sx, sy) {
   for (let i = state.openings.length-1; i >= 0; i--) {
@@ -794,12 +856,14 @@ let _drawRaf = 0;
 function draw() { if (!_drawRaf) _drawRaf = requestAnimationFrame(() => { _drawRaf = 0; drawNow(); }); }     // piu' richieste nello stesso fotogramma = un solo ridisegno
 function drawNow() {
   ctx.clearRect(0,0,W,H);
+  CUTS = wallCuts();
   drawGrid();
   drawUnderlay();
   drawWallsPrev();
   drawScale();
   drawAmbienti();
   drawPencil();
+  drawRoomPreview();
   drawSegments();
   drawPilastri();
   drawOpenings();
@@ -814,17 +878,7 @@ function drawNow() {
   drawSelBox();
   drawExport();
   drawAssist();
-  // pulsante Elimina per la selezione a riquadro (sul telefono non c'e' il tasto Canc)
-  const nSel = (state.selSet?state.selSet.size:0)+(state.selSeg?state.selSeg.size:0)+(state.selOpen?state.selOpen.size:0)+(state.selPen?state.selPen.size:0);
-  const btn = document.getElementById('del-sel-btn');
-  if (btn) { setDisp(btn, nSel && !state.selBox ? 'block' : 'none'); setTxt(btn, '🗑 Elimina selezione ('+nSel+')'); }
-  const mb = document.getElementById('move-sel-btn');
-  if (!nSel) state.moveSel = false;
-  if (mb) { setDisp(mb, nSel && !state.selBox ? 'block' : 'none');
-            setTxt(mb, state.moveSel ? '✥ Trascina per spostare (tocca per finire)' : '✥ Sposta selezione');
-            const bg = state.moveSel ? '#1a6a3a' : '#0f3460'; if (mb.style.background !== bg) mb.style.background = bg; }
-  const wtb = document.getElementById('wall-thick-btn');
-  if (wtb) setDisp(wtb, (state.selSeg && state.selSeg.size && !state.selBox) ? 'block' : 'none');
+  updateSelBar();
   const bm = document.getElementById('base-move');
   if (bm) bm.classList.toggle('ok', !!state.moveBase);
   const mbb = document.getElementById('move-base-btn');
@@ -837,6 +891,279 @@ function drawNow() {
 
 function setDisp(el, v) { if (el.style.display !== v) el.style.display = v; }
 function setTxt(el, t) { if (el.textContent !== t) el.textContent = t; }
+
+// ═══════════════════════════════════════════════════════════
+//  SELEZIONE MULTIPLA: Shift+clic sul PC, "Selezione multipla" dal menu di un elemento (poi ogni tocco aggiunge
+//  o toglie), riquadro trascinando nel vuoto. Le azioni stanno in una barra vicino all'ultimo elemento toccato.
+// ═══════════════════════════════════════════════════════════
+const SEL_KEY = {point:'selSet', segment:'selSeg', opening:'selOpen', pencil:'selPen'};
+function selCount() { return ['selSet','selSeg','selOpen','selPen'].reduce((n,k) => n + (state[k] ? state[k].size : 0), 0); }
+function selCopy()  { const o = {}; ['selSet','selSeg','selOpen','selPen'].forEach(k => o[k] = new Set(state[k]||[])); return o; }
+function selAdd(kind, i, toggle) {
+  const k = SEL_KEY[kind]; if (!k) return false;
+  if (!state[k]) state[k] = new Set();
+  if (toggle && state[k].has(i)) state[k].delete(i); else state[k].add(i);
+  return true;
+}
+// elemento sotto il dito per la selezione multipla: serramento, punto, muro, matita
+function multiPickAt(sx, sy) {
+  const pi = hitPoint(sx,sy);
+  if (pi!==null) return ['point', pi];
+  const oi = hitOpening(sx,sy);   if (oi!==null) return ['opening', oi];
+  const si = hitSegment(sx,sy);   if (si!==null) return ['segment', si];
+  const pe = hitPencil(sx,sy);    if (pe!==null) return ['pencil', pe];
+  return null;
+}
+function multiStart() {                      // dal menu: l'elemento toccato entra nella selezione e i tocchi successivi aggiungono o tolgono
+  hideAllMenus();
+  const s = state.sel; if (s) selAdd(s.kind, s.idx);
+  state.sel = null; state.multi = true; state.moveSel = false; state.selAnchor = state.tapW || state.selAnchor;
+  setTip('Selezione multipla: tocca altri muri, punti o serramenti per aggiungerli o toglierli. Le azioni sono nella barra vicino alla selezione.');
+  draw();
+}
+function toggleMulti() {
+  state.multi = !state.multi; state.moveSel = false;
+  setTip(state.multi ? 'Tocca gli elementi da aggiungere o togliere.' : 'Aggiunta chiusa: la selezione resta, usa le azioni della barra.');
+  draw();
+}
+function clearSelection() {
+  state.selSet = null; state.selSeg = null; state.selOpen = null; state.selPen = null;
+  state.multi = false; state.moveSel = false; state.sel = null; state.selAnchor = null;
+  setTip(TIPS[state.tool] || ''); draw();
+}
+function updateSelBar() {
+  const bar = document.getElementById('sel-bar'); if (!bar) return;
+  const n = selCount();
+  if (!n) state.moveSel = false;
+  const show = (n || state.multi) && !state.selBox && !state.exp && !PRINT;
+  setDisp(bar, show ? 'flex' : 'none'); if (!show) return;
+  const $ = id => document.getElementById(id);
+  setTxt($('selb-n'), n+' sel.');
+  $('selb-add').classList.toggle('on', !!state.multi);                 // verde = ogni tocco aggiunge o toglie
+  const nd = state.selSeg ? [...state.selSeg].filter(i => state.segments[i] && state.segments[i].cv==='dubbio').length : 0;
+  setDisp($('selb-conf'), nd ? '' : 'none'); setTxt($('selb-conf'), '✔ Conferma ('+nd+')');
+  setDisp($('selb-thick'), state.selSeg && state.selSeg.size ? '' : 'none');
+  setDisp($('selb-move'), n ? '' : 'none'); setDisp($('selb-del'), n ? '' : 'none');
+  $('selb-move').classList.toggle('on', !!state.moveSel); setTxt($('selb-move'), state.moveSel ? '✥ Fine' : '✥ Sposta');
+  // vicino all'ultimo tocco, mai sotto il dito: tra sopra e sotto (a due distanze) sceglie il posto che copre meno disegno,
+  // soprattutto meno elementi selezionati, cosi' i muri vicini restano toccabili
+  const r = canvas.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
+  let fx = r.left + W/2, fy = r.top + H*0.75;
+  if (state.selAnchor) { const s = w2s(state.selAnchor.x, state.selAnchor.y); fx = r.left + s.x; fy = r.top + s.y; }
+  const bw = bar.offsetWidth, bh = bar.offsetHeight, gap = COARSE ? 40 : 28;
+  const root = document.documentElement.style, tbw = parseFloat(root.getPropertyValue('--tb-w'))||0, tbh = parseFloat(root.getPropertyValue('--tb-h'))||0;
+  const left = Math.max(tbw + 4, Math.min(fx - bw/2, vw - bw - 4)), yMax = vh - 32 - tbh - bh;
+  const cost = top => {
+    const x0 = left - r.left, x1 = x0 + bw, y0 = top - r.top, y1 = y0 + bh;
+    const inR = (x,y) => x>=x0 && x<=x1 && y>=y0 && y<=y1;
+    let c = 0;
+    state.segments.forEach((g,i) => {
+      const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return;
+      const a = w2s(A.x,A.y), b = w2s(B.x,B.y), w = state.selSeg && state.selSeg.has(i) ? 4 : 1;
+      for (let k=0; k<=4; k++) if (inR(a.x+(b.x-a.x)*k/4, a.y+(b.y-a.y)*k/4)) { c += w; break; }
+    });
+    state.points.forEach((P,i) => { const s = w2s(P.x,P.y); if (inR(s.x,s.y)) c += state.selSet && state.selSet.has(i) ? 4 : 0.5; });
+    return c;
+  };
+  let best = null;
+  [fy - bh - gap, fy + gap, fy - bh - gap*2.6, fy + gap*2.6].forEach((t, k) => {
+    if (t < 4 || t > yMax) return;
+    const c = cost(t) + k*0.3;                 // a parita' vince il posto piu' vicino, sopra
+    if (!best || c < best.c) best = {t, c};
+  });
+  const top = best ? best.t : Math.max(4, Math.min(fy - bh - gap, yMax));
+  const L = Math.round(left)+'px', T = Math.round(top)+'px';
+  if (bar.style.left !== L) bar.style.left = L;
+  if (bar.style.top !== T) bar.style.top = T;
+}
+// muri esterni da validare: dalla barra di stato si selezionano tutti; si tolgono dalla selezione quelli sbagliati e si confermano gli altri
+function selectDubbi() {
+  const ids = state.segments.map((g,i) => g.cv==='dubbio' ? i : -1).filter(i => i>=0); if (!ids.length) return;
+  setTool('select');
+  state.selSeg = new Set(ids); state.multi = true;
+  const g = state.segments[ids[0]], A = state.points[g.a], B = state.points[g.b];
+  if (A && B) state.selAnchor = {x:(A.x+B.x)/2, y:(A.y+B.y)/2};
+  setTip(ids.length+' muri esterni da validare (tratteggiati). Togli dalla selezione quelli con la proposta sbagliata, poi "Conferma proposte".');
+  draw();
+}
+function confirmProposals() {
+  const ids = [...(state.selSeg||[])].filter(i => state.segments[i] && state.segments[i].cv==='dubbio'); if (!ids.length) return;
+  saveHistory();
+  ids.forEach(i => { delete state.segments[i].cv; delete state.segments[i].cvOp; state.segments[i].wt = Date.now(); });
+  commit(ids.length+(ids.length===1 ? ' muro confermato' : ' muri confermati')+' con il tipo proposto.', true);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VARCO DEI SERRAMENTI: la linea del muro si interrompe sulla larghezza del serramento. Se a meno di 65 cm c'e' la
+//  faccia opposta dello stesso muro (una linea parallela, dal lato fuori dall'ambiente), si interrompe anche quella
+//  e due spalle chiudono lo spessore. Vale a video, in PDF/JPG e nel DXF.
+// ═══════════════════════════════════════════════════════════
+const WALL_FACE_MAX = 0.65;
+let CUTS = null;                              // varchi e spalle, ricalcolati a ogni disegno
+function ringHasEdge(a, p, q) { const r = a.indices, n = r.length; for (let k=0;k<n;k++) { const u = r[k], v = r[(k+1)%n]; if ((u===p && v===q) || (u===q && v===p)) return true; } return false; }
+function oppositeFace(si, P0, P1) {
+  const g = state.segments[si], A = state.points[g.a], B = state.points[g.b];
+  const L = Math.hypot(B.x-A.x, B.y-A.y), ux = (B.x-A.x)/L, uy = (B.y-A.y)/L, nx = -uy, ny = ux;
+  const M = {x:(P0.x+P1.x)/2, y:(P0.y+P1.y)/2};
+  const own = state.ambienti.filter(a => ringHasEdge(a, g.a, g.b)).map(a => a.indices.map(i => state.points[i]).filter(Boolean));
+  let best = null;
+  state.segments.forEach((h,k) => {
+    if (k===si) return;
+    const C = state.points[h.a], D = state.points[h.b]; if (!C || !D) return;
+    const Lc = Math.hypot(D.x-C.x, D.y-C.y); if (Lc < 1e-6) return;
+    const vx = (D.x-C.x)/Lc, vy = (D.y-C.y)/Lc;
+    if (Math.abs(ux*vy - uy*vx) > 0.05) return;                     // non parallela (oltre ~3 gradi)
+    const sd = (C.x-M.x)*nx + (C.y-M.y)*ny, d = Math.abs(sd);
+    if (d < 0.02 || d > WALL_FACE_MAX) return;
+    const sm = ((M.x-C.x)*vx + (M.y-C.y)*vy)/Lc; if (sm < 0 || sm > 1) return;
+    const side = Math.sign(sd), T = {x:M.x+nx*side*0.01, y:M.y+ny*side*0.01};
+    if (own.some(p => p.length>=3 && inPoly(p, T.x, T.y))) return;  // dal lato dell'ambiente non c'e' il muro
+    if (!best || d < best.d) best = {d, side};
+  });
+  if (!best) return null;
+  const off = {x:nx*best.side*best.d, y:ny*best.side*best.d};
+  return { Q0:{x:P0.x+off.x, y:P0.y+off.y}, Q1:{x:P1.x+off.x, y:P1.y+off.y}, d:best.d };
+}
+function wallCuts() {
+  const gaps = new Map(), jambs = [], opp = [];
+  const add = (si, a, b) => { a = Math.max(0,a); b = Math.min(1,b); if (b-a < 1e-4) return; if (!gaps.has(si)) gaps.set(si, []); gaps.get(si).push([a,b]); };
+  state.openings.forEach((op,i) => {
+    const g = state.segments[op.segIdx]; if (!g) return;
+    const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return;
+    const L = Math.hypot(B.x-A.x, B.y-A.y); if (L < 1e-6) return;
+    const hw = op.width/L/2, t0 = Math.max(0, op.t-hw), t1 = Math.min(1, op.t+hw);
+    add(op.segIdx, t0, t1);
+    const P0 = {x:A.x+(B.x-A.x)*t0, y:A.y+(B.y-A.y)*t0}, P1 = {x:A.x+(B.x-A.x)*t1, y:A.y+(B.y-A.y)*t1};
+    const f = oppositeFace(op.segIdx, P0, P1); if (!f) return;
+    // la faccia opposta puo' essere spezzata in piu' linee: si interrompono tutte quelle che stanno su quella retta
+    const ux = (B.x-A.x)/L, uy = (B.y-A.y)/L;
+    state.segments.forEach((h,k) => {
+      if (k===op.segIdx) return;
+      const C = state.points[h.a], D = state.points[h.b]; if (!C || !D) return;
+      const Lc = Math.hypot(D.x-C.x, D.y-C.y); if (Lc < 1e-6) return;
+      const vx = (D.x-C.x)/Lc, vy = (D.y-C.y)/Lc;
+      if (Math.abs(ux*vy - uy*vx) > 0.05) return;
+      if (Math.abs((C.x-f.Q0.x)*uy - (C.y-f.Q0.y)*ux) > 0.02) return;             // non sta sulla retta della faccia opposta
+      const s0 = ((f.Q0.x-C.x)*vx + (f.Q0.y-C.y)*vy)/Lc, s1 = ((f.Q1.x-C.x)*vx + (f.Q1.y-C.y)*vy)/Lc;
+      if (Math.max(s0,s1) <= 0 || Math.min(s0,s1) >= 1) return;
+      add(k, Math.min(s0,s1), Math.max(s0,s1));
+      const sm = (s0+s1)/2; if (opp[i]===undefined || (sm >= 0 && sm <= 1)) opp[i] = k;     // quella davanti al centro del serramento
+    });
+    jambs.push({a:P0, b:f.Q0, si:op.segIdx}, {a:P1, b:f.Q1, si:op.segIdx});
+  });
+  gaps.forEach((list, k) => {
+    list.sort((p,q) => p[0]-q[0]);
+    const m = [];
+    list.forEach(iv => { const last = m[m.length-1]; if (last && iv[0] <= last[1]) last[1] = Math.max(last[1], iv[1]); else m.push(iv.slice()); });
+    gaps.set(k, m);
+  });
+  return {gaps, jambs, opp};
+}
+// ═══════════════════════════════════════════════════════════
+//  MURI ESTERNI (contorno MURI_EST del ricalco): l'app propone Perimetrale (verso l'esterno) o In comunione
+//  (verso altra unita' o parti comuni). Indizi: finestra o porta-finestra = esterno, porta = ingresso dalle parti
+//  comuni, balcone/terrazzo disegnato appena fuori = esterno; senza indizi decide lo spessore e il muro resta
+//  "da validare" (tratteggiato, contato nella barra di stato). Un muro validato o compilato a mano non cambia piu'.
+// ═══════════════════════════════════════════════════════════
+const EXT_THICK_PERIM = 0.33;                // senza altri indizi: da qui in su si propone Perimetrale
+// spessore (distanza dalla faccia interna parallela piu' vicina) e lato verso l'interno di un muro del contorno
+function extWallInfo(si) {
+  const g = state.segments[si], A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return null;
+  const L = Math.hypot(B.x-A.x, B.y-A.y); if (L < 0.05) return null;
+  const ux = (B.x-A.x)/L, uy = (B.y-A.y)/L, nx = -uy, ny = ux, hits = [];
+  [0.25, 0.5, 0.75].forEach(f => {
+    const M = {x:A.x+(B.x-A.x)*f, y:A.y+(B.y-A.y)*f}; let best = null;
+    state.segments.forEach((h,k) => {
+      if (k===si || h.layer==='MURI_EST') return;
+      const C = state.points[h.a], D = state.points[h.b]; if (!C || !D) return;
+      const Lc = Math.hypot(D.x-C.x, D.y-C.y); if (Lc < 1e-6) return;
+      const vx = (D.x-C.x)/Lc, vy = (D.y-C.y)/Lc;
+      if (Math.abs(ux*vy - uy*vx) > 0.05) return;
+      const sd = (C.x-M.x)*nx + (C.y-M.y)*ny, d = Math.abs(sd);
+      if (d < 0.03 || d > 0.8) return;
+      const s = ((M.x-C.x)*vx + (M.y-C.y)*vy)/Lc; if (s < -0.02 || s > 1.02) return;
+      if (!best || d < best.d) best = {d, side:Math.sign(sd)};
+    });
+    if (best) hits.push(best);
+  });
+  if (!hits.length) return null;
+  const pos = hits.filter(h => h.side>0), neg = hits.filter(h => h.side<0), use = pos.length >= neg.length ? pos : neg;
+  const ds = use.map(h => h.d).sort((p,q) => p-q), t = ds[ds.length>>1];
+  return { t: Math.max(0.10, Math.round(t/0.05)*0.05), side: use[0].side, ux, uy, nx, ny, A, B };
+}
+// balcone, terrazzo o altro ambiente all'aperto disegnato appena fuori dal muro
+function outdoorOutside(info) {
+  if (!info) return false;
+  const out = {x:-info.nx*info.side, y:-info.ny*info.side};
+  const polys = state.ambienti.filter(a => COMM_APERTO.has(a.category)).map(a => a.indices.map(i => state.points[i]).filter(Boolean)).filter(p => p.length>=3);
+  if (!polys.length) return false;
+  return [0.25, 0.5, 0.75].some(f => {
+    const x = info.A.x+(info.B.x-info.A.x)*f + out.x*0.15, y = info.A.y+(info.B.y-info.A.y)*f + out.y*0.15;
+    return polys.some(p => inPoly(p, x, y));
+  });
+}
+function collinear(g, h) {
+  const A = state.points[g.a], B = state.points[g.b], C = state.points[h.a], D = state.points[h.b]; if (!A||!B||!C||!D) return false;
+  const L = Math.hypot(B.x-A.x, B.y-A.y), Lc = Math.hypot(D.x-C.x, D.y-C.y); if (L < 1e-6 || Lc < 1e-6) return false;
+  const ux = (B.x-A.x)/L, uy = (B.y-A.y)/L;
+  if (Math.abs(ux*(D.y-C.y)/Lc - uy*(D.x-C.x)/Lc) > 0.035) return false;
+  const mx = (C.x+D.x)/2-A.x, my = (C.y+D.y)/2-A.y;
+  return Math.abs(mx*uy - my*ux) < 0.05;
+}
+// muri del contorno appena creati dal ricalco: spessore letto dal disegno e tipo proposto
+function classifyExtWalls(idxs, tDef) {
+  idxs.forEach(si => {
+    const g = state.segments[si]; if (!g || g.layer!=='MURI_EST') return;
+    const info = extWallInfo(si), t = info ? info.t : tDef;
+    if (t) g.thick = t;
+    if (outdoorOutside(info)) { g.commType = 'perimetrale'; delete g.cv; return; }
+    g.commType = (t||0) >= EXT_THICK_PERIM ? 'perimetrale' : 'comunione'; g.cv = 'dubbio';
+  });
+}
+// serramento inserito o modificato: il muro esterno su cui sta (o davanti a lui) prende il tipo, se non e' gia' deciso.
+// Finestra e porta-finestra = Perimetrale, porta = ingresso, quindi In comunione. Restituisce il messaggio da accodare.
+function classifyByOpening(i) {
+  const op = state.openings[i]; if (!op) return '';
+  const opp = wallCuts().opp[i];
+  const si = [op.segIdx, opp].find(k => k!=null && state.segments[k] && state.segments[k].layer==='MURI_EST');
+  if (si===undefined) return '';
+  const g = state.segments[si]; if (g.cv!=='dubbio' && !g.cvOp) return '';
+  const type = op.type==='P' ? 'comunione' : 'perimetrale';
+  g.commType = type; delete g.cv; g.cvOp = true;
+  let n = 0;                                 // stessa facciata: i muri da validare in linea con questo prendono la stessa proposta (sempre da validare)
+  if (type==='perimetrale') state.segments.forEach((h,k) => { if (k!==si && h.cv==='dubbio' && h.layer==='MURI_EST' && h.commType!==type && collinear(g,h)) { h.commType = type; n++; } });
+  return ' Muro esterno: '+WALL_SHORT[type]+(n ? ' (proposto anche a '+n+' mur'+(n===1?'o':'i')+' in linea, da validare)' : '')+'.';
+}
+// anelli chiusi del contorno esterno (MURI_EST): vertici in ordine e linee che li compongono
+function extRings() {
+  const adj = new Map(), used = new Set(), rings = [];
+  state.segments.forEach((g,k) => {
+    if (g.layer!=='MURI_EST' || !state.points[g.a] || !state.points[g.b]) return;
+    [[g.a,g.b],[g.b,g.a]].forEach(([p,q]) => { if (!adj.has(p)) adj.set(p, []); adj.get(p).push({k, o:q}); });
+  });
+  state.segments.forEach((g,k) => {
+    if (g.layer!=='MURI_EST' || used.has(k) || !adj.has(g.a)) return;
+    used.add(k);
+    const segs = [k], ids = [g.a]; let cur = g.b, prev = k, closed = false;
+    for (let guard=0; guard<10000; guard++) {
+      if (cur===g.a) { closed = true; break; }
+      ids.push(cur);
+      const nx = (adj.get(cur)||[]).find(e => e.k!==prev && !used.has(e.k)); if (!nx) break;
+      used.add(nx.k); segs.push(nx.k); prev = nx.k; cur = nx.o;
+    }
+    if (closed && ids.length>=3) rings.push({pts: ids.map(i => state.points[i]), segs});
+  });
+  return rings;
+}
+
+// tratti pieni di un muro (0..1) tolti i varchi
+function segPieces(si, cuts) {
+  const gl = cuts && cuts.gaps.get(si); if (!gl) return [[0,1]];
+  const out = []; let t = 0;
+  gl.forEach(([a,b]) => { if (a > t) out.push([t,a]); t = Math.max(t,b); });
+  if (t < 1) out.push([t,1]);
+  return out;
+}
 
 function drawGrid() {
   const step = state.zoom;
@@ -892,29 +1219,45 @@ function segMenuAction(action) {
   if (action==='delete') { state.selSeg = new Set([s.idx]); state.selSet = null; state.selOpen = null; state.selPen = null; deleteSelection(); return; }
   if (action==='move') {
     state.selSeg = new Set([s.idx]); state.selSet = null; state.selOpen = null; state.selPen = null;
-    state.moveSel = true;
+    state.moveSel = true; state.selAnchor = state.tapW;
     setTip('Trascina in un punto qualsiasi: si sposta la linea. Tocca di nuovo il pulsante per finire.');
     draw(); return;
   }
   if (action==='F' || action==='PF') { state.openingType = action; insertOpening(s.idx, s.t); return; }
+  if (action==='multi') { multiStart(); return; }
+  if (action==='confirm') {
+    const g = state.segments[s.idx]; if (!g.cv) return;
+    saveHistory(); delete g.cv; delete g.cvOp; g.wt = Date.now();
+    commit('Confermato: '+WALL_SHORT[g.commType||'']+(g.thick ? ' '+Math.round(g.thick*100)+' cm' : '')+'.'); return;
+  }
   if (action==='thick') wallThickMenuAction([s.idx]);    // solo la linea toccata, anche se resta una selezione a riquadro
 }
 
 // spessore e tipo muro (Interno/Perimetrale/In comunione), per la superficie commerciale: dal menu della linea vale
-// per quella linea, dal pulsante viola per tutte le linee della selezione a riquadro
+// per quella linea, dalla barra della selezione per tutte le linee selezionate.
+// Come per i serramenti, un muro mai compilato propone i valori dell'ultimo compilato: si conferma con un tocco.
 function wallThickMenuAction(only) {
   hideAllMenus();
   const idxs = only || (state.selSeg ? [...state.selSeg] : []);
   if (!idxs.length) return;
-  const first = state.segments[idxs[0]] || {};
+  const segs = idxs.map(i => state.segments[i]).filter(Boolean);
+  const own = segs.find(g => g.commType || g.thick);
+  const last = state.segments.reduce((b,g) => g.wt && (!b || g.wt > b.wt) ? g : b, null);
+  const d = own || last || {};
+  const nd = segs.filter(g => g.cv==='dubbio').length;
+  const hint = [
+    idxs.length>1 ? 'Si applica a tutti i '+idxs.length+' muri selezionati.' : '',
+    !own && last ? 'Proposti i valori dell\'ultimo muro compilato.' : '',
+    nd ? 'Tipo proposto dall\'app, da validare: OK lo conferma.' : '',
+  ].filter(Boolean).join(' ');
   askDialog('Spessore e tipo muro'+(idxs.length>1 ? ' ('+idxs.length+')' : ''), [
-    {label:'Tipo', id:'ct', type:'select', value:first.commType||'', options:WALL_TYPES},
-    {label:'Spessore (m)', id:'th', value:first.thick?String(first.thick):'', type:'number'},
-  ], idxs.length>1 ? 'Si applica a tutti i '+idxs.length+' muri selezionati.' : '', v => {
-    const th = parseFloat(v.th);
+    {label:'Tipo', id:'ct', type:'select', value:d.commType||'', options:WALL_TYPES},
+    {label:'Spessore (m)', id:'th', value:d.thick?String(d.thick):'', type:'number'},
+  ], hint, v => {
+    const th = parseFloat(v.th), now = Date.now();
     saveHistory();
-    idxs.forEach(i => { const g = state.segments[i]; if (!g) return; g.commType = v.ct || undefined; if (isFinite(th) && th>0) g.thick = th; });
-    commit('Spessore/tipo aggiornato su '+idxs.length+' mur'+(idxs.length>1 ? 'i' : 'o')+'.');
+    segs.forEach(g => { g.commType = v.ct || undefined; if (isFinite(th) && th>0) g.thick = th; delete g.cv; delete g.cvOp; g.wt = now; });
+    commit('Spessore/tipo aggiornato su '+idxs.length+' mur'+(idxs.length>1 ? 'i' : 'o')+'.', true);
   });
 }
 
@@ -949,10 +1292,11 @@ const COMM_CAT = {
 const COMM_APERTO = new Set(['balconi','terrazziLogge','terrazzoTasca','portici','corti','giardinoApp','giardinoVilla','postoScoperto']);
 function ambNoVol(a) { return COMM_APERTO.has(a.category); }
 const WALL_TYPES = [
-  {value:'',            label:'Interno (non conta per la superficie commerciale)'},
-  {value:'perimetrale', label:'Perimetrale (100% fino a 50 cm)'},
-  {value:'comunione',   label:'In comunione (50% dello spessore, fino a 25 cm)'},
+  {value:'',            label:'Interno (nel lordo se c\'è il contorno esterno)'},
+  {value:'perimetrale', label:'Perimetrale - verso l\'esterno (100% fino a 50 cm)'},
+  {value:'comunione',   label:'In comunione - verso altra unità o parti comuni (50%, fino a 25 cm)'},
 ];
+const WALL_SHORT = {'':'Interno', perimetrale:'Perimetrale', comunione:'In comunione'};
 
 function hitAmbiente(sx, sy) {
   const w = s2w(sx,sy);
@@ -1001,6 +1345,17 @@ function drawAmbienti() {
       if (isSel('ambiente',k)) { ctx.strokeStyle='#ffe066'; ctx.lineWidth=3; ctx.stroke(); }
     }
     const c = ambLabelPos(amb), area = ambNet(amb);
+    // etichetta portata fuori dall'ambiente: linea continua da dentro l'ambiente al blocco di testo, in qualsiasi direzione
+    const S = ambLeaderStart(pts, s2w(c.x, c.y));
+    if (S) {
+      const s = w2s(S.x, S.y), b = ambBlockBox(amb, c), pad = prU(3);
+      const e = boxEntry(s, c, {x0:b.x0-pad, x1:b.x1+pad, y0:b.y0-pad, y1:b.y1+pad});
+      if (e) {
+        ctx.save(); ctx.strokeStyle = C.lead; ctx.fillStyle = C.lead; ctx.lineWidth = prLw(1.2, 0.13);
+        ctx.beginPath(); ctx.moveTo(s.x,s.y); ctx.lineTo(e.x,e.y); ctx.stroke();
+        ctx.beginPath(); ctx.arc(s.x, s.y, prU(3), 0, Math.PI*2); ctx.fill(); ctx.restore();
+      }
+    }
     ctx.textAlign='center'; ctx.textBaseline='middle';
     const dy = prU(16);
     ctx.fillStyle=C.ambName; ctx.font=prFont(14, 2.5, true); ctx.fillText(amb.name, c.x, c.y-dy);
@@ -1030,14 +1385,27 @@ function drawPencil() {
 }
 
 function drawSegments() {
-  state.segments.forEach((g,i) => {
-    const A=state.points[g.a], B=state.points[g.b]; if(!A||!B) return;
-    const sa=w2s(A.x,A.y), sb=w2s(B.x,B.y);
+  const style = (g, i) => {
     const selL = (state.selSeg && state.selSeg.has(i)) || isSel('segment',i);
     ctx.strokeStyle = selL ? '#e94560' : (g.layer==='MURI_EST' ? C.wallExt : C.wall); ctx.lineWidth = selL ? 4 : prLw(2.5, g.layer==='MURI_EST' ? 0.5 : 0.35);
-    ctx.beginPath(); ctx.moveTo(sa.x,sa.y); ctx.lineTo(sb.x,sb.y); ctx.stroke();
-    drawQuota(i);
+    ctx.setLineDash(!PRINT && g.cv==='dubbio' ? [9,6] : []);       // muro esterno col tipo proposto dall'app, da validare
+  };
+  state.segments.forEach((g,i) => {
+    const A=state.points[g.a], B=state.points[g.b]; if(!A||!B) return;
+    const sa=w2s(A.x,A.y), sb=w2s(B.x,B.y), dx=sb.x-sa.x, dy=sb.y-sa.y;
+    style(g, i);
+    ctx.beginPath();
+    segPieces(i, CUTS).forEach(([a,b]) => { ctx.moveTo(sa.x+dx*a, sa.y+dy*a); ctx.lineTo(sa.x+dx*b, sa.y+dy*b); });    // interrotto dai varchi dei serramenti
+    ctx.stroke();
   });
+  (CUTS ? CUTS.jambs : []).forEach(j => {                          // spalle del varco: chiudono lo spessore del muro
+    const g = state.segments[j.si]; if (!g) return;
+    style(g, j.si); ctx.setLineDash([]);
+    const a = w2s(j.a.x, j.a.y), b = w2s(j.b.x, j.b.y);
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+  state.segments.forEach((g,i) => drawQuota(i));
 }
 
 function drawOpenings() {
@@ -1051,8 +1419,7 @@ function drawOpenings() {
     const col     = PRINT ? (op.type==='P' ? C.door : C.win) : (op.type==='F' ? C.win : op.type==='P' ? C.door : C.pf);
 
     ctx.save(); ctx.translate(p.sx,p.sy); ctx.rotate(ang);
-    const tk = prU(8), gl = prU(4);                 // stipiti e vetro
-    if (PRINT) { ctx.strokeStyle='#fff'; ctx.lineWidth=prLw(9, 1.2); ctx.beginPath(); ctx.moveTo(-halfPx,0); ctx.lineTo(halfPx,0); ctx.stroke(); }   // stacca il muro sotto il serramento
+    const tk = prU(8), gl = prU(4);                 // stipiti e vetro (il muro sotto e' gia' interrotto dal varco)
     ctx.strokeStyle = on ? '#fff' : col; ctx.lineWidth = on ? 3.5 : prLw(2.5, 0.25);
     ctx.beginPath(); ctx.moveTo(-halfPx,0); ctx.lineTo(halfPx,0); ctx.stroke();
     [-halfPx,halfPx].forEach(x => { ctx.beginPath(); ctx.moveTo(x,-tk); ctx.lineTo(x,tk); ctx.stroke(); });
@@ -1065,9 +1432,16 @@ function drawOpenings() {
 
     // nome e, solo a video, distanza dall'estremo A (serve a collocarlo, non in stampa); spostabile, la linea di richiamo la segue
     const q = openingQuotaPos(i);
+    let end = {x:q.x, y:q.y+14};
+    if (PRINT) {                                    // in stampa il richiamo si ferma al bordo del nome, da qualunque lato stia
+      ctx.font = prFont(11, 2, true);
+      const tc = {x:q.x, y:q.y-prU(7)}, w = ctx.measureText(op.label).width/2+prU(2), h = PX_MM+prU(2);
+      end = boxEntry({x:p.sx, y:p.sy}, tc, {x0:tc.x-w, x1:tc.x+w, y0:tc.y-h, y1:tc.y+h});
+    }
     ctx.save();
     ctx.strokeStyle = on ? '#fff' : (PRINT ? C.lead : '#888'); ctx.lineWidth=prLw(1, 0.13); ctx.setLineDash([3,3]);
-    ctx.beginPath(); ctx.moveTo(p.sx,p.sy); ctx.lineTo(q.x, PRINT ? q.y : q.y+14); ctx.stroke(); ctx.setLineDash([]);
+    if (end) { ctx.beginPath(); ctx.moveTo(p.sx,p.sy); ctx.lineTo(end.x, end.y); ctx.stroke(); }
+    ctx.setLineDash([]);
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillStyle=col; ctx.font=prFont(11, 2, true); ctx.fillText(op.label, q.x, q.y-prU(7));
     if (!PRINT) { ctx.fillStyle='#ccc'; ctx.font='10px Segoe UI'; ctx.fillText(p.A.label+'→ '+(op.t*segLen).toFixed(2)+' m', q.x, q.y+6); }
@@ -1159,7 +1533,7 @@ function drawLabels() {
 function drawPoints() {
   state.points.forEach((p,i) => {
     const s = w2s(p.x,p.y);
-    const on   = isSel('point',i) || state.selBox && state.selSet && state.selSet.has(i);
+    const on   = isSel('point',i) || !!(state.selSet && state.selSet.has(i));
     const conn = state.connectFrom===i || state.measureFrom===i;
     const tril = state.trilPoints.includes(i);
     const wall = state.wallOrigin===i;
@@ -1207,6 +1581,7 @@ function isSel(kind, idx) { return state.sel && state.sel.kind===kind && state.s
 // ═══════════════════════════════════════════════════════════
 const TIPS = {
   select:   'Tocca un\'entità per il menu. Trascina nel vuoto = selezione a riquadro. Vista: due dita, oppure il pulsante ✋ in alto a destra.',
+  room:     'Trascina da un angolo all\'angolo opposto: nascono 4 muri e l\'ambiente. Gli angoli si agganciano ai punti e alla base. Puoi disegnarne altre di seguito.',
   wall:     'Muro come polilinea: clic sul punto di partenza, poi un clic per ogni vertice (angolo guidato ogni 5°, forte sui 15°, sugli angoli della base e sui punti esistenti). Fine: clic sull\'ultimo punto, doppio clic o ESC.',
   point:    'Clicca per aggiungere punti, quanti ne vuoi. Seleziona per uscire.',
   connect:  'Clicca il punto A, poi il punto B.',
@@ -1221,9 +1596,9 @@ const TIPS = {
 };
 
 // strumento attivo: il pulsante del suo gruppo ne prende icona e nome, la voce nella lista si evidenzia
-const TOOL_ICON  = {wall:'▭', point:'+', connect:'/', trilatere:'◎', measure:'📏', split:'✂', opening:'🚪', pilastro:'▪', stair:'🪜', label:'🏷', pencil:'✏'};
-const TOOL_NAME  = {wall:'Muro', point:'Punto', connect:'Collega', trilatere:'Trilatera', measure:'Misura', split:'Spezza', opening:'Serramento', pilastro:'Pilastro', stair:'Scala', label:'Etichetta', pencil:'Matita'};
-const TOOL_GROUP = {wall:'draw', point:'draw', connect:'draw', trilatere:'draw', measure:'draw', split:'draw', opening:'ins', pilastro:'ins', stair:'ins', label:'ins', pencil:'ins'};
+const TOOL_ICON  = {wall:'▭', room:'⬚', point:'+', connect:'/', trilatere:'◎', measure:'📏', split:'✂', opening:'🚪', pilastro:'▪', stair:'🪜', label:'🏷', pencil:'✏'};
+const TOOL_NAME  = {wall:'Muro', room:'Stanza', point:'Punto', connect:'Collega', trilatere:'Trilatera', measure:'Misura', split:'Spezza', opening:'Serramento', pilastro:'Pilastro', stair:'Scala', label:'Etichetta', pencil:'Matita'};
+const TOOL_GROUP = {wall:'draw', room:'draw', point:'draw', connect:'draw', trilatere:'draw', measure:'draw', split:'draw', opening:'ins', pilastro:'ins', stair:'ins', label:'ins', pencil:'ins'};
 const GROUP_DEF  = {draw:{icon:'📐', name:'Disegna'}, ins:{icon:'🧱', name:'Inserisci'}};
 function markTool(t) {
   document.querySelectorAll('.tool-btn, .tool-item').forEach(b => b.classList.remove('active'));
@@ -1248,7 +1623,8 @@ function setTool(t) {
   state.connectFrom=null; state.measureFrom=null; state.measureShow=null;
   resetTril();
   state.wallOrigin=null; state.wallPreview=null; state.wallSnapAngle=null; state.wallSnapPoint=null;
-  state.openingDrag=null; state.drag=null; state.rectDraw=null; state.selBox=null; state.selSet=null; state.selOpen=null; state.selSeg=null;
+  state.openingDrag=null; state.drag=null; state.rectDraw=null; state.roomDraw=null; state.selBox=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null;
+  state.multi=false; state.moveSel=false;
   state.moveBase=false; state.handMode=false;       // cambiare strumento chiude lo spostamento della base e la mano: altrimenti ogni tocco li ripete
   if (state.pencilCurrent) {
     if (state.pencilCurrent.pts.length>1) { saveHistory(); state.pencilLines.push(state.pencilCurrent); }
@@ -1503,15 +1879,70 @@ function finishStair() {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  STANZA RETTANGOLARE: un trascinamento = 4 punti, 4 muri e l'ambiente
+// ═══════════════════════════════════════════════════════════
+// angolo della stanza: aggancio a un punto esistente, poi agli angoli della base
+function roomCorner(sx, sy) {
+  const pi = nearestPoint(sx, sy, -1);
+  if (pi!==null) return {x:state.points[pi].x, y:state.points[pi].y, pi};
+  const b = baseSnap(sx, sy); if (b) return {x:b.x, y:b.y, pi:null};
+  const w = s2w(sx, sy); return {x:w.x, y:w.y, pi:null};
+}
+function drawRoomPreview() {
+  const r = state.roomDraw; if (!r) return;
+  const a = w2s(r.x0, r.y0), b = w2s(r.x1, r.y1);
+  ctx.save();
+  ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 2; ctx.setLineDash([6,4]);
+  ctx.strokeRect(Math.min(a.x,b.x), Math.min(a.y,b.y), Math.abs(b.x-a.x), Math.abs(b.y-a.y));
+  ctx.setLineDash([]);
+  const w = Math.abs(r.x1-r.x0), h = Math.abs(r.y1-r.y0);
+  ctx.fillStyle = '#ffe066'; ctx.font = 'bold 12px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(w.toFixed(2)+' x '+h.toFixed(2)+' m  ('+(w*h).toFixed(2)+' m²)', (a.x+b.x)/2, (a.y+b.y)/2);
+  [[r.x0,r.y0,r.a],[r.x1,r.y1,r.b]].forEach(([x,y,pi]) => { if (pi==null) return; const q = w2s(x,y); ctx.strokeStyle='#ffe066'; ctx.beginPath(); ctx.arc(q.x,q.y,12,0,Math.PI*2); ctx.stroke(); });
+  ctx.restore();
+}
+function finishRoom() {
+  const r = state.roomDraw; state.roomDraw = null;
+  if (!r) return;
+  const w0 = Math.abs(r.x1-r.x0), h0 = Math.abs(r.y1-r.y0);
+  if (w0 < 0.3 || h0 < 0.3) { draw(); setTip('Stanza non creata: trascina un rettangolo di almeno 30 x 30 cm.'); return; }
+  const sx = r.x1 >= r.x0 ? 1 : -1, sy = r.y1 >= r.y0 ? 1 : -1;
+  askDialog('Stanza rettangolare', [
+    {label:'Nome ambiente', id:'name', value:'Ambiente '+(state.ambienti.length+1), type:'text'},
+    {label:'Larghezza (m)', id:'w', value:w0.toFixed(2), type:'number'},
+    {label:'Profondità (m)', id:'d', value:h0.toFixed(2), type:'number'},
+    {label:'Altezza netta (m)', id:'h', value:lastAmbH().toFixed(2), type:'number'},
+  ], 'Misure lette dal trascinamento: correggile con quelle rilevate. L\'angolo da cui sei partito resta fermo.', v => {
+    const w = parseFloat(v.w), d = parseFloat(v.d), hh = parseFloat(v.h);
+    if (!(w>0) || !(d>0) || !(hh>0)) { draw(); return; }
+    saveHistory();
+    const keepEnd = Math.abs(w-w0) < 0.005 && Math.abs(d-h0) < 0.005;     // misure invariate: l'angolo d'arrivo resta agganciato
+    const C = [{x:r.x0, y:r.y0}, {x:r.x0+sx*w, y:r.y0}, {x:r.x0+sx*w, y:r.y0+sy*d}, {x:r.x0, y:r.y0+sy*d}];
+    const ids = C.map((p,k) => {
+      if (k===0 && r.a!=null && state.points[r.a]) return r.a;
+      if (k===2 && keepEnd && r.b!=null && state.points[r.b]) return r.b;
+      const near = state.points.findIndex(P => Math.hypot(P.x-p.x, P.y-p.y) < 0.01);      // coincide con un punto esistente: niente doppioni
+      return near>=0 ? near : newPoint(p.x, p.y);
+    });
+    ids.forEach((id,k) => { const nx = ids[(k+1)%4]; if (!segExists(id, nx)) state.segments.push({a:id, b:nx}); });
+    const n = state.ambienti.length;
+    state.ambienti.push({ indices:ids, name:v.name || 'Ambiente '+(n+1), h:hh, color:AMB_COLORS[n%AMB_COLORS.length], category:'utile' });
+    commit('Stanza creata: '+(w*d).toFixed(2)+' m². Trascina per la prossima, oppure Seleziona per finire.', true);
+  }, () => draw());
+}
+
+// ═══════════════════════════════════════════════════════════
 //  PILASTRO — effetto calamita sul punto rilevato
 // ═══════════════════════════════════════════════════════════
 function insertPilastro(ptIdx, at) {
   const P = ptIdx!==null && ptIdx!==undefined ? state.points[ptIdx] : (at ? {x:at.x, y:at.y, label:'punto cliccato'} : null); if (!P) return;
+  const lp = state.pilastri[state.pilastri.length-1];                 // in sequenza: proposta la misura dell'ultimo pilastro
+  const lw = lp ? Math.round(lp.w*100) : 30, lh = lp ? Math.round(lp.h*100) : 30, lstd = lw+'x'+lh;
   askDialog('Pilastro ancorato a '+P.label, [
-    {label:'Dimensione standard', id:'std', type:'select',
+    {label:'Dimensione standard', id:'std', type:'select', value: !lp ? '' : PILASTRI_STD.includes(lstd) ? lstd : 'custom',
       options: PILASTRI_STD.map(s=>({value:s,label:s+' cm'})).concat([{value:'custom',label:'Personalizzata…'}])},
-    {label:'Base (cm) — se personalizzata',    id:'bw', value:'30', type:'number'},
-    {label:'Altezza (cm) — se personalizzata', id:'bh', value:'30', type:'number'},
+    {label:'Base (cm) - se personalizzata',    id:'bw', value:String(lw), type:'number'},
+    {label:'Altezza (cm) - se personalizzata', id:'bh', value:String(lh), type:'number'},
     {label:'Vertice ancorato al punto', id:'anc', type:'select', options:[
       {value:'bl', label:'Basso-sinistra'}, {value:'br', label:'Basso-destra'},
       {value:'tl', label:'Alto-sinistra'},  {value:'tr', label:'Alto-destra'},
@@ -1540,12 +1971,26 @@ function insertPilastro(ptIdx, at) {
 // ═══════════════════════════════════════════════════════════
 //  SERRAMENTI
 // ═══════════════════════════════════════════════════════════
-// superficie di bucatura, vetrata (se la scheda energetica ha le dimensioni di una specchiatura) e telaio per differenza
+// specchiature: se non scritte a mano si ricavano dalla bucatura. Telaio 9 cm per lato, montante 9 cm tra una
+// specchiatura e l'altra, specchiature affiancate in larghezza: vetro totale = (L - 0,18 - 0,09(n-1)) x (H - 0,18)
+const TELAIO_M = 0.09, MONTANTE_M = 0.09;
+function glassAuto(L, H, n) {
+  n = Math.max(1, n||1);
+  const wTot = L - 2*TELAIO_M - MONTANTE_M*(n-1), h = H - 2*TELAIO_M;
+  return wTot > 0 && h > 0 ? {L: wTot/n, H: h} : null;
+}
+// dimensioni di UNA specchiatura: scritte a mano (vetroL/vetroH) oppure calcolate; null senza scheda energetica
+function openingGlass(op) {
+  const e = op.energy; if (!e) return null;
+  const n = e.vetri || 1, a = glassAuto(op.width, opHb(op), n) || {};
+  const L = e.vetroL || a.L, H = e.vetroH || a.H;
+  return L && H ? {n, L, H, auto: !e.vetroL && !e.vetroH} : null;
+}
+// superficie di bucatura, vetrata e telaio per differenza
 function openingAreas(op) {
-  const bucatura = op.width * opHb(op);
-  const e = op.energy || {};
-  if (!e.vetroL || !e.vetroH) return {bucatura, vetrata:null, telaio:null};
-  const vetrata = e.vetroL * e.vetroH * (e.vetri || 1);
+  const bucatura = op.width * opHb(op), gl = openingGlass(op);
+  if (!gl) return {bucatura, vetrata:null, telaio:null};
+  const vetrata = gl.L * gl.H * gl.n;
   return {bucatura, vetrata, telaio: bucatura - vetrata};
 }
 
@@ -1572,7 +2017,8 @@ function insertOpening(segIdx, t) {
   const label = nextOpeningLabel(type);
   state.openings.push({ type, segIdx, t:Math.min(Math.max(t, hw), 1-hw), width, hb:D.hb, h0:D.h0, spessore:0, label });
   state.sel = {kind:'opening', idx:state.openings.length-1};
-  commit(label+' inserito: trascina le maniglie per allargarlo o stringerlo, il centro per spostarlo.');
+  const cl = classifyByOpening(state.openings.length-1);
+  commit(label+' inserito: trascina le maniglie per allargarlo o stringerlo, il centro per spostarlo.'+cl);
   openingMenuAction('edit');
 }
 
@@ -1604,6 +2050,7 @@ function openingMenuAction(action) {
   if (!state.sel || state.sel.kind!=='opening') return;
   const i = state.sel.idx, op = state.openings[i]; if (!op) return;
 
+  if (action==='multi')  { multiStart(); return; }
   if (action==='delete') { saveHistory(); state.openings.splice(i,1); state.sel=null; commit('Serramento eliminato.'); return; }
   if (action==='editall') {
     const same = state.openings.filter(o => o.type===op.type);
@@ -1666,10 +2113,11 @@ function openingMenuAction(action) {
         options:[{value:'pers',label:'Persiana'},{value:'avv',label:'Avvolgibile'},{value:'scuri',label:'Scuri'},{value:'no',label:'Nessuno'}]},
       {label:'Vetri (numero di specchiature)', id:'vetri', value:pf('vetri','1'), type:'number'},
       {label:'Pannelli ciechi (numero, eventuali)', id:'pannelli', value:pf('pannelli','0'), type:'number'},
-      {label:'Larghezza di una specchiatura (m)', id:'vetroL', value:pf('vetroL',''), type:'number'},
-      {label:'Altezza di una specchiatura (m)',   id:'vetroH', value:pf('vetroH',''), type:'number'},
+      // le specchiature dipendono dalle misure di QUESTO serramento: non si propagano dall'ultimo compilato, si calcolano
+      {label:'Larghezza di una specchiatura (m) - vuoto = calcolata', id:'vetroL', value:e0.vetroL ? String(e0.vetroL) : '', type:'number'},
+      {label:'Altezza di una specchiatura (m) - vuoto = calcolata',   id:'vetroH', value:e0.vetroH ? String(e0.vetroH) : '', type:'number'},
       {label:'Note', id:'note', type:'textarea', value:e0.note||''},      // la nota e' del singolo serramento: non si propaga
-    ], 'Facoltativo: lascia così per riusare gli stessi valori dell\'ultimo serramento compilato. Situazioni particolari: nota + foto.', v => {
+    ], 'Facoltativo: lascia così per riusare gli stessi valori dell\'ultimo serramento compilato. Specchiature calcolate dalla bucatura '+op.width.toFixed(2)+' x '+opHb(op).toFixed(2)+' m: telaio 9 cm per lato, montante 9 cm tra le specchiature (affiancate). Scrivi 0 per tornare al calcolo. Situazioni particolari: nota + foto.', v => {
       saveHistory();
       const vetroL = parseFloat(v.vetroL), vetroH = parseFloat(v.vetroH);
       const vetri = parseInt(v.vetri), pannelli = parseInt(v.pannelli);
@@ -1686,6 +2134,16 @@ function openingMenuAction(action) {
         ? 'Dati energetici di '+op.label+' salvati. Bucatura '+ar.bucatura.toFixed(2)+' mq, vetro '+ar.vetrata.toFixed(2)+' mq ('+Math.round(100*ar.vetrata/ar.bucatura)+'%), telaio '+ar.telaio.toFixed(2)+' mq.'
         : 'Dati energetici di '+op.label+' salvati.');
     });
+    // le specchiature calcolate seguono il numero di vetri mentre lo si scrive
+    const fv = document.getElementById('dlg_vetri');
+    const upd = () => {
+      const a = glassAuto(op.width, opHb(op), parseInt(String(fv.value).trim() || fv.dataset.def || '1'));
+      [['vetroL','L'],['vetroH','H']].forEach(([id,k]) => {
+        const el = document.getElementById('dlg_'+id);
+        if (el.dataset.def===undefined) el.placeholder = a ? 'calcolata: '+a[k].toFixed(3) : 'bucatura troppo piccola';   // scritta a mano: resta quella
+      });
+    };
+    upd(); fv.addEventListener('input', upd);
     return;
   }
   if (action==='edit') {
@@ -1704,7 +2162,7 @@ function openingMenuAction(action) {
       const h0 = parseFloat(v.h0);
       op.h0 = op.type!=='F' ? 0 : isFinite(h0) ? h0 : (op.h0 || OPENING_DEF.F.h0);
       op.spessore = parseFloat(v.sp)||0;
-      commit('Serramento aggiornato.');
+      commit('Serramento aggiornato.'+classifyByOpening(i));
     });
   }
 }
@@ -1820,7 +2278,7 @@ function checkClosedPolygon(lastIdx) {
 
   askDialog('Ambiente rilevato', [
     {label:'Nome ambiente',    id:'name', value:'Ambiente '+(state.ambienti.length+1), type:'text'},
-    {label:'Altezza netta (m)',id:'h',    value:'2.70', type:'number'},
+    {label:'Altezza netta (m)',id:'h',    value:lastAmbH().toFixed(2), type:'number'},
   ], 'Superficie calcolata: '+area.toFixed(2)+' m²', v => {
     const h = parseFloat(v.h); if (!isFinite(h)||h<=0) return;
     saveHistory();                                   // passo di annulla suo: il primo ↩ toglie l'ambiente, non anche l'ultimo muro
@@ -1887,6 +2345,11 @@ let _menuOpenedAt = 0;
 function showMenu(id, x, y, above, avoid) {
   hideAllMenus();
   if (id==='entity-context') document.getElementById('ent-edit').style.display = state.sel && state.sel.kind==='pencil' ? 'none' : '';
+  if (id==='seg-context') {                    // muro esterno col tipo proposto dall'app: conferma con un tocco
+    const g = state.sel && state.sel.kind==='segment' && state.segments[state.sel.idx], it = document.getElementById('sm-conf');
+    if (g && g.cv==='dubbio') { it.style.display = ''; it.textContent = '✔ Conferma: '+WALL_SHORT[g.commType||'']+(g.thick ? ' '+Math.round(g.thick*100)+' cm' : ''); }
+    else it.style.display = 'none';
+  }
   if (id==='quota-context' && state.sel && state.sel.kind==='quota') {
     const g = state.segments[state.sel.idx], A = g && state.points[g.a], B = g && state.points[g.b];
     const ok = !!(g && A && B && segOk(g, Math.hypot(B.x-A.x, B.y-A.y)));
@@ -1936,6 +2399,7 @@ function menuAction(action) {
   const i = state.sel.idx, P = state.points[i]; if (!P) return;
 
   if (action==='delete')     { deletePoints([i]); return; }
+  if (action==='multi')      { multiStart(); return; }
   if (action==='absorb') {                     // P tra A e B sparisce: resta una sola linea A-B
     const inc = state.segments.map((s,k) => ({s,k})).filter(e => e.s.a===i || e.s.b===i);
     if (inc.length!==2) { setTip('Si riassorbe solo un punto che unisce esattamente due linee.'); return; }
@@ -2070,6 +2534,7 @@ function deleteSelection(noHist) {
 
   const pen = state.selPen || new Set(); state.pencilLines = state.pencilLines.filter((_,i) => !pen.has(i)); state.selPen = null;
   removeItems(pts, segDel, ops);
+  state.multi = false; state.moveSel = false;
   commit('Eliminati '+segDel.size+' linee, '+pts.size+' punti, '+ops.size+' serramenti.');
 }
 
@@ -2143,8 +2608,9 @@ function closePhoto(){ document.getElementById('photo-viewer').classList.remove(
 // ═══════════════════════════════════════════════════════════
 //  CLICK (un solo punto di ingresso per mouse e touch)
 // ═══════════════════════════════════════════════════════════
-function handleClick(sx, sy, clientX, clientY) {
+function handleClick(sx, sy, clientX, clientY, shift) {
   hideAllMenus();
+  state.tapW = s2w(sx, sy);                    // dove compare la barra se da qui parte una selezione multipla
 
   // la scelta ①② ha sempre la precedenza su qualsiasi altro tool
   if (state.pending) {
@@ -2160,7 +2626,16 @@ function handleClick(sx, sy, clientX, clientY) {
   switch (state.tool) {
 
   case 'select': {
+    // selezione multipla (attiva o Shift+clic): il tocco aggiunge o toglie l'elemento, nessun menu
+    if (state.multi || shift) {
+      if (shift && state.sel) { selAdd(state.sel.kind, state.sel.idx); state.sel = null; }   // come nei CAD: clic su A, Shift+clic su B = A e B
+      const k = multiPickAt(sx, sy);
+      if (k) selAdd(k[0], k[1], true);
+      state.selAnchor = s2w(sx, sy);             // la barra si sposta comunque vicino all'ultimo tocco, cosi' non copre dove si sta lavorando
+      draw(); return;
+    }
     // il primo elemento toccato, in ordine di priorita', viene selezionato e apre il suo menu
+    state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null; state.moveSel=false;
     const pick = [
       ['opening',  pi===null ? hitOpening(sx,sy) : null, 'opening-context'],
       ['point',    pi,                    'context-menu'],
@@ -2313,7 +2788,7 @@ canvas.addEventListener('pointerdown', e => {
   if (state.pointers.size===2) {            // due dita: pinch, annullo ogni altra azione
     if (state.selBox && state.selBox.keep) Object.assign(state, state.selBox.keep);   // il primo dito non era un riquadro: la selezione resta
     state.pinchUsed=true; clearAssist();
-    state.isPanning=false; state.drag=null; state.rectDraw=null; state.stairResize=null;
+    state.isPanning=false; state.drag=null; state.rectDraw=null; state.roomDraw=null; state.stairResize=null;
     state.pencilCurrent=null; state.selBox=null;
     const p=[...state.pointers.values()];
     state.pinchDist = Math.hypot(p[0].x-p[1].x, p[0].y-p[1].y);
@@ -2348,6 +2823,7 @@ canvas.addEventListener('pointerdown', e => {
   switch (state.tool) {
     case 'pencil': state.pencilCurrent = {pts:[s2w(sx,sy)]}; return;
     case 'stair':  { const w=s2w(sx,sy); state.rectDraw={x0:w.x,y0:w.y,x1:w.x,y1:w.y}; return; }
+    case 'room':   { const c=roomCorner(sx,sy); state.roomDraw={x0:c.x, y0:c.y, x1:c.x, y1:c.y, a:c.pi, b:null}; return; }
     case 'wall':   return;                  // i vertici si mettono al clic (handleClick)
     case 'opening': {
       const hh = hitOpeningHandle(sx,sy); if (hh) { state.openingResize=hh; return; }
@@ -2356,7 +2832,9 @@ canvas.addEventListener('pointerdown', e => {
       return;
     }
     case 'select': {
-      if (e.shiftKey) { state.selBox={x0:sx,y0:sy,x1:sx,y1:sy,keep}; state.selSet=new Set(); return; }
+      // Shift o selezione multipla attiva: il riquadro aggiunge a quello che e' gia' selezionato; Shift+clic su un elemento lo aggiunge o toglie
+      const base = e.shiftKey || state.multi ? selCopy() : null;
+      if (e.shiftKey) { state.selBox={x0:sx,y0:sy,x1:sx,y1:sy,keep,base,shift:true}; return; }
       const hh = hitOpeningHandle(sx,sy); if (hh) { state.openingResize=hh; return; }
       const sh = hitStairHandle(sx,sy);   if (sh) { state.stairResize=sh; return; }
       const oi = hitPoint(sx,sy)===null ? hitOpening(sx,sy) : null;
@@ -2375,7 +2853,7 @@ canvas.addEventListener('pointerdown', e => {
       if (qi!==null) { const w=s2w(sx,sy); state.drag={kind:'pilastro', idx:qi, ox:w.x-state.pilastri[qi].x, oy:w.y-state.pilastri[qi].y}; return; }
       const ci = hitScala(sx,sy);
       if (ci!==null) { const w=s2w(sx,sy); state.drag={kind:'scala', idx:ci, ox:w.x-state.scale[ci].x, oy:w.y-state.scale[ci].y}; return; }
-      state.selBox={x0:sx,y0:sy,x1:sx,y1:sy,keep}; state.selSet=new Set();   // vuoto: riquadro di selezione
+      state.selBox={x0:sx,y0:sy,x1:sx,y1:sy,keep,base};   // vuoto: riquadro di selezione
       return;
     }
     case 'split': {                        // in Spezza i punti si trascinano subito
@@ -2423,6 +2901,7 @@ canvas.addEventListener('pointermove', e => {
 
   if (state.pencilCurrent) { state.pencilCurrent.pts.push(s2w(sx,sy)); draw(); return; }
   if (state.rectDraw)      { const w=s2w(sx,sy); state.rectDraw.x1=w.x; state.rectDraw.y1=w.y; draw(); return; }
+  if (state.roomDraw)      { const c=roomCorner(sx,sy); Object.assign(state.roomDraw, {x1:c.x, y1:c.y, b:c.pi}); draw(); return; }
   if (state.selBox)        { state.selBox.x1=sx; state.selBox.y1=sy; updateSelSet(); draw(); return; }
 
   if (state.stairResize) {                   // maniglie della scala: la lunghezza va a gradini interi
@@ -2486,7 +2965,7 @@ canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', e => {
   state.pointers.delete(e.pointerId); endPan(); hideTooltip(); clearAssist();
   state.pinchDist=null; state.pinchMid=null; state.selBox=null; if (!state.pointers.size) state.pinchUsed=false;
-  state.drag=null; state.openingDrag=null; state.openingResize=null; state.stairResize=null; state.rectDraw=null; state.pencilCurrent=null;
+  state.drag=null; state.openingDrag=null; state.openingResize=null; state.stairResize=null; state.rectDraw=null; state.roomDraw=null; state.pencilCurrent=null;
   if (state.dragSnap) { dragEnd(true); persist(); }
   draw();
 });
@@ -2515,14 +2994,19 @@ function endPointer(e) {
     else { state.rectDraw=null; draw(); }
     return;
   }
+  if (state.roomDraw) {
+    if (state.moved) finishRoom();
+    else { state.roomDraw=null; setTip(TIPS.room); draw(); }
+    return;
+  }
   if (state.selBox) {
-    if (!state.moved) {                        // semplice clic nel vuoto: vale come clic (es. dentro un ambiente)
-      state.selBox=null; state.selSet=null; state.selOpen=null; state.selSeg=null;
-      handleClick(sx, sy, e.clientX, e.clientY); return;
+    if (!state.moved) {                        // semplice clic (su una linea, un ambiente, nel vuoto): vale come clic, la selezione resta com'era
+      const sh = state.selBox.shift; Object.assign(state, state.selBox.keep); state.selBox = null;
+      handleClick(sx, sy, e.clientX, e.clientY, sh); return;
     }
-    updateSelSet(); state.selBox=null;
+    updateSelSet(); state.selBox=null; state.selAnchor = s2w(sx, sy);
     const nO = state.selOpen ? state.selOpen.size : 0, nS = state.selSeg ? state.selSeg.size : 0;
-    setTip(state.selSet.size || nO || nS ? nS+' linee, '+state.selSet.size+' punti e '+nO+' serramenti selezionati — Canc per eliminarli.' : 'Nessun elemento nella selezione.');
+    setTip(state.selSet.size || nO || nS ? nS+' linee, '+state.selSet.size+' punti e '+nO+' serramenti selezionati: le azioni sono nella barra vicino alla selezione.' : 'Nessun elemento nella selezione.');
     draw(); return;
   }
   if (state.stairResize || state.openingResize) { hideTooltip(); state.stairResize=null; state.openingResize=null; dragEnd(true); persist(); draw(); return; }
@@ -2576,6 +3060,7 @@ function updateSelSet() {
   });
   state.selPen = new Set();
   state.pencilLines.forEach((l,i) => { if (l.pts.some(p => { const s=w2s(p.x,p.y); return s.x>=x0 && s.x<=x1 && s.y>=y0 && s.y<=y1; })) state.selPen.add(i); });
+  if (b.base) ['selSet','selOpen','selPen'].forEach(k => b.base[k].forEach(i => state[k].add(i)));      // riquadro che aggiunge (Shift o selezione multipla)
   state.selSeg = new Set();
   const inR = (x,y) => x>=x0 && x<=x1 && y>=y0 && y<=y1;
   const cross = (ax,ay,bx,by,cx,cy,dx,dy) => {
@@ -2590,6 +3075,7 @@ function updateSelSet() {
         cross(a.x,a.y,b.x,b.y,x0,y0,x1,y0) || cross(a.x,a.y,b.x,b.y,x1,y0,x1,y1) ||
         cross(a.x,a.y,b.x,b.y,x1,y1,x0,y1) || cross(a.x,a.y,b.x,b.y,x0,y1,x0,y0)) state.selSeg.add(i);
   });
+  if (b.base) b.base.selSeg.forEach(i => state.selSeg.add(i));
 }
 
 function showTooltip(text, cx, cy) {
@@ -2611,8 +3097,8 @@ document.addEventListener('keydown', e => {
     if (state.exp) { expCancel(); return; }
     if (state.pending || state.trilStep || state.circles.length) { resetTril(); setTip('Trilaterazione annullata.'); }
     if (state.tool==='wall') resetWall();
-    state.measureShow=null;
-    state.selBox=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.sel=null;
+    state.measureShow=null; state.roomDraw=null;
+    state.selBox=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null; state.sel=null; state.multi=false; state.moveSel=false;
     document.getElementById('photo-viewer').classList.remove('show');
     hideAllMenus(); draw();
     return;
@@ -2710,7 +3196,8 @@ function restore(o) {
   COUNTERS.forEach(k => state[k] = o[k] || 0);
   photosIn(state.points);
   state.ambienti.forEach(a => { if (a.outdoor && !a.category) a.category = 'balconi'; delete a.outdoor; });   // flag "senza volume" delle 1.16-1.19
-  state.sel=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.pending=null; state.cand=null; state.circles=[];
+  state.sel=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null; state.pending=null; state.cand=null; state.circles=[];
+  state.multi=false; state.moveSel=false;
 }
 function saveHistory() {
   state.history.push(snapshot());
@@ -2921,17 +3408,109 @@ function renderExport(E, den, orient) {
     state.panX = Wl/2 - cxw*zl; state.panY = areaH/2 + cyw*zl;
     state.sel = null; state.selSeg = null; state.selSet = null; state.selOpen = null; state.selPen = null; state.hoverScala = null;
     const a = w2s(E.x0,E.y0), b = w2s(E.x1,E.y1);
+    CUTS = wallCuts(); PLAY = layoutPrint();
     ctx.save(); ctx.beginPath(); ctx.rect(a.x, a.y, b.x-a.x, b.y-a.y); ctx.clip();
     drawAmbienti(); drawPencil(); drawSegments(); drawPilastri(); drawScale(); drawOpenings(); drawLabels();
     ctx.restore();
     drawScaleBar(den, Hl);
   } finally {
+    PLAY = null;
     ctx = sv.ctx; W = sv.W; H = sv.H; C = sv.C; PRINT = sv.PRINT;
     state.panX = sv.panX; state.panY = sv.panY; state.zoom = sv.zoom;
     state.sel = sv.sel; state.selSeg = sv.selSeg; state.selSet = sv.selSet; state.selOpen = sv.selOpen; state.selPen = sv.selPen; state.hoverScala = sv.hov;
   }
   return cv;
 }
+// esportazione: nessun testo sopra un altro. Restano fermi quelli messi a mano (etichette, quote e nomi spostati
+// col dito) e i pilastri; poi si collocano i blocchi degli ambienti, le quote dei muri e i nomi dei serramenti.
+// Ognuno resta al suo posto se e' libero, altrimenti prende la prima posizione libera vicina; spostato, lo segue
+// la linea di richiamo. Chiamata con PRINT attivo e la vista gia' in scala sulla pagina.
+function segHitsRect(ax, ay, bx, by, r) {     // Liang-Barsky: il segmento tocca il riquadro?
+  let t0 = 0, t1 = 1; const dx = bx-ax, dy = by-ay, p = [-dx, dx, -dy, dy], q = [ax-r.x0, r.x1-ax, ay-r.y0, r.y1-ay];
+  for (let i=0; i<4; i++) {
+    if (p[i]===0) { if (q[i] < 0) return false; continue; }
+    const t = q[i]/p[i];
+    if (p[i] < 0) { if (t > t1) return false; if (t > t0) t0 = t; } else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return true;
+}
+function layoutPrint() {
+  const placed = [], pad = prU(1.5), L = {q:{}, op:{}, amb:new Map()};
+  // linee che un testo non deve coprire: muri (gia' interrotti dai varchi), spalle e simboli dei serramenti
+  const lines = [];
+  state.segments.forEach((g,i) => {
+    const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return;
+    const a = w2s(A.x,A.y), b = w2s(B.x,B.y);
+    segPieces(i, CUTS).forEach(([t0,t1]) => lines.push({ax:a.x+(b.x-a.x)*t0, ay:a.y+(b.y-a.y)*t0, bx:a.x+(b.x-a.x)*t1, by:a.y+(b.y-a.y)*t1, own:i, inf:1}));
+  });
+  (CUTS ? CUTS.jambs : []).forEach(j => { const a = w2s(j.a.x,j.a.y), b = w2s(j.b.x,j.b.y); lines.push({ax:a.x, ay:a.y, bx:b.x, by:b.y, own:j.si, inf:1}); });
+  state.openings.forEach((op,i) => { const e = openingEnds(i); if (e) lines.push({ax:e.a.x, ay:e.a.y, bx:e.b.x, by:e.b.y, own:-1, inf:prU(6)}); });
+  const onLine = (b, own) => lines.some(l => l.own!==own && segHitsRect(l.ax, l.ay, l.bx, l.by, {x0:b.x0-l.inf, x1:b.x1+l.inf, y0:b.y0-l.inf, y1:b.y1+l.inf}));
+  const free = (b, own) => !placed.some(p => b.x0 < p.x1+pad && b.x1+pad > p.x0 && b.y0 < p.y1+pad && b.y1+pad > p.y0) && !onLine(b, own);
+  const qBox = (cx, cy, q) => {                // ingombro di una quota ruotata (riquadro che la contiene)
+    const th = 2*PX_MM, c = Math.abs(Math.cos(q.ang)), s = Math.abs(Math.sin(q.ang));
+    const ex = c*q.w/2 + s*th/2, ey = s*q.w/2 + c*th/2;
+    return {x0:cx-ex, x1:cx+ex, y0:cy-ey, y1:cy+ey};
+  };
+  // fermi: etichette, pilastri, quote e nomi dei serramenti gia' spostati a mano
+  ctx.font = prFont(13, 2.5, true);
+  state.labels.forEach(l => { const s = w2s(l.x,l.y); placed.push({x0:s.x, y0:s.y, x1:s.x+ctx.measureText(l.text).width, y1:s.y+2.5*PX_MM*1.2}); });
+  state.pilastri.forEach(r => { const c = rectCenter(r); placed.push({x0:c.x-6*PX_MM, x1:c.x+6*PX_MM, y0:c.y-2.5*PX_MM, y1:c.y+2.5*PX_MM}); });
+  state.segments.forEach((g,i) => { if (!g.qo) return; const q = quotaInfo(i); if (q) placed.push(qBox(q.cx, q.cy, q)); });
+  const opText = i => { const q = openingQuotaPos(i); ctx.font = prFont(11, 2, true); const w = ctx.measureText(state.openings[i].label).width, h = 2*PX_MM;
+                        return {x0:q.x-w/2, x1:q.x+w/2, y0:q.y-prU(7)-h/2, y1:q.y-prU(7)+h/2}; };
+  state.openings.forEach((op,i) => { if (op.qo && openingPos(i)) placed.push(opText(i)); });
+  const handAmb = am => !!(am.lo && (am.lo.x || am.lo.y));
+  const leaderLine = (am, c, b) => {           // la linea di richiamo di un blocco fuori dal suo ambiente diventa un ostacolo per gli altri testi
+    const pts = am.indices.map(i => state.points[i]).filter(Boolean), S = ambLeaderStart(pts, s2w(c.x, c.y)); if (!S) return;
+    const s = w2s(S.x, S.y), e = boxEntry(s, c, {x0:b.x0-prU(3), x1:b.x1+prU(3), y0:b.y0-prU(3), y1:b.y1+prU(3)});
+    if (e) lines.push({ax:s.x, ay:s.y, bx:e.x, by:e.y, own:-2, inf:1});
+  };
+  state.ambienti.forEach(am => { if (!handAmb(am)) return; const c = ambLabelPos(am); if (!c) return; const b = ambBlockBox(am, c); placed.push(b); leaderLine(am, c, b); });
+  // ambienti: blocco al suo posto, altrimenti spostato di mezzo blocco o di un blocco intero nelle 8 direzioni
+  state.ambienti.forEach(am => {
+    if (handAmb(am)) return;
+    const c = ambLabelPos(am); if (!c) return;
+    const b0 = ambBlockBox(am, c), bw = b0.x1-b0.x0, bh = b0.y1-b0.y0;
+    const steps = [[0,0]]; [0.6, 1.2, 1.8, 2.5, 3.2].forEach(k => [[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([u,v]) => steps.push([u*k,v*k])));
+    for (const [u,v] of steps) {             // ambiente piu' piccolo del suo testo: il blocco esce, la linea di richiamo lo collega
+      const cc = {x:c.x+u*bw, y:c.y+v*bh}, b = ambBlockBox(am, cc);
+      if (free(b, null)) { placed.push(b); if (u||v) { L.amb.set(am, cc); leaderLine(am, cc, b); } return; }
+    }
+    placed.push(b0);                           // nessun posto libero vicino: resta dov'era
+  });
+  // quote dei muri: sopra la linea, sotto, poi piu' lontano e scorrendo lungo il muro
+  state.segments.forEach((g,i) => {
+    if (g.qo) return;
+    const q = quotaInfo(i); if (!q) return;
+    const nx = Math.sin(q.ang), ny = -Math.cos(q.ang), tx = Math.cos(q.ang), ty = Math.sin(q.ang);
+    const mx = (q.sa.x+q.sb.x)/2, my = (q.sa.y+q.sb.y)/2, o = prU(10), st = 2*PX_MM*1.3, w9 = q.w*0.9, w16 = q.w*1.6;
+    const cand = [[o,0],[-o,0],[o+st,0],[-o-st,0],[o,w9],[o,-w9],[-o,w9],[-o,-w9],[o,w16],[o,-w16],[-o,w16],[-o,-w16],
+                  [o+2*st,0],[-o-2*st,0],[o+3*st,0],[-o-3*st,0]];
+    for (let k=0; k<cand.length; k++) {
+      const [dn, dt] = cand[k], cx = mx+nx*dn+tx*dt, cy = my+ny*dn+ty*dt, b = qBox(cx, cy, q);
+      if (free(b, i)) { placed.push(b); if (k) L.q[i] = {x:cx, y:cy}; return; }
+    }
+    placed.push(qBox(q.cx, q.cy, q));
+  });
+  // nomi dei serramenti: sopra, sotto, ai lati, piu' lontano
+  state.openings.forEach((op,i) => {
+    if (op.qo) return;
+    const p = openingPos(i); if (!p) return;
+    ctx.font = prFont(11, 2, true);
+    const w = ctx.measureText(op.label).width, h = 2*PX_MM, d = prU(22);
+    const cand = [[0,-d],[0,d+prU(14)],[-(w/2+d),-prU(4)],[w/2+d,-prU(4)],[0,-d*1.8],[0,d*1.8+prU(14)],[-(w+d),-d],[w+d,-d],[0,-d*2.6],[0,d*2.6+prU(14)]];
+    for (let k=0; k<cand.length; k++) {
+      const qx = p.sx+cand[k][0], qy = p.sy+cand[k][1], b = {x0:qx-w/2, x1:qx+w/2, y0:qy-prU(7)-h/2, y1:qy-prU(7)+h/2};
+      // anche il richiamo tratteggiato (dal serramento al nome) non deve passare sopra un altro testo
+      const e = boxEntry({x:p.sx, y:p.sy}, {x:qx, y:qy-prU(7)}, {x0:b.x0-prU(2), x1:b.x1+prU(2), y0:b.y0-prU(2), y1:b.y1+prU(2)});
+      const leadOk = !e || !placed.some(pb => segHitsRect(p.sx, p.sy, e.x, e.y, pb));
+      if (free(b, null) && leadOk) { placed.push(b); if (k) L.op[i] = {x:qx, y:qy}; return; }
+    }
+  });
+  return L;
+}
+
 // barra metrica graduata e dicitura della scala nel piede di pagina (px logici: 1 mm = 96/25.4)
 function drawScaleBar(den, Hl) {
   const pm = 96/25.4;
@@ -3061,24 +3640,32 @@ function exportDXF() {
   const rect = (layer,r) => poly(layer, [
     {x:r.x,y:r.y},{x:r.x+r.w,y:r.y},{x:r.x+r.w,y:r.y-r.h},{x:r.x,y:r.y-r.h}], true);
 
-  // muri + quote
-  state.segments.forEach(s => {
+  // muri (interrotti dai varchi dei serramenti, con le spalle) + quote
+  const cuts = wallCuts();
+  state.segments.forEach((s,i) => {
     const A=state.points[s.a], B=state.points[s.b]; if(!A||!B) return;
-    line(s.layer||'MURI', A.x,A.y, B.x,B.y);
+    segPieces(i, cuts).forEach(([t0,t1]) => line(s.layer||'MURI', A.x+(B.x-A.x)*t0, A.y+(B.y-A.y)*t0, A.x+(B.x-A.x)*t1, A.y+(B.y-A.y)*t1));
     if (s.layer!=='MURI_EST')                     // i muri esterni non portano quota
       text('QUOTE', (A.x+B.x)/2+(s.qo?s.qo.x:0), (A.y+B.y)/2+(s.qo?s.qo.y:0.08), 0.12,
            Math.hypot(B.x-A.x,B.y-A.y).toFixed(2)+' m', true);
   });
+  cuts.jambs.forEach(j => { const s = state.segments[j.si]; line((s && s.layer)||'MURI', j.a.x, j.a.y, j.b.x, j.b.y); });
 
-  // ambienti da poligono
+  // ambienti da poligono; etichetta portata fuori dall'ambiente = linea di richiamo fino al testo
   state.ambienti.forEach(a => {
     const pts = a.indices.map(i=>state.points[i]).filter(Boolean);
     if (pts.length<3) return;
     poly('AMBIENTI', pts, true);
     const cc = ambCenter(a), cx = cc.x+(a.lo?a.lo.x:0), cy = cc.y+(a.lo?a.lo.y:0), net = ambNet(a);
+    const info = net.toFixed(2)+' mq  h='+a.h+' m'+(ambNoVol(a) ? '' : '  '+(net*a.h).toFixed(2)+' mc');
     text('AMBIENTI', cx, cy, 0.16, a.name, true);
-    text('AMBIENTI', cx, cy-0.22, 0.12,
-         net.toFixed(2)+' mq  h='+a.h+' m'+(ambNoVol(a) ? '' : '  '+(net*a.h).toFixed(2)+' mc'), true);
+    text('AMBIENTI', cx, cy-0.22, 0.12, info, true);
+    const S = ambLeaderStart(pts, {x:cx, y:cy-0.03});
+    if (S) {                                    // testi: nome con la base in cy (alto 0,16), riga sotto con la base in cy-0,22
+      const hw = Math.max(a.name.length*0.16, info.length*0.12)*0.32 + 0.05;      // mezza larghezza del testo (circa 0,64 x altezza per carattere)
+      const e = boxEntry(S, {x:cx, y:cy-0.03}, {x0:cx-hw, x1:cx+hw, y0:cy-0.27, y1:cy+0.21});
+      if (e) line('AMBIENTI', S.x, S.y, e.x, e.y);
+    }
   });
 
   // tabella ambienti: nome, area, altezza, volume e totali, utile per controllare al volo errori o dimenticanze
@@ -3173,7 +3760,7 @@ function exportOpeningsCSV() {
     'Superficie bucatura (mq)','Superficie vetrata (mq)','Superficie telaio (mq)','Note'];
   const rows = [head];
   state.openings.forEach(op => {
-    const e = op.energy || {}, ar = openingAreas(op);
+    const e = op.energy || {}, ar = openingAreas(op), gl = openingGlass(op);     // specchiatura scritta a mano o calcolata dalla bucatura
     rows.push([
       op.label, TIPO[op.type]||op.type,
       op.width.toFixed(2), op.hb!=null ? (+op.hb).toFixed(2) : '',
@@ -3181,7 +3768,7 @@ function exportOpeningsCSV() {
       e.vetro ? VETRO[e.vetro] : '', e.spVetro ?? '', e.distanz || '',
       e.cass ? SI[e.cass] : '', e.cassIso ? SI[e.cassIso] : '', e.cassH ?? '', e.cassP ?? '',
       e.telaio ? TELAIO[e.telaio] : '', e.spTelaio ?? '', e.oscurante ? OSC[e.oscurante] : '',
-      e.vetri ?? '', e.pannelli ?? '', e.vetroL ?? '', e.vetroH ?? '',
+      e.vetri ?? '', e.pannelli ?? '', gl ? gl.L.toFixed(3) : '', gl ? gl.H.toFixed(3) : '',
       ar.bucatura.toFixed(2), ar.vetrata!=null ? ar.vetrata.toFixed(2) : '', ar.telaio!=null ? ar.telaio.toFixed(2) : '',
       e.note || '',
     ]);
@@ -3206,14 +3793,37 @@ function exportSuperficieCommerciale() {
   const tot = {};
   state.ambienti.forEach(a => { if (!a.category) return; tot[a.category] = (tot[a.category]||0) + ambNet(a); });
 
-  let muriPerim = 0, muriCom = 0;
-  state.segments.forEach(g => {
-    if (!g.commType || !g.thick) return;
-    const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return;
-    const len = Math.hypot(B.x-A.x, B.y-A.y);
-    if (g.commType==='perimetrale') muriPerim += len * Math.min(g.thick, 0.50);
-    if (g.commType==='comunione')   muriCom   += len * Math.min(g.thick*0.5, 0.25);    // meta' spessore, al massimo 25 cm
-  });
+  // LORDO (DPR 138/98, come la riga 72 dell'Excel di riferimento): con il contorno esterno del ricalco (anelli MURI_EST)
+  // i muri = area dentro il contorno - ambienti dentro; cosi' entrano muri interni, perimetrali e pilastri. Al vicino va
+  // la sua parte dei muri in comunione (conta il 50% dello spessore, al massimo 25 cm) e dei perimetrali oltre 50 cm.
+  // Senza contorno: muri perimetrali e in comunione classificati a mano, i muri interni restano fuori.
+  const rings = extRings(), segLen = g => { const A = state.points[g.a], B = state.points[g.b]; return A && B ? Math.hypot(B.x-A.x, B.y-A.y) : 0; };
+  let muriLordo = null, muriPerim = 0, muriCom = 0;
+  if (rings.length) {
+    let aCont = 0, aIn = 0, corr = 0;
+    const polys = rings.map(r => r.pts);
+    rings.forEach(r => {
+      aCont += Math.abs(shoelace(r.pts));
+      r.segs.forEach(k => {
+        const g = state.segments[k], t = g.thick || 0, len = segLen(g);
+        if (g.commType==='comunione') corr += len * (t - Math.min(t*0.5, 0.25));
+        else if (t > 0.5) corr += len * (t - 0.5);
+      });
+    });
+    state.ambienti.forEach(a => {
+      const pts = a.indices.map(i => state.points[i]).filter(Boolean), c = ambCenter(a);
+      if (pts.length>=3 && c && polys.some(p => inPoly(p, c.x, c.y))) aIn += Math.abs(shoelace(pts));
+    });
+    muriLordo = Math.max(0, aCont - aIn - corr);
+  } else {
+    state.segments.forEach(g => {
+      if (!g.commType || !g.thick) return;
+      const len = segLen(g);
+      if (g.commType==='perimetrale') muriPerim += len * Math.min(g.thick, 0.50);
+      if (g.commType==='comunione')   muriCom   += len * Math.min(g.thick*0.5, 0.25);    // meta' spessore, al massimo 25 cm
+    });
+  }
+  const nDubbi = state.segments.filter(g => g.cv==='dubbio').length;
 
   const rows = [['Categoria','Incidenza','Mq rilevati','Mq commerciali','Note']];
   let totComm = 0;
@@ -3228,12 +3838,20 @@ function exportSuperficieCommerciale() {
     rows.push([c.label, c.k, S.toFixed(2), mq.toFixed(2), nota]);
     totComm += mq;
   });
-  if (muriPerim>0) { rows.push(['Muri perimetrali', 1, '', muriPerim.toFixed(2), 'spessore fino a 50 cm, 100%']); totComm += muriPerim; }
-  if (muriCom>0)   { rows.push(['Muri in comunione', 0.5, '', muriCom.toFixed(2), '50% dello spessore, fino a 25 cm']); totComm += muriCom; }
+  if (muriLordo!==null) {
+    rows.push(['Muri (lordo dal contorno esterno)', 1, '', muriLordo.toFixed(2), 'interni e perimetrali al 100% fino a 50 cm, in comunione al 50% fino a 25 cm, pilastri compresi']);
+    totComm += muriLordo;
+  } else {
+    if (muriPerim>0) { rows.push(['Muri perimetrali', 1, '', muriPerim.toFixed(2), 'spessore fino a 50 cm, 100%']); totComm += muriPerim; }
+    if (muriCom>0)   { rows.push(['Muri in comunione', 0.5, '', muriCom.toFixed(2), '50% dello spessore, fino a 25 cm']); totComm += muriCom; }
+    rows.push(['Muri interni', '', '', '', 'non compresi: manca il contorno esterno (si crea con Ricalca ambienti)']);
+  }
+  if (nDubbi) rows.push(['Attenzione', '', '', '', nDubbi+' muri esterni col tipo proposto dall\'app, non ancora validati']);
   rows.push(['Parti condominiali', '', '', '', 'quota millesimale: da inserire a mano, non calcolabile dal rilievo']);
   rows.push(['Totale mq commerciali', '', '', totComm.toFixed(2), '']);
   downloadCSV(stamp()+'_superficie_commerciale.csv', rows);
-  setTip('Superficie commerciale esportata (CSV): '+totComm.toFixed(2)+' mq commerciali (esclusa quota millesimale).');
+  setTip('Superficie commerciale esportata (CSV): '+totComm.toFixed(2)+' mq commerciali'+(muriLordo!==null ? ', al lordo dei muri' : ', muri interni esclusi (manca il contorno esterno)')+
+         (nDubbi ? '. Attenzione: '+nDubbi+' muri esterni da validare.' : '.'));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4286,19 +4904,19 @@ function wallsRun() {
 function wallsApply() {
   const P = state.wallsPrev; if (!P || !P.segs.length) return;
   saveHistory();
-  const base = state.points.length;
+  const base = state.points.length, s0 = state.segments.length, h = lastAmbH();
   P.nodes.forEach(n => newPoint(n.x, n.y));
-  // muri esterni: gia' classificati Perimetrali con lo spessore letto, cosi' la superficie commerciale dei muri e' pronta
-  const ext = P.wallT ? {layer:'MURI_EST', commType:'perimetrale', thick:P.wallT} : {layer:'MURI_EST'};
-  P.segs.forEach(([a,b],k) => { if (!segExists(base+a, base+b)) state.segments.push(k>=(P.extStart??1e9) ? {a:base+a, b:base+b, ...ext} : {a:base+a, b:base+b}); });
+  P.segs.forEach(([a,b],k) => { if (!segExists(base+a, base+b)) state.segments.push(k>=(P.extStart??1e9) ? {a:base+a, b:base+b, layer:'MURI_EST'} : {a:base+a, b:base+b}); });
   (P.rooms||[]).forEach(r => {
     const idx = r.ring.map(id => base+id);
     const n = state.ambienti.length;
-    state.ambienti.push({ indices:idx, name:'Ambiente '+(n+1), h:2.70, color:AMB_COLORS[n%AMB_COLORS.length], category:'utile' });   // il ricalco scarta gia' i balconi
+    state.ambienti.push({ indices:idx, name:'Ambiente '+(n+1), h, color:AMB_COLORS[n%AMB_COLORS.length], category:'utile' });   // il ricalco scarta gia' i balconi
   });
-  const nR = (P.rooms||[]).length;
+  // muri esterni: spessore letto dal disegno muro per muro, tipo proposto (Perimetrale o In comunione) da validare
+  classifyExtWalls(state.segments.map((_,k) => k).filter(k => k >= s0), P.wallT);
+  const nR = (P.rooms||[]).length, nd = state.segments.filter(g => g.cv==='dubbio').length;
   state.wallsPrev = null; state.moveBase = false; $id('walls-panel').classList.remove('show'); $id('base-panel').classList.remove('show');   // piu' spazio per lavorare; si riapre da File
-  commit('Aggiunti '+nR+' ambienti ('+P.segs.length+' linee). Clic dentro un ambiente per rinominarlo o eliminarlo.');
+  commit('Aggiunti '+nR+' ambienti ('+P.segs.length+' linee). Muri esterni tratteggiati = tipo proposto da validare ('+nd+'): inserendo le finestre si decidono da soli.');
 }
 
 // salvataggio della base dentro il progetto .json
@@ -4378,8 +4996,8 @@ else { flagSaved('nuovo rilievo'); draw(); }
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.00';
-const APP_NOTE = ["Annulla: dopo aver chiuso un ambiente il primo ↩ toglie solo l'ambiente; mentre tracci un muro ↩ toglie l'ultimo tratto e riprendi dal vertice precedente", "Toccando un muro a metà si apre il menu della linea; il menu della quota si apre toccando il numero", "Ambienti: la categoria sostituisce il campo \"Tipo\" (quelle all'aperto non hanno volume) e gli ambienti nuovi nascono \"Superficie utile\": cambi solo balconi, cantine e box", "Ricalco ambienti: i muri esterni sono già Perimetrali, con lo spessore letto dalla pianta", "Superficie commerciale: muri in comunione al 50% dello spessore, fino a 25 cm; \"Spessore e tipo\" dal menu di un muro vale solo per quel muro", "Trilatera: se il punto trovato cade a meno di 1 cm da un punto esistente usa quello, senza doppioni", "Dati energetici: i valori proposti ripartono dall'ultimo serramento compilato anche dopo aver chiuso l'app; la nota resta del singolo serramento", "Codice ripulito e alleggerito; i progetti salvati prima della versione 1.07 non si aprono più"];
+const APP_VERSION = '2.01';
+const APP_NOTE = ["Selezione multipla: Shift+clic sul PC; dal menu di un muro, punto o serramento \"Selezione multipla\", poi ogni tocco aggiunge o toglie. Le azioni (Spessore, Sposta, Elimina) stanno in una barra vicino alla selezione, che non copre mai il dito", "Valori in sequenza: spessore e tipo del muro, altezza dell'ambiente, pedata e alzata della scala, misura del pilastro ripartono dall'ultimo compilato: si conferma con un tocco", "Dati energetici: la specchiatura si calcola dalla bucatura (telaio 9 cm per lato, montante 9 cm tra le specchiature affiancate); resta modificabile, 0 torna al calcolo", "Finestre, porte e porte-finestre aprono il varco nel muro: la linea si interrompe, anche quella esterna, e due spalle chiudono lo spessore. A video, in PDF/JPG e nel DXF", "Etichetta dell'ambiente portata fuori: una linea di richiamo la collega all'ambiente, in qualsiasi direzione (anche nel DXF)", "Esportazione PDF/JPG: quote, nomi dei serramenti e testi degli ambienti non si sovrappongono più tra loro né alle linee; quelli spostati hanno la linea di richiamo", "Nuovo strumento \"Stanza rettangolare\" (Disegna): trascini un rettangolo e nascono 4 muri e l'ambiente", "Ricalco: i muri esterni hanno lo spessore letto muro per muro e il tipo proposto (Perimetrale o In comunione), tratteggiati finché non li validi. Una finestra li fa Perimetrali, la porta d'ingresso In comunione. Contatore \"Muri da validare\" nella barra in basso", "Superficie commerciale al lordo dal contorno esterno: muri interni, perimetrali e pilastri compresi, muri in comunione al 50%", "Toccando vicino a due linee si prende la più vicina al dito"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 function showNews(title) {

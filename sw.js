@@ -1,6 +1,6 @@
 // Service worker App Rilievo: rende l'app installabile e utilizzabile offline.
 // Il segnaposto della versione viene sostituito da pubblica_app.py a ogni pubblicazione: cambia la cache e forza l'aggiornamento.
-const CACHE = 'app-rilievo-2.00';
+const CACHE = 'app-rilievo-2.01';
 const FILES = [
   './', './index.html', './manifest.json',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
