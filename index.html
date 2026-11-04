@@ -880,7 +880,7 @@ function stairInfo(s) {
                 'Pedate: '+R.map(q => q.n).join(' + ')+' x '+cm(p)+' cm'+(pDiv.length>1 ? ' (!) diverse: '+pDiv.join(' / ') : p<0.25 ? ' (!) sotto 25 cm' : '')];
   if (land) rows.push(T.lands===1 ? 'Pianerottolo: '+Math.round(land.w*100)+' x '+Math.round(land.h*100)+' cm' : T.lands+' pianerottoli');
   rows.push('H superata: '+stairHeight(s).toFixed(2).replace('.', ',')+' m');
-  rows.push('2a+p = '+Math.round(bl)+' cm'+(bl<62 || bl>64 ? ' (!) fuori da 62-64' : ''));
+  if (bl<62 || bl>64) rows.push('(!) Blondel: 2a+p = '+Math.round(bl)+' cm, fuori da 62-64');          // solo avviso, se non e' rispettato
   return rows;
 }
 // freccia di salita: per una scala composta UNA linea sola che attraversa rampa, pianerottolo e rampa successiva (punta solo in fondo);
@@ -7209,8 +7209,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.19';
-const APP_NOTE = ["Spessore automatico dei muri: si ricalcola anche mentre sposti la linea (prima restava fermo fino alla modifica successiva). La quota segue il muro, compare se avvicini la linea esterna a meno di 65 cm e sparisce se la allontani"];
+const APP_VERSION = '2.20';
+const APP_NOTE = ["Etichetta della scala: la regola di Blondel (2a+p tra 62 e 64 cm) compare solo come avviso rosso quando non è rispettata; alzata sopra 18 cm e pedata sotto 25 cm restano segnalate solo se fuori soglia"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
