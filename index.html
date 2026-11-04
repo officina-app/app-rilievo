@@ -108,8 +108,10 @@
     #exp-bar button:disabled { opacity:.4; cursor:not-allowed; }
     #exp-info { flex:1 1 220px; font-size:12px; }
     #rbtns { position:fixed; top:10px; right:10px; z-index:160; display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
-    #rbtns button { min-width:46px; height:46px; border-radius:23px; padding:0 14px; font-size:20px; background:rgba(22,33,62,.82); color:#fff; border:1px solid #4a9eff; box-shadow:0 2px 10px rgba(0,0,0,.45); cursor:pointer; }
-    #rbtns button.on { background:#1a6a3a; border-color:#2a9a5a; font-size:15px; }
+    #rbtns button { flex:none; box-sizing:border-box; width:46px; height:46px; border-radius:23px; padding:0; font-size:20px; background:rgba(22,33,62,.82); color:#fff; border:1px solid #4a9eff; box-shadow:0 2px 10px rgba(0,0,0,.45); cursor:pointer; }
+    #rbtns button.on { background:#1a6a3a; border-color:#2a9a5a; }
+    #hand-btn.on, #paste-btn.on { font-size:15px; width:auto; padding:0 14px; }
+    #rbtns button.off { width:auto; padding:0 14px; }
     #help-btn { font-weight:bold; }
     #leg-box { position:fixed; top:172px; right:64px; z-index:160; display:none; background:rgba(22,33,62,.95); border:1px solid #0f3460; border-radius:8px; padding:8px 12px; font-size:12px; color:#ddd; }
     #leg-box div { display:flex; align-items:center; gap:8px; margin:3px 0; }
@@ -408,6 +410,7 @@
 <button id="mag-btn" title="Calamita: angoli, ortogonali e allineamenti" onclick="toggleMagnet()">🧲</button>
 <button id="help-btn" title="Guida: cosa devi fare oggi?" onclick="guideMenu()">?</button>
 <button id="leg-btn" title="Legenda dei colori" onclick="toggleLegend()">🎨</button>
+<button id="thk-btn" title="Quote dello spessore dei muri generato in automatico: accese/spente" onclick="toggleThkQ()">↔</button>
 <button id="oppanel-btn" title="Disegno dei serramenti: specchiature di tutti i serramenti, accanto alla pianta" onclick="toggleOpPanel()">🪟</button>
 <button id="paste-btn" title="Incolla (compare dopo una copia)" onclick="pasteBtnTap()" style="display:none">⎗</button>
 </div>
@@ -880,6 +883,35 @@ function stairInfo(s) {
   rows.push('2a+p = '+Math.round(bl)+' cm'+(bl<62 || bl>64 ? ' (!) fuori da 62-64' : ''));
   return rows;
 }
+// freccia di salita: per una scala composta UNA linea sola che attraversa rampa, pianerottolo e rampa successiva (punta solo in fondo);
+// una rampa singola, o un gruppo non agganciato, ha la sua freccia
+function rampPath(q) {
+  const b = stairB(q), st = q.sgn>0 ? b.a0 : b.a1, cm = (b.c0+b.c1)/2, L = q.n*q.pedata, f0 = st+q.sgn*L*0.12, f1 = st+q.sgn*L*0.88;
+  return q.ax==='x' ? [{x:f0,y:cm},{x:f1,y:cm}] : [{x:cm,y:f0},{x:cm,y:f1}];
+}
+function stairArrows() {
+  const out = [], done = new Set();
+  state.scale.forEach(s => {
+    if (hid(s) || s.tipo==='P') return;
+    if (!s.grp) { out.push(rampPath(s)); return; }
+    if (done.has(s.grp)) return; done.add(s.grp);
+    const G = state.scale.filter(q => q.grp===s.grp && !hid(q)), R = G.filter(q => q.tipo!=='P'), Ls = G.filter(q => q.tipo==='P'), bySid = id => G.find(q => q.sid===id);
+    if (Ls.length && Ls.every(P => P.from && bySid(P.from) && bySid(P.to))) {
+      const toSet = new Set(Ls.map(P => P.to)); let cur = R.find(q => !toSet.has(q.sid)), guard = 0;
+      if (cur) {
+        const pts = [rampPath(cur)[0]];
+        while (cur && guard++ < 12) {
+          const P = Ls.find(q => q.from===cur.sid);
+          if (!P) { pts.push(rampPath(cur)[1]); break; }
+          pts.push(stairCenter(P)); cur = bySid(P.to);
+        }
+        if (pts.length>1) { out.push(pts); return; }
+      }
+    }
+    R.forEach(q => out.push(rampPath(q)));
+  });
+  return out;
+}
 function drawStairArrow(pts) {              // freccia di salita lungo la spezzata pts (punti mondo), con il pallino alla partenza
   const P = pts.map(q => w2s(q.x,q.y)), A0 = P[0], A1 = P[P.length-1];
   ctx.strokeStyle = C.stairArrow; ctx.fillStyle = C.stairArrow; ctx.lineWidth = prLw(1.5, 0.18);
@@ -913,8 +945,6 @@ function drawStair(s, mode, lab) {          // lab=false: la scala e' composta e
     const u = s.ax==='x' ? w2s(a,b.c0) : w2s(b.c0,a), v = s.ax==='x' ? w2s(a,b.c1) : w2s(b.c1,a);
     ctx.beginPath(); ctx.moveTo(u.x,u.y); ctx.lineTo(v.x,v.y); ctx.stroke();
   }
-  const cm = (b.c0+b.c1)/2, L = s.n*p, f0 = st + s.sgn*L*0.12, f1 = st + s.sgn*L*0.88;
-  drawStairArrow(s.ax==='x' ? [{x:f0,y:cm},{x:f1,y:cm}] : [{x:cm,y:f0},{x:cm,y:f1}]);
 }
 
 // colonna dei comandi: righe quante ne entrano nell'altezza, il canvas parte dopo la colonna
@@ -988,8 +1018,8 @@ function hitOpening(sx, sy) {
     const p = openingPos(i); if (!p) continue;
     const op = state.openings[i], L = Math.hypot(p.B.x-p.A.x, p.B.y-p.A.y) || 1, hw = op.width/L/2;
     const t0 = Math.max(0, op.t-hw), t1 = Math.min(1, op.t+hw);
-    const ax = p.sa.x+(p.sb.x-p.sa.x)*t0, ay = p.sa.y+(p.sb.y-p.sa.y)*t0;
-    const bx = p.sa.x+(p.sb.x-p.sa.x)*t1, by = p.sa.y+(p.sb.y-p.sa.y)*t1;
+    const ax = p.sa.x+(p.sb.x-p.sa.x)*t0+p.dx, ay = p.sa.y+(p.sb.y-p.sa.y)*t0+p.dy;
+    const bx = p.sa.x+(p.sb.x-p.sa.x)*t1+p.dx, by = p.sa.y+(p.sb.y-p.sa.y)*t1+p.dy;
     if (Math.hypot(sx-p.sx, sy-p.sy) <= (COARSE?22:16) || distPtSeg(sx,sy,ax,ay,bx,by) <= (COARSE?18:12)) return i;
   }
   return null;
@@ -1039,7 +1069,13 @@ function openingPos(i) {
   const g  = state.segments[op.segIdx]; if (!g) return null;
   const A = state.points[g.a], B = state.points[g.b]; if (!A||!B) return null;
   const sa = w2s(A.x,A.y), sb = w2s(B.x,B.y);
-  return { sx: sa.x+(sb.x-sa.x)*op.t, sy: sa.y+(sb.y-sa.y)*op.t, sa, sb, A, B };
+  let sx = sa.x+(sb.x-sa.x)*op.t, sy = sa.y+(sb.y-sa.y)*op.t, dx = 0, dy = 0;
+  const yo = (CUTS && CUTS.off && CUTS.off[i]) || 0, L = Math.hypot(B.x-A.x, B.y-A.y);            // il serramento sta nello spessore del muro: si seleziona dove si vede
+  if (yo && L > 1e-9) {
+    const q = w2s(A.x+(B.x-A.x)*op.t - (B.y-A.y)/L*yo, A.y+(B.y-A.y)*op.t + (B.x-A.x)/L*yo);
+    dx = q.x-sx; dy = q.y-sy; sx = q.x; sy = q.y;
+  }
+  return { sx, sy, sa, sb, A, B, dx, dy };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1082,6 +1118,7 @@ function drawNow() {
   const pb = document.getElementById('paste-btn');                // dopo una copia compare "Incolla"; mentre si incolla diventa "Fine"
   if (pb) { const pasting = state.tool==='paste' || state.tool==='pasteOp'; setDisp(pb, (CLIP && !state.moveBase) || pasting ? '' : 'none'); setTxt(pb, pasting ? '✔ Fine' : '⎗'); pb.classList.toggle('on', pasting); }
   if (OPPANEL) opPanelUpdate(false);
+  { const tb = $id('thk-btn'); if (tb) tb.classList.toggle('on', THKQ); }
   updateMagnetBtn();
   const hb = document.getElementById('hand-btn');
   if (hb) { setTxt(hb, state.handMode ? '✋ Mano attiva - tocca per finire' : '✋'); hb.classList.toggle('on', !!state.handMode); }
@@ -1203,6 +1240,25 @@ function confirmProposals() {
 const WALL_FACE_MAX = 0.65;
 let CUTS = null;                              // varchi e spalle, ricalcolati a ogni disegno
 function ringHasEdge(a, p, q) { const r = a.indices, n = r.length; for (let k=0;k<n;k++) { const u = r[k], v = r[(k+1)%n]; if ((u===p && v===q) || (u===q && v===p)) return true; } return false; }
+// quota dello spessore generato in automatico (spegnibile per tutto il disegno col pulsante ↔): serve a vedere se l'app ha capito lo spessore
+let THKQ = true;
+try { THKQ = localStorage.getItem('app_rilievo_thkq')!=='0'; } catch (err) {}
+function toggleThkQ() { THKQ = !THKQ; try { localStorage.setItem('app_rilievo_thkq', THKQ ? '1' : '0'); } catch (err) {} setTip(THKQ ? 'Quote dello spessore automatico accese.' : 'Quote dello spessore automatico spente.'); draw(); }
+function drawThickQuotes() {
+  if (!THKQ) return;
+  state.segments.forEach(g => {
+    if (!g.thAuto || !g.thick || !g.thN || hid(g)) return;
+    const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return;
+    const f = g.thF ?? 0.5, M = {x:A.x+(B.x-A.x)*f, y:A.y+(B.y-A.y)*f}, p0 = w2s(M.x, M.y), p1 = w2s(M.x+g.thN.x*g.thick, M.y+g.thN.y*g.thick);
+    const dx = p1.x-p0.x, dy = p1.y-p0.y, l = Math.hypot(dx, dy) || 1, ux = dx/l, uy = dy/l, tk = prU(4);
+    ctx.save(); ctx.strokeStyle = PRINT ? '#0a7a3a' : '#5ef38c'; ctx.fillStyle = ctx.strokeStyle; ctx.lineWidth = prLw(1, 0.13); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y);
+    [p0, p1].forEach(q => { ctx.moveTo(q.x-uy*tk, q.y+ux*tk); ctx.lineTo(q.x+uy*tk, q.y-ux*tk); });
+    ctx.stroke();
+    ctx.font = prFont(10, 1.7, true); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(Math.round(g.thick*100)+' cm', p1.x+ux*prU(16), p1.y+uy*prU(16)); ctx.restore();
+  });
+}
 // SPESSORE DALLA GRAFICA: il filo interno di un muro (linea che delimita un ambiente) prende lo spessore dalla linea parallela
 // oltre il muro, a meno di 65 cm. Vale finche' lo spessore non e' scritto a mano (g.thAuto); se la linea esterna sparisce torna da dare.
 function autoWallThick() {
@@ -1211,9 +1267,12 @@ function autoWallThick() {
     const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return;
     if (Math.hypot(B.x-A.x, B.y-A.y) < 0.3 || !state.ambienti.some(a => live(a) && ringHasEdge(a, g.a, g.b))) return;
     let d = null;
-    for (const f of [0.5, 0.25, 0.75]) { const P = {x:A.x+(B.x-A.x)*f, y:A.y+(B.y-A.y)*f}, r = oppositeFace(si, P, P); if (r) { d = r.d; break; } }
+    for (const f of [0.5, 0.25, 0.75]) {
+      const P = {x:A.x+(B.x-A.x)*f, y:A.y+(B.y-A.y)*f}, r = oppositeFace(si, P, P);
+      if (r) { d = r.d; g.thN = {x:(r.Q0.x-P.x)/r.d, y:(r.Q0.y-P.y)/r.d}; g.thF = f; break; }                     // verso e punto della quota dello spessore
+    }
     if (d!==null) { g.thick = Math.round(d*100)/100; g.thAuto = true; }
-    else if (g.thAuto) { delete g.thick; delete g.thAuto; }
+    else if (g.thAuto) { delete g.thick; delete g.thAuto; delete g.thN; delete g.thF; }
   });
 }
 function oppositeFace(si, P0, P1) {
@@ -1431,6 +1490,7 @@ function drawScale() {
   const sel = state.sel && state.sel.kind==='scala' ? state.scale[state.sel.idx] : null, hv = state.hoverScala!=null ? state.scale[state.hoverScala] : null;
   const same = (a, q) => a && (a===q || (a.grp && a.grp===q.grp));                  // i pezzi della stessa scala si evidenziano insieme
   state.scale.forEach(s => !hid(s) && drawStair(s, PRINT ? '' : same(sel,s) ? 'sel' : (same(hv,s) ? 'hover' : '')));
+  stairArrows().forEach(drawStairArrow);
   const done = new Set();                                                               // una sola etichetta per scala, sul pianerottolo se c'e'
   state.scale.forEach(s => {
     if (hid(s)) return;
@@ -1855,11 +1915,12 @@ function drawSegments() {
   });
   ctx.setLineDash([]);
   state.segments.forEach((g,i) => drawQuota(i));
+  drawThickQuotes();
 }
 
 // ambiente selezionato: i muri che lo compongono (celeste), quelli che lo attraversano (viola tratteggiato) e quelli che
 // confinano con un altro ambiente (arancione), cosi' si vede cosa tocca cosa e cosa si porta via demolendo
-const AH_COL = {comp:'#00e5ff', cont:'#d36bff', conf:'#ff9f1c'};
+const AH_COL = {comp:'#00e5ff', cont:'#d36bff', conf:'#ffffff'};      // bianco: nessun muro ha questo colore, non si confonde con i marroni e i viola dei muri
 function ambHighlight(k) {
   const amb = state.ambienti[k]; if (!amb) return null;
   const idx = amb.indices, n = idx.length, edges = new Set();
@@ -1892,7 +1953,7 @@ function drawAmbHighlight() {
 }
 function ambHighlightTip(k) {
   const H = ambHighlight(k); if (!H) return '';
-  return state.ambienti[k].name+': celeste = pareti del contorno'+(H.conf.size ? ', arancione = confinano con un altro ambiente' : '')+(H.cont.size ? ', viola = muri dentro l’ambiente' : '')+'.';
+  return state.ambienti[k].name+': celeste = pareti del contorno'+(H.conf.size ? ', bianco tratteggiato = lato in comune con un altro ambiente' : '')+(H.cont.size ? ', viola = muri dentro l’ambiente' : '')+'.';
 }
 
 // DISEGNO DEL SERRAMENTO: una sola definizione per video, PDF/JPG e DXF, cosi' cio' che si esporta e' sempre cio' che si vede.
@@ -1902,11 +1963,12 @@ function ambHighlightTip(k) {
 // Porta: anta spessa 5 cm aperta a 90 gradi con la cerniera all'inizio del varco e quarto di circonferenza tratteggiato.
 const OP_PR = 0.05;
 function openingNv(op) { return Math.max(0, Math.round(+(op.energy && op.energy.nv) || 0)); }
-function openingGeom(type, w, nv) {
+function openingGeom(type, w, nv, hinge, side) {
   const h = OP_PR/2, segs = [], polys = [], arcs = [];
-  if (type==='P') {
-    polys.push([{x:0,y:0},{x:OP_PR,y:0},{x:OP_PR,y:w},{x:0,y:w}]);
-    arcs.push({r:Math.hypot(OP_PR, w), a0:0, a1:Math.atan2(w, OP_PR)*180/Math.PI, dash:true});
+  if (type==='P') {                                   // hinge 'a' = cerniera all'inizio del varco, 'b' = alla fine; side +1 = anta a sinistra del verso del muro, -1 a destra
+    const mx = hinge==='b', my = side<0, A = Math.atan2(w, OP_PR)*180/Math.PI, X = x => mx ? w-x : x, Yv = y => my ? -y : y;
+    polys.push([{x:0,y:0},{x:OP_PR,y:0},{x:OP_PR,y:w},{x:0,y:w}].map(q => ({x:X(q.x), y:Yv(q.y)})));
+    arcs.push({cx: mx ? w : 0, cy:0, r:Math.hypot(OP_PR, w), a0: mx ? (my ? 180 : 180-A) : (my ? 360-A : 0), a1: mx ? (my ? 180+A : 180) : (my ? 360 : A), dash:true});
     return {segs, polys, arcs};
   }
   const xs = [0].concat(Array.from({length:nv}, (_,k) => w*(k+1)/(nv+1) - h)).concat([w-OP_PR]);     // inizio dei profili: estremi e montanti
@@ -1926,15 +1988,14 @@ function drawOpenings() {
     const col     = faseCol(op) || (PRINT ? (op.type==='P' ? C.door : C.win) : (op.type==='F' ? C.win : op.type==='P' ? C.door : C.pf));
 
     ctx.save(); ctx.translate(p.sx,p.sy); ctx.rotate(ang);
-    const kpx = segLen>0 ? segLenPx/segLen : state.zoom, G = openingGeom(op.type, op.width, openingNv(op));      // px per metro reale
-    const yo = (CUTS && CUTS.off[i]) || 0;                                                                    // scostamento: in mezzeria della bucatura
-    const X = x => (x - op.width/2)*kpx, Y = y => -(y+yo)*kpx;                                                    // locale -> locale del canvas (y verso il basso)
+    const kpx = segLen>0 ? segLenPx/segLen : state.zoom, G = openingGeom(op.type, op.width, openingNv(op), op.hinge, op.side);      // px per metro reale
+    const X = x => (x - op.width/2)*kpx, Y = y => -y*kpx;                                                    // p e' gia' nella posizione disegnata (in mezzeria della bucatura)
     ctx.strokeStyle = on ? '#fff' : col; ctx.lineWidth = on ? 2.5 : prLw(1.5, 0.18);
     G.segs.forEach(([x1,y1,x2,y2]) => { ctx.beginPath(); ctx.moveTo(X(x1),Y(y1)); ctx.lineTo(X(x2),Y(y2)); ctx.stroke(); });
     G.polys.forEach(pl => { ctx.beginPath(); pl.forEach((q,j) => j ? ctx.lineTo(X(q.x),Y(q.y)) : ctx.moveTo(X(q.x),Y(q.y))); ctx.closePath(); ctx.stroke(); });
     G.arcs.forEach(a => {
       ctx.setLineDash(a.dash ? [prU(4), prU(3)] : []); ctx.beginPath();
-      ctx.arc(X(0), Y(0), a.r*kpx, -a.a0*Math.PI/180, -a.a1*Math.PI/180, true); ctx.stroke(); ctx.setLineDash([]);
+      ctx.arc(X(a.cx||0), Y(a.cy||0), a.r*kpx, -a.a0*Math.PI/180, -a.a1*Math.PI/180, true); ctx.stroke(); ctx.setLineDash([]);
     });
     ctx.restore();
 
@@ -2002,7 +2063,7 @@ function drawRectPreview() {
     ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); ctx.setLineDash([]);
     return;
   }
-  drawStair(s, 'sel');
+  drawStair(s, 'sel'); drawStairArrow(rampPath(s));
 }
 
 function drawMeasure() {
@@ -2624,7 +2685,7 @@ function openingEnds(i) {
   const p = openingPos(i); if (!p) return null;
   const op = state.openings[i], L = Math.hypot(p.B.x-p.A.x, p.B.y-p.A.y) || 1, hw = op.width/L/2;
   const t0 = op.t-hw, t1 = op.t+hw;
-  return { t0, t1, a:{x:p.sa.x+(p.sb.x-p.sa.x)*t0, y:p.sa.y+(p.sb.y-p.sa.y)*t0}, b:{x:p.sa.x+(p.sb.x-p.sa.x)*t1, y:p.sa.y+(p.sb.y-p.sa.y)*t1} };
+  return { t0, t1, a:{x:p.sa.x+(p.sb.x-p.sa.x)*t0+p.dx, y:p.sa.y+(p.sb.y-p.sa.y)*t0+p.dy}, b:{x:p.sa.x+(p.sb.x-p.sa.x)*t1+p.dx, y:p.sa.y+(p.sb.y-p.sa.y)*t1+p.dy} };
 }
 function hitOpeningHandle(sx, sy) {
   if (!state.sel || state.sel.kind!=='opening') return null;
@@ -2633,8 +2694,39 @@ function hitOpeningHandle(sx, sy) {
   if (Math.hypot(sx-e.b.x, sy-e.b.y) <= HIT_HANDLE_PX) return {idx:i, fixT:e.t0};
   return null;
 }
+// frecce della porta selezionata (come nell'input grafico di EC700): una sposta la cerniera dall'altra parte del varco, l'altra gira l'apertura
+// dall'altro lato del muro (interno/esterno). Un tocco su una freccia gira la porta. Solo porte (P), non nel Progetto sul rilievo esistente.
+function doorArrows(i) {
+  const op = state.openings[i], p = openingPos(i); if (!op || !p || op.type!=='P' || locked(op) || PRINT) return null;
+  const L = Math.hypot(p.B.x-p.A.x, p.B.y-p.A.y) || 1, k = Math.hypot(p.sb.x-p.sa.x, p.sb.y-p.sa.y)/L, ang = Math.atan2(p.sb.y-p.sa.y, p.sb.x-p.sa.x), c = Math.cos(ang), sn = Math.sin(ang);
+  const side = op.side<0 ? -1 : 1, hb = op.hinge==='b', w = op.width;
+  const scr = (x, y) => { const X = (x-w/2)*k, Y = -y*k; return {x:p.sx + c*X - sn*Y, y:p.sy + sn*X + c*Y}; };         // locale della porta -> schermo
+  const dirX = hb ? -1 : 1;                                                                                      // verso in cui va la cerniera
+  const a = scr(w/2, side*w*0.3), b = scr(w/2, side*w*0.62);
+  return [{k:'hinge', x:a.x, y:a.y, ang:Math.atan2(sn*dirX, c*dirX)}, {k:'side', x:b.x, y:b.y, ang:Math.atan2(c*side, -sn*side) }];
+}
+function drawDoorArrows(i) {
+  const A = doorArrows(i); if (!A) return;
+  ctx.save(); ctx.fillStyle = '#00e5ff'; ctx.strokeStyle = '#003a44'; ctx.lineWidth = 1;
+  A.forEach(a => {
+    ctx.translate(a.x, a.y); ctx.rotate(a.ang);
+    ctx.beginPath(); ctx.moveTo(11,0); ctx.lineTo(-2,-8); ctx.lineTo(-2,-3); ctx.lineTo(-11,-3); ctx.lineTo(-11,3); ctx.lineTo(-2,3); ctx.lineTo(-2,8); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.rotate(-a.ang); ctx.translate(-a.x, -a.y);
+  });
+  ctx.restore();
+}
+function doorArrowTap(sx, sy) {
+  if (!state.sel || state.sel.kind!=='opening') return false;
+  const i = state.sel.idx, A = doorArrows(i); if (!A) return false;
+  const hit = A.find(a => Math.hypot(sx-a.x, sy-a.y) <= (COARSE ? 24 : 16)); if (!hit) return false;
+  const op = state.openings[i]; saveHistory();
+  if (hit.k==='hinge') op.hinge = op.hinge==='b' ? 'a' : 'b'; else op.side = op.side<0 ? 1 : -1;
+  commit(hit.k==='hinge' ? 'Cerniera della porta spostata dall\'altra parte.' : 'Apertura della porta girata dall\'altro lato del muro.', true);
+  return true;
+}
 function drawOpeningHandles() {
   if (!state.sel || state.sel.kind!=='opening') return;
+  drawDoorArrows(state.sel.idx);
   const e = openingEnds(state.sel.idx); if (!e) return;
   ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#e94560'; ctx.lineWidth=2;
   const hs = COARSE ? 9 : 6;
@@ -3572,6 +3664,7 @@ canvas.addEventListener('pointerdown', e => {
       const base = e.shiftKey || state.multi ? selCopy() : null;
       if (e.shiftKey) { state.selBox={x0:sx,y0:sy,x1:sx,y1:sy,keep,base,shift:true}; return; }
       // nel Progetto il rilievo esistente non si trascina: il tocco apre solo il menu
+      if (doorArrowTap(sx,sy)) { state.doorTap = true; return; }
       const hh = hitOpeningHandle(sx,sy); if (hh && !locked(state.openings[hh.idx])) { state.openingResize=hh; return; }
       const sh = hitStairHandle(sx,sy);   if (sh && !locked(state.scale[sh.idx])) { state.stairResize=sh; return; }
       const oi = hitPoint(sx,sy)===null ? hitOpening(sx,sy) : null;
@@ -3723,6 +3816,7 @@ function endPointer(e) {
 
   const {x:sx, y:sy} = evtPos(e);
   endPan();
+  if (state.doorTap) { state.doorTap = false; draw(); return; }                // il tocco era su una freccia della porta: non e' un clic sul disegno
 
   if (state.pencilCurrent) {
     if (state.pencilCurrent.pts.length>1) { saveHistory(); state.pencilLines.push(state.pencilCurrent); persist(); state.pencilCurrent=null; setTool('select'); }
@@ -4583,7 +4677,7 @@ function exportDXF() {
   hideAllMenus(); refreshGW();
   // layer: [nome, colore]; colore negativo = spento all'apertura (QUOTE_CORTE: quote che non stanno nel loro muro)
   const LAYERS = [['MURI',5],['MURI_EST',6],['MURI_COM',3],['MURI_NONRISC',30],['MURI_ND',200],['MURI_GRAFICI',8],['QUOTE',2],['QUOTE_CORTE',-2],['SERRAMENTI',5],
-                  ['PORTE',4],['AMBIENTI',4],['AMBIENTI_TESTO',7],['PILASTRI',8],['SCALE',6],['SCALE_TESTO',8],['ETICHETTE',1],['MATITA',30],['DEMOLIZIONI',2],['COSTRUZIONI',1]];
+                  ['PORTE',4],['AMBIENTI',4],['AMBIENTI_TESTO',7],['PILASTRI',8],['SCALE',6],['SCALE_TESTO',8],['QUOTE_SPESSORI',3],['ETICHETTE',1],['MATITA',30],['DEMOLIZIONI',2],['COSTRUZIONI',1]];
   const D = dxfWriter(LAYERS), {line, poly, mtext, rect} = D;
   const CW = 0.7;                                   // larghezza media di un carattere in altezze di testo (stima degli ingombri, larga: i CAD sostituiscono il carattere)
   const readable = (ux, uy) => (ux < -1e-9 || (Math.abs(ux) < 1e-9 && uy < 0)) ? {x:-ux, y:-uy} : {x:ux, y:uy};   // testo lungo il muro, mai capovolto
@@ -4594,6 +4688,33 @@ function exportDXF() {
   const WALL_LAYER = {'':'MURI', perimetrale:'MURI_EST', comunione:'MURI_COM', nonrisc:'MURI_NONRISC', nd:'MURI_ND', grafico:'MURI_GRAFICI'};     // un layer a colori per classe di muro
   const wallLayer = s => WALL_LAYER[wallClass(s)];
   const hQ = 0.10;
+  // testi: si raccolgono e si dispongono alla fine, cosi' non si sovrappongono (come nel PDF/JPG). Priorita': 0 fermi (stesso posto del disegno),
+  // 1 ambienti, 2 nomi dei serramenti, 3 quote. Un testo che ne copre un altro si sposta nel primo posto libero vicino.
+  const TX = [], LSP = 5/3;
+  const txt = (prio, layer, x, y, h, lines, o, cands) => TX.push({prio, layer, x, y, h, lines:[].concat(lines), o:o||{}, cands:cands||[]});
+  const around = (ts, ns) => t => {                                 // spostamenti lungo il testo (ts, in larghezze) e di lato (ns, in metri), dal piu' vicino
+    const d = t.o.dir || {x:1, y:0}, n = {x:-d.y, y:d.x}, w = Math.max(...t.lines.map(r => String(r).length))*t.h*CW, out = [];
+    ns.forEach(nn => ts.forEach(tt => { if (nn || tt) out.push([d.x*tt*w + n.x*nn, d.y*tt*w + n.y*nn]); }));
+    return out.sort((a,b) => (a[0]*a[0]+a[1]*a[1]) - (b[0]*b[0]+b[1]*b[1]));
+  };
+  const tbox = (t, dx, dy) => {                                     // ingombro (riquadro) del testo, anche ruotato lungo il muro
+    const n = t.lines.length, nc = Math.max(...t.lines.map(r => String(r).length)), w = nc*t.h*CW+0.02, hh = n*t.h*(n>1 ? LSP : 1.3), att = t.o.att || 5;
+    const x0 = (att===4 || att===7) ? 0 : -w/2, y0 = att===7 ? 0 : -hh/2, d = t.o.dir || {x:1, y:0}, xs = [], ys = [];
+    [[x0,y0],[x0+w,y0],[x0+w,y0+hh],[x0,y0+hh]].forEach(([u,v]) => { xs.push(t.x+dx+u*d.x-v*d.y); ys.push(t.y+dy+u*d.y+v*d.x); });
+    return {x0:Math.min(...xs), x1:Math.max(...xs), y0:Math.min(...ys), y1:Math.max(...ys)};
+  };
+  const resolveTexts = () => {
+    const placed = [], pad = 0.01;
+    TX.slice().sort((a,b) => a.prio-b.prio).forEach(t => {
+      const cs = typeof t.cands==='function' ? t.cands(t) : t.cands;
+      for (const [dx,dy] of [[0,0]].concat(cs)) {
+        const b = tbox(t, dx, dy);
+        if (t.prio===0 || !placed.some(q => b.x0 < q.x1+pad && b.x1+pad > q.x0 && b.y0 < q.y1+pad && b.y1+pad > q.y0)) { t.x += dx; t.y += dy; placed.push(b); return; }
+      }
+      placed.push(tbox(t, 0, 0));
+    });
+    TX.forEach(t => mtext(t.layer, t.x, t.y, t.h, t.lines, t.o));
+  };
   state.segments.forEach((s,i) => {
     const A=state.points[s.a], B=state.points[s.b]; if(!A||!B||hid(s)) return;
     segPieces(i, cuts).forEach(([t0,t1]) => line(lay(s, wallLayer(s)), A.x+(B.x-A.x)*t0, A.y+(B.y-A.y)*t0, A.x+(B.x-A.x)*t1, A.y+(B.y-A.y)*t1));
@@ -4601,7 +4722,12 @@ function exportDXF() {
     const len = Math.hypot(B.x-A.x,B.y-A.y); if (len < 1e-6) return;
     const d = readable((B.x-A.x)/len, (B.y-A.y)/len), q = len.toFixed(2);
     const mx = (A.x+B.x)/2, my = (A.y+B.y)/2, at = s.qo ? {x:mx+s.qo.x, y:my+s.qo.y} : {x:mx-d.y*hQ*0.9, y:my+d.x*hQ*0.9};
-    mtext(q.length*hQ*CW+0.04 > len ? 'QUOTE_CORTE' : 'QUOTE', at.x, at.y, hQ, q, {dir:d});
+    txt(s.qo ? 0 : 3, q.length*hQ*CW+0.04 > len ? 'QUOTE_CORTE' : 'QUOTE', at.x, at.y, hQ, q, {dir:d}, s.qo ? [] : around([0,0.5,-0.5,1,-1], [0.12,-0.12,0.24,-0.24]));
+    if (THKQ && s.thAuto && s.thick && s.thN) {                      // quota dello spessore automatico, come a video
+      const f = s.thF ?? 0.5, M = {x:A.x+(B.x-A.x)*f, y:A.y+(B.y-A.y)*f}, e = {x:M.x+s.thN.x*s.thick, y:M.y+s.thN.y*s.thick};
+      line('QUOTE_SPESSORI', M.x, M.y, e.x, e.y);
+      txt(3, 'QUOTE_SPESSORI', e.x+s.thN.x*0.09, e.y+s.thN.y*0.09, 0.07, Math.round(s.thick*100)+' cm', {}, around([0,1,-1,2,-2], [0.1,-0.1]));
+    }
   });
   cuts.jambs.forEach(j => { const s = state.segments[j.si]; line(s ? lay(s, wallLayer(s)) : 'MURI', j.a.x, j.a.y, j.b.x, j.b.y); });
 
@@ -4616,7 +4742,11 @@ function exportDXF() {
     const bw = Math.max(...pts.map(p=>p.x)) - Math.min(...pts.map(p=>p.x)), bh = Math.max(...pts.map(p=>p.y)) - Math.min(...pts.map(p=>p.y));
     const nc = Math.max(...rows.map(r => r.length)), LS = 5/3;          // interlinea MTEXT = 5/3 dell'altezza
     const h = Math.max(0.04, Math.min(0.10, bw*0.85/(nc*CW), bh*0.85/(rows.length*LS)));
-    mtext('AMBIENTI_TESTO', cx, cy, h, rows, {att:5});
+    txt(a.lo && (a.lo.x || a.lo.y) ? 0 : 1, 'AMBIENTI_TESTO', cx, cy, h, rows, {att:5}, t => {       // etichetta dell'ambiente: se copre altro si sposta di mezzo blocco o piu' nelle 8 direzioni
+      const b0 = tbox(t, 0, 0), bw2 = b0.x1-b0.x0, bh2 = b0.y1-b0.y0, out = [];
+      [0.6, 1.2, 1.8, 2.5, 3.2].forEach(k => [[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([u,v]) => out.push([u*k*bw2, v*k*bh2])));
+      return out;
+    });
   });
 
   // serramenti: un blocco per misura, in mezzeria del muro. Finestra e porta-finestra = telaio spesso 5 cm (due linee), quadrato da 5 cm
@@ -4626,7 +4756,7 @@ function exportDXF() {
   const defOp = (name, G) => D.defBlock(name, () => {                // la stessa geometria che si vede a video (openingGeom)
     G.segs.forEach(([x1,y1,x2,y2]) => line('0', x1, y1, x2, y2));
     G.polys.forEach(pl => poly('0', pl, true));
-    G.arcs.forEach(a => D.arc('0', 0, 0, a.r, a.a0, a.a1, a.dash ? 'TRATTEGGIATA' : ''));
+    G.arcs.forEach(a => D.arc('0', a.cx||0, a.cy||0, a.r, a.a0, a.a1, a.dash ? 'TRATTEGGIATA' : ''));
   });
   state.openings.forEach(op => {
     const s = state.segments[op.segIdx]; if(!s || hid(op)) return;
@@ -4635,20 +4765,20 @@ function exportDXF() {
     const door = op.type==='P', SL = lay(op, door ? 'PORTE' : 'SERRAMENTI');
     const mx=A.x+(B.x-A.x)*op.t, my=A.y+(B.y-A.y)*op.t;
     const ux=(B.x-A.x)/len, uy=(B.y-A.y)/len, hw=op.width/2, rot = Math.atan2(uy, ux)*180/Math.PI;
-    const nv = door ? 0 : openingNv(op), nm = door ? 'PORTA_'+mm(op.width) : 'SERR_'+op.type+'_'+mm(op.width)+'_V'+nv;
+    const nv = door ? 0 : openingNv(op), nm = door ? 'PORTA_'+mm(op.width)+'_'+(op.hinge==='b' ? 'b' : 'a')+(op.side<0 ? 'm' : 'p') : 'SERR_'+op.type+'_'+mm(op.width)+'_V'+nv;
     const yo = cuts.off[state.openings.indexOf(op)] || 0;                                                   // stesso scostamento che si vede a video
-    defOp(nm, openingGeom(op.type, op.width, nv)); D.insert(SL, nm, mx-ux*hw-uy*yo, my-uy*hw+ux*yo, rot, 1, 1);
+    defOp(nm, openingGeom(op.type, op.width, nv, op.hinge, op.side)); D.insert(SL, nm, mx-ux*hw-uy*yo, my-uy*hw+ux*yo, rot, 1, 1);
     const H = opHb(op), st = op.h0 ?? OPENING_DEF[op.type].h0, d = readable(ux, uy), hS = 0.08;
     let info = op.label+' '+(+op.width).toFixed(2)+'x'+(+H).toFixed(2);
     if (op.type==='F') info += ' dav. '+(+st).toFixed(2);
-    mtext(SL, mx+d.y*hS*1.2, my-d.x*hS*1.2, hS, info, {dir:d});
+    txt(op.qo ? 0 : 2, SL, mx+d.y*hS*1.2, my-d.x*hS*1.2, hS, info, {dir:d}, around([0,0.8,-0.8,1.6,-1.6], [0.1,-0.1,0.2,-0.2,0.3,-0.3]));
   });
 
   // pilastri
   state.pilastri.forEach(p => {
     if (hid(p)) return;
     rect(lay(p, 'PILASTRI'), p.x, p.y-p.h, p.x+p.w, p.y);
-    mtext('PILASTRI', p.x+p.w/2, p.y-p.h/2, 0.07, p.label+' '+Math.round(p.w*100)+'x'+Math.round(p.h*100));
+    txt(0, 'PILASTRI', p.x+p.w/2, p.y-p.h/2, 0.07, p.label+' '+Math.round(p.w*100)+'x'+Math.round(p.h*100));
   });
 
   // scale: ingombro, gradini, freccia di salita; il testo sta in un layer a parte (SCALE_TESTO)
@@ -4667,23 +4797,23 @@ function exportDXF() {
         const a = st + c.sgn*k*c.pedata;
         if (c.ax==='x') line('SCALE', a,b.c0, a,b.c1); else line('SCALE', b.c0,a, b.c1,a);
       }
-      const cm = (b.c0+b.c1)/2, L = c.n*c.pedata, f0 = st+c.sgn*L*0.12, f1 = st+c.sgn*L*0.88;
-      arrow(c.ax==='x' ? [{x:f0,y:cm},{x:f1,y:cm}] : [{x:cm,y:f0},{x:cm,y:f1}]);
     }
     if (c.grp) { if (doneG.has(c.grp)) return; doneG.add(c.grp); }          // scala composta: un solo testo
     const ct = stairCenter(c);
-    mtext('SCALE_TESTO', ct.x, ct.y, 0.08, [c.label].concat(stairInfo(c).map(t => t.replace(/ {2,}/g,'  '))));
+    txt(0, 'SCALE_TESTO', ct.x, ct.y, 0.08, [c.label].concat(stairInfo(c).map(t => t.replace(/ {2,}/g,'  '))));
   });
+  stairArrows().forEach(arrow);                     // la stessa freccia che si vede a video: continua nelle scale composte
 
   // etichette e note dei punti (i nomi dei punti non si esportano)
-  state.labels.forEach(l => !hid(l) && mtext('ETICHETTE', l.x, l.y, 0.15, String(l.text).split('\n'), {att:7}));
+  state.labels.forEach(l => !hid(l) && txt(0, 'ETICHETTE', l.x, l.y, 0.15, String(l.text).split('\n'), {att:7}));
   state.points.forEach(p => {
-    if (p.note)  mtext('ETICHETTE', p.x+0.06, p.y-0.14, 0.08, 'NOTA: '+p.note, {att:7});
-    if (p.photo) mtext('ETICHETTE', p.x+0.06, p.y-0.26, 0.08, '[FOTO]', {att:7});
+    if (p.note)  txt(0, 'ETICHETTE', p.x+0.06, p.y-0.14, 0.08, 'NOTA: '+p.note, {att:7});
+    if (p.photo) txt(0, 'ETICHETTE', p.x+0.06, p.y-0.26, 0.08, '[FOTO]', {att:7});
   });
 
   state.pencilLines.forEach(l => !hid(l) && poly('MATITA', l.pts, false));
 
+  resolveTexts();
   download(stamp()+'_rilievo'+(hasProject() ? (prog() ? '_progetto' : '_stato_di_fatto') : '')+'.dxf', D.finish(), 'application/dxf');
   setTip('DXF esportato (R2000, unità metri, testi MTEXT). Layer separati per muri, quote, serramenti, pilastri, scale, ambienti; le tabelle non si esportano nel DXF (restano in PDF, JPG e CSV); le quote che non stanno nel muro sono nel layer QUOTE_CORTE, spento.');
 }
@@ -7068,8 +7198,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.17';
-const APP_NOTE = ["Scale con pianerottolo: il pianerottolo resta agganciato alle due rampe e le segue quando cambi lunghezza o larghezza con le maniglie (le scale già salvate si agganciano da sole all'apertura)", "Etichetta della scala sempre visibile, come quella dei locali: alzate, pedate, pianerottolo, altezza superata e regola di Blondel (2a+p tra 62 e 64 cm); in rosso quello da controllare, comprese alzate o pedate diverse tra le rampe. Vale a video, in PDF/JPG e nel DXF", "Tabella serramenti: il quadratino accanto a \"Compilati\" copia i dati energetici sulle righe sotto o sopra, come per le altre celle", "Dati energetici: proposti vetro 4 mm e cassonetto alto 35 cm; le specchiature restano da inserire", "Nuovo pulsante 🪟: pannello accanto alla pianta con lo schema di tutte le finestre e porte-finestre e le loro specchiature; un tocco su una scheda seleziona il serramento", "Balcone, terrazzo e simili: scegliendo la categoria l'ambiente prende il nome (Balcone, Terrazzo...) senza numerazione; con altezza 0 la riga dell'altezza sparisce dall'etichetta", "Pulsanti a destra tutti uguali e in colonna, compreso Incolla (compare dopo una copia e diventa verde mentre incolli); il pulsante legenda 🎨 è sempre presente e spiega anche i colori dell'ambiente selezionato"];
+const APP_VERSION = '2.18';
+const APP_NOTE = ["Scale: la freccia di salita è una linea sola che attraversa rampa, pianerottolo e rampa successiva, con la punta solo in fondo (a video, in PDF/JPG e nel DXF)", "Porte: quando selezioni una porta compaiono due frecce celesti, come in EC700: una sposta la cerniera dall'altra parte del varco, l'altra gira l'apertura dall'altro lato del muro (interno/esterno). Vale anche nel DXF. Le porte-finestre restano un semplice inserimento grafico", "Serramenti: si selezionano toccando il disegno vero, ovunque stia nello spessore del muro, e le maniglie stanno sul disegno", "DXF: i testi che si sovrapponevano (quote, nomi dei serramenti, etichette degli ambienti) si dispongono da soli nel primo posto libero vicino", "Evidenziazione dell'ambiente: il lato in comune con un altro ambiente passa da arancione tratteggiato a bianco tratteggiato, che non si confonde con nessun muro; la legenda 🎨 lo spiega", "Spessore automatico dei muri: compare una quota verde con lo spessore (es. 24 cm) attraverso il muro; il pulsante ↔ la spegne e la riaccende per tutto il disegno. La quota esce anche in PDF/JPG e nel DXF (layer QUOTE_SPESSORI)", "I pulsanti a destra sono tutti identici (stessa larghezza e altezza)"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
