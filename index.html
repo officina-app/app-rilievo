@@ -1086,6 +1086,7 @@ function draw() { if (!_drawRaf) _drawRaf = requestAnimationFrame(() => { _drawR
 function drawNow() {
   ctx.clearRect(0,0,W,H);
   refreshGW();
+  autoWallThickIfChanged();
   CUTS = wallCuts();
   drawGrid();
   drawUnderlay();
@@ -1274,6 +1275,16 @@ function autoWallThick() {
     if (d!==null) { g.thick = Math.round(d*100)/100; g.thAuto = true; }
     else if (g.thAuto) { delete g.thick; delete g.thAuto; delete g.thN; delete g.thF; }
   });
+}
+// lo spessore automatico si ricalcola anche mentre si trascina (il trascinamento non fa commit): basta che cambi la geometria
+let _awtSig = null;
+function autoWallThickIfChanged() {
+  let h = prog() ? 7 : 3;
+  state.points.forEach(p => { h = (Math.imul(h, 31) + Math.round(p.x*1000)*7 + Math.round(p.y*1000)*13)|0; });
+  state.segments.forEach(g => { h = (Math.imul(h, 31) + g.a*3 + g.b*5 + (g.thick && !g.thAuto ? 11 : 0) + (g.fase==='nuovo' ? 17 : 0))|0; });
+  state.ambienti.forEach(a => { h = (Math.imul(h, 31) + a.indices.length*19 + (a.fase==='demo' ? 23 : 0))|0; a.indices.forEach(i => { h = (Math.imul(h, 31) + i)|0; }); });
+  if (h===_awtSig) return;
+  _awtSig = h; autoWallThick();
 }
 function oppositeFace(si, P0, P1) {
   const g = state.segments[si], A = state.points[g.a], B = state.points[g.b];
@@ -7198,8 +7209,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.18';
-const APP_NOTE = ["Scale: la freccia di salita è una linea sola che attraversa rampa, pianerottolo e rampa successiva, con la punta solo in fondo (a video, in PDF/JPG e nel DXF)", "Porte: quando selezioni una porta compaiono due frecce celesti, come in EC700: una sposta la cerniera dall'altra parte del varco, l'altra gira l'apertura dall'altro lato del muro (interno/esterno). Vale anche nel DXF. Le porte-finestre restano un semplice inserimento grafico", "Serramenti: si selezionano toccando il disegno vero, ovunque stia nello spessore del muro, e le maniglie stanno sul disegno", "DXF: i testi che si sovrapponevano (quote, nomi dei serramenti, etichette degli ambienti) si dispongono da soli nel primo posto libero vicino", "Evidenziazione dell'ambiente: il lato in comune con un altro ambiente passa da arancione tratteggiato a bianco tratteggiato, che non si confonde con nessun muro; la legenda 🎨 lo spiega", "Spessore automatico dei muri: compare una quota verde con lo spessore (es. 24 cm) attraverso il muro; il pulsante ↔ la spegne e la riaccende per tutto il disegno. La quota esce anche in PDF/JPG e nel DXF (layer QUOTE_SPESSORI)", "I pulsanti a destra sono tutti identici (stessa larghezza e altezza)"];
+const APP_VERSION = '2.19';
+const APP_NOTE = ["Spessore automatico dei muri: si ricalcola anche mentre sposti la linea (prima restava fermo fino alla modifica successiva). La quota segue il muro, compare se avvicini la linea esterna a meno di 65 cm e sparisce se la allontani"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
