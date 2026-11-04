@@ -301,6 +301,8 @@
   <div class="menu-item" onclick="segMenuAction('inherit')">🖌 Eredita proprietà<small class="md">Copia classe e spessore su altri muri: tocca i muri di destinazione</small></div>
   <div class="menu-item" data-lock onclick="segMenuAction('move')">✥ Sposta<small class="md">Trascina il muro dove va</small></div>
   <div class="menu-item" onclick="segMenuAction('thick')">📏 Spessore e tipo<small class="md">Classe (colore) e spessore: servono a superficie commerciale e demolizioni</small></div>
+  <div class="menu-item" id="sm-recalc" onclick="segMenuAction('recalc')">⟳ Ricalcola dalla grafica<small class="md">Toglie lo spessore scritto a mano: torna quello automatico delle linee</small></div>
+  <div class="menu-item" data-demotract onclick="segMenuAction('demotract')">⛏ Demolisci un tratto<small class="md">Solo la parte indicata: varco o ampliamento di una bucatura</small></div>
   <div class="menu-item" onclick="segMenuAction('split')">✂ Spezza qui<small class="md">Nuovo vertice nel punto toccato</small></div>
   <div class="menu-item" data-lock onclick="segMenuAction('delete')">🗑 Elimina linea<small class="md">Cancella solo questa linea</small></div>
 </div>
@@ -422,6 +424,7 @@
   <button id="selb-add" title="Ogni tocco aggiunge o toglie un elemento" onclick="toggleMulti()">➕ Aggiungi</button>
   <button id="selb-conf" title="Conferma il tipo proposto ai muri non assegnati" onclick="confirmProposals()">✔ Conferma</button>
   <button id="selb-thick" title="Spessore e tipo dei muri selezionati" onclick="wallThickMenuAction()">📏 Spessore</button>
+  <button id="selb-recalc" title="Toglie lo spessore scritto a mano dai muri selezionati: torna quello automatico delle linee" onclick="wallRecalcAction()">⟳ Dalla grafica</button>
   <button id="selb-demo" title="Demolisci o ripristina i muri e i serramenti selezionati" onclick="demoSelection()">⛏ Demolisci</button>
   <button id="selb-copy" title="Copia la selezione: poi Incolla dal menu Disegna o Ctrl+V" onclick="copySelection()">⎘ Copia</button>
   <button id="selb-move" title="Sposta la selezione trascinando" onclick="toggleMoveSel()">✥ Sposta</button>
@@ -1182,6 +1185,8 @@ function updateSelBar() {
   setDisp($('selb-thick'), state.selSeg && state.selSeg.size ? '' : 'none');
   { const sm = state.selSeg && state.selSeg.size ? wallSummary([...state.selSeg]) : null; setTxt($('selb-thick'), '📏 '+(sm ? sm.short : 'Spessore')); $('selb-thick').title = sm ? sm.full+' - tocca per cambiare' : 'Spessore e tipo dei muri selezionati'; }
   setDisp($('selb-move'), n ? '' : 'none'); setDisp($('selb-del'), n ? '' : 'none'); setDisp($('selb-copy'), n ? '' : 'none');
+  const nr = state.selSeg ? [...state.selSeg].filter(i => wallManual(state.segments[i])).length : 0;
+  setDisp($('selb-recalc'), nr ? '' : 'none'); setTxt($('selb-recalc'), '⟳ Dalla grafica ('+nr+')');
   const dm = prog() && ((state.selSeg && state.selSeg.size) || (state.selOpen && state.selOpen.size));
   setDisp($('selb-demo'), dm ? '' : 'none');
   $('selb-move').classList.toggle('on', !!state.moveSel); setTxt($('selb-move'), state.moveSel ? '✥ Fine' : '✥ Sposta');
@@ -1540,6 +1545,8 @@ function segMenuAction(action) {
     saveHistory(); delete g.cv; delete g.cvOp; g.wt = Date.now();
     commit('Confermato: '+wallName(g.commType||'')+(g.thick ? ' '+Math.round(g.thick*100)+' cm' : '')+'.'); return;
   }
+  if (action==='recalc') { wallRecalcAction([s.idx]); return; }
+  if (action==='demotract') { demoTractAsk(s.idx, s.t); return; }
   if (action==='thick') wallThickMenuAction([s.idx]);    // solo la linea toccata, anche se resta una selezione a riquadro
 }
 
@@ -1552,6 +1559,19 @@ function wallSummary(idxs) {
   const cls = new Set(gs.map(g => wallClass(g))), th = new Set(gs.map(g => g.thick ? Math.round(g.thick*1000) : 0));
   const c = cls.size===1 ? wallName([...cls][0]) : 'tipi diversi', t = th.size===1 ? ([...th][0] ? Math.round([...th][0]/10)+' cm' : 'spessore da dare') : 'spessori diversi';
   return {short:cls.size===1 && th.size===1 ? c+(([...th][0]) ? ' '+t : '') : 'Diversi', full:gs.length+(gs.length===1 ? ' muro: ' : ' muri: ')+c+', '+t};
+}
+// muro con spessore scritto a mano (non quello letto dalla grafica), modificabile nella vista corrente
+function wallManual(g) { return !!g && !!g.thick && !g.thAuto && !GWS.has(g) && !locked(g); }
+// "Ricalcola dalla grafica": toglie lo spessore scritto a mano e rimette quello automatico (linea parallela entro 65 cm)
+function wallRecalcAction(only) {
+  hideAllMenus();
+  const idxs = (only || (state.selSeg ? [...state.selSeg] : [])).filter(i => wallManual(state.segments[i]));
+  if (!idxs.length) { setTip('Nessun muro con spessore scritto a mano: seguono già la grafica.'); return; }
+  saveHistory();
+  idxs.forEach(i => { const g = state.segments[i]; delete g.thick; delete g.thN; delete g.thF; });
+  autoWallThick();
+  const ok = idxs.filter(i => state.segments[i].thAuto).length, no = idxs.length-ok, pl = n => n===1 ? 'muro' : 'muri';
+  commit('Ricalcolato dalla grafica: '+ok+' '+pl(ok)+' con lo spessore delle linee'+(no ? '; '+no+' senza una linea parallela entro 65 cm: spessore da dare a mano.' : '.'), true);
 }
 function wallThickMenuAction(only) {
   hideAllMenus();
@@ -1694,14 +1714,52 @@ function updateViewUI() {
   b.querySelector('.ic').textContent = prog() ? 'PRG' : 'SdF'; b.querySelector('.cap').textContent = viewName();
   setTxt($id('sb-view'), prog() ? 'PROGETTO' : 'Stato di fatto');
 }
-// Demolisci / Ripristina, solo nel Progetto e sul rilievo esistente. Si demoliscono solo i muri interni (ripartizioni):
-// esterni, verso altre unita' e verso il vano scala ammettono solo tracce per impianti, tinteggiature e finiture.
+// Demolisci / Ripristina, solo nel Progetto e sul rilievo esistente. Si demolisce qualsiasi muro, anche esterno o verso altre unita'
+// (intero, o un tratto: demoTractAsk); restano fuori le linee grafiche e i muri a cui manca la classe.
 // Un muro porta con se' la faccia opposta (le due linee dello stesso muro) e i serramenti che contiene.
 function demoBlock(g) {
   const k = wallClass(g);
   if (k==='grafico') return 'Linea grafica di balcone o terrazza: non fa parte delle murature.';
   if (k==='nd') return 'Muro non assegnato: dagli prima la classe (Spessore e tipo).';
-  return k ? 'Muro '+wallName(k).toLowerCase()+': non si demolisce né si aprono varchi. Ammessi solo tracce per impianti, tinteggiature e finiture.' : '';
+  return '';
+}
+// demolizione di un tratto: il muro e la sua faccia opposta si spezzano agli estremi del tratto (d0-d1 in metri dal punto iniziale
+// della linea toccata), il pezzo in mezzo diventa giallo con i serramenti che contiene
+function demoTractAsk(si, t) {
+  const g = state.segments[si], A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return;
+  const b = demoBlock(g); if (b) { setTip(b); return; }
+  const L = Math.hypot(B.x-A.x, B.y-A.y), w = Math.min(1, L), d0 = Math.max(0, Math.min(t*L - w/2, L - w));
+  askDialog('Demolisci un tratto di muro', [
+    {label:'Dal punto '+A.label+' (m)', id:'d0', type:'number', value:d0.toFixed(2)},
+    {label:'Fino a (m)', id:'d1', type:'number', value:(d0+w).toFixed(2)},
+  ], 'Il muro va dal punto '+A.label+' al punto '+B.label+' ed è lungo '+L.toFixed(2)+' m. Il tratto si demolisce con la faccia opposta e i serramenti che contiene.', v => {
+    const x0 = parseFloat(String(v.d0).replace(',', '.')), x1 = parseFloat(String(v.d1).replace(',', '.'));
+    if (!isFinite(x0) || !isFinite(x1) || Math.min(Math.max(x0, x1), L) - Math.max(Math.min(x0, x1), 0) < 0.05) { setTip('Tratto non valido: indica due misure diverse, dentro la lunghezza del muro.'); return; }
+    demoTract(si, Math.max(Math.min(x0, x1), 0), Math.min(Math.max(x0, x1), L));
+  });
+}
+function demoTract(si, d0, d1) {
+  const g = state.segments[si], A = state.points[g.a], B = state.points[g.b]; if (!A || !B || g.fase!=='es') return;
+  const L = Math.hypot(B.x-A.x, B.y-A.y), ux = (B.x-A.x)/L, uy = (B.y-A.y)/L, mids = [];
+  const faces = wallFaces(si, h => h.fase==='es' && !demoBlock(h));
+  saveHistory();
+  faces.forEach(k => {
+    const h = state.segments[k], C = state.points[h.a], D = state.points[h.b];
+    const sC = (C.x-A.x)*ux + (C.y-A.y)*uy, sD = (D.x-A.x)*ux + (D.y-A.y)*uy, len = Math.abs(sD-sC); if (len < 1e-6) return;
+    let t0 = (d0-sC)/(sD-sC), t1 = (d1-sC)/(sD-sC); if (t0 > t1) [t0, t1] = [t1, t0];
+    t0 = Math.max(0, t0); t1 = Math.min(1, t1); if ((t1-t0)*len < 0.02) return;
+    if (t0*len < 0.02) t0 = 0;                                   // un estremo a meno di 2 cm dal vertice: coincide
+    if ((1-t1)*len < 0.02) t1 = 1;
+    let mid = k;
+    if (t1 < 1) splitSegCore(k, t1);                             // k resta il pezzo iniziale (0 - t1)
+    if (t0 > 0) mid = splitSegCore(k, t1 < 1 ? t0/t1 : t0).ns;
+    mids.push(mid);
+  });
+  mids.forEach(k => { state.segments[k].fase = 'demo'; });
+  let m = 0;
+  state.openings.forEach(o => { if (o.fase!=='nuovo' && mids.includes(o.segIdx)) { o.fase = 'demo'; m++; } });
+  state.sel = null;
+  commit('Demolito un tratto di '+(d1-d0).toFixed(2)+' m (giallo, nelle quantità)'+(m ? ' con '+m+(m===1 ? ' serramento' : ' serramenti') : '')+'.');
 }
 // la linea e le facce parallele dello stesso muro (distanza 3-60 cm, sovrapposte per almeno meta'), con il filtro ok
 function wallFaces(si, ok) {
@@ -3121,11 +3179,13 @@ function showMenu(id, x, y, above, avoid) {
     it.innerHTML = (back ? '↺ Ripristina' : amb ? '⛏ Superato nel progetto' : '⛏ Demolisci')+
       '<small class="md">'+(back ? 'Resta com\'è nel progetto' : amb ? 'Cambia nel progetto: disegna il nuovo ambiente' : 'Giallo nel progetto, entra nelle quantità')+'</small>';
   });
+  mn.querySelectorAll('[data-demotract]').forEach(it => { it.style.display = can && el.fase==='es' ? '' : 'none'; });
   if (id==='entity-context' && state.sel && state.sel.kind==='pencil') document.getElementById('ent-edit').style.display = 'none';
   if (id==='seg-context') {                    // muro esterno col tipo proposto dall'app: conferma con un tocco
     const g = state.sel && state.sel.kind==='segment' && state.segments[state.sel.idx], it = document.getElementById('sm-conf');
     if (g && g.cv==='dubbio') { it.style.display = ''; it.textContent = '✔ Conferma: '+wallName(g.commType||'')+(g.thick ? ' '+Math.round(g.thick*100)+' cm' : ''); }
     else it.style.display = 'none';
+    document.getElementById('sm-recalc').style.display = g && wallManual(g) ? '' : 'none';
   }
   if (id==='quota-context' && state.sel && state.sel.kind==='quota') {
     const g = state.segments[state.sel.idx], A = g && state.points[g.a], B = g && state.points[g.b];
@@ -3279,8 +3339,14 @@ function entityMenuAction(action) {
 // ═══════════════════════════════════════════════════════════
 // divide il segmento si nel punto t (0..1): serramenti e ambienti restano agganciati
 function splitSegment(si, t) {
-  const g = state.segments[si], A = state.points[g.a], B = state.points[g.b];
   saveHistory();
+  const n = splitSegCore(si, t).n;
+  state.sel = {kind:'point', idx:n};
+  commit('Linea spezzata nel punto '+state.points[n].label+': trascinalo per correggere.');
+}
+// la parte che spezza, senza storia ne' commit: ritorna il nuovo punto e il nuovo segmento (la parte dopo il punto)
+function splitSegCore(si, t) {
+  const g = state.segments[si], A = state.points[g.a], B = state.points[g.b];
   const n = newPoint(A.x+(B.x-A.x)*t, A.y+(B.y-A.y)*t), oldB = g.b;
   if (g.fase && g.fase!=='nuovo') state.points[n].fase = 'es';
   g.b = n; g.ok = false; delete g.qo;
@@ -3298,8 +3364,7 @@ function splitSegment(si, t) {
       if ((p===g.a && q===oldB) || (p===oldB && q===g.a)) { a.indices.splice(i+1, 0, n); break; }
     }
   });
-  state.sel = {kind:'point', idx:n};
-  commit('Linea spezzata nel punto '+state.points[n].label+': trascinalo per correggere.');
+  return {n, ns};
 }
 
 // elimina in blocco quello che sta nel riquadro: linee, punti (con le loro linee) e serramenti.
@@ -7140,7 +7205,7 @@ const GUIDE = [
   ]},
   {title:'Progetto: demolizioni e costruzioni', sub:'Dal rilievo al progetto, con le quantità per il computo', steps:[
     {t:'Tocca il pulsante SdF nella barra: diventa PRG e sei nel Progetto (bordo rosso). Il rilievo resta com\'è, bloccato.', el:['#btn-view'], done:() => prog()},
-    {t:'Tocca un muro interno, "Demolisci": diventa giallo (demolizione), con la faccia opposta e i serramenti che contiene. I muri esterni e verso altre unità non si demoliscono.', done:() => state.segments.some(g => g.fase==='demo')},
+    {t:'Tocca un muro, "Demolisci": diventa giallo (demolizione), con la faccia opposta e i serramenti che contiene. Anche un muro esterno o verso un\'altra unità si demolisce, intero o solo per un tratto ("Demolisci un tratto").', done:() => state.segments.some(g => g.fase==='demo')},
     {t:'Disegna le costruzioni con "Muro" o "Stanza rettangolare": sono rosse. Le porte con Inserisci.', el:['#btn-g-draw','#ti-wall','#ti-room'], done:() => state.segments.some(g => g.fase==='nuovo')},
     {t:'Gli ambienti cambiati: tocca l\'ambiente vecchio, "Superato nel progetto", poi disegna il nuovo con "Ambiente da punti" toccando i vertici.', el:['#btn-g-draw','#ti-roompts'], done:() => state.ambienti.some(a => a.fase==='nuovo')},
     {t:'File, "Esporta tabelle", Demolizioni e costruzioni: muri in m² e m³, serramenti rimossi e nuovi, varchi. Con "Esporta rilievo completo" hai anche le due tavole a confronto.', el:['#btn-file','#fm-tables','#fm-full']},
@@ -7209,8 +7274,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.21';
-const APP_NOTE = ["Serramenti: la distanza dal punto (es. \"P1→ 1,20 m\") non resta più scritta sull'etichetta di tutti i serramenti; compare solo sul serramento selezionato, per posizionarlo, e nel suggerimento mentre lo trascini"];
+const APP_VERSION = '2.22';
+const APP_NOTE = ["Muri: nuovo comando \"Ricalcola dalla grafica\" (menu del muro e barra della selezione, anche su più muri): toglie lo spessore scritto a mano e rimette quello automatico, letto dalla linea parallela entro 65 cm, con la sua quota", "Progetto: si può demolire qualsiasi muro, anche esterno o verso un'altra unità, e aprire varchi o ampliare bucature in questi muri; restano escluse le linee grafiche di balconi e terrazze e i muri senza classe", "Progetto: nuovo comando \"Demolisci un tratto\" nel menu del muro: si indicano le misure dal punto iniziale, il muro e la sua faccia opposta si spezzano e solo il tratto diventa giallo, con m² e m³ nella tabella Demolizioni e costruzioni"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
