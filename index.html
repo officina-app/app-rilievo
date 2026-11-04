@@ -245,8 +245,7 @@
   <div class="menu-item tool-item" id="ti-opening-PF" onclick="selectOpeningType('PF')"><span class="ti">🚪</span><span class="tt"><b>Porta-finestra (PF)</b><small>Poi tocca il muro dove va</small></span></div>
   <div class="menu-item tool-item" id="ti-opening-P" onclick="selectOpeningType('P')"><span class="ti">🚪</span><span class="tt"><b>Porta (P)</b><small>Poi tocca il muro dove va</small></span></div>
   <div class="menu-item tool-item" id="ti-optable" onclick="hideAllMenus(); opTableOpen()"><span class="ti">▦</span><span class="tt"><b>Tabella serramenti</b><small>Tutte le bucature in una schermata: misure, tipo e nome modificabili</small></span></div>
-  <div class="menu-item tool-item" id="ti-stair" onclick="pickTool('stair')"><span class="ti">🪜</span><span class="tt"><b>Scala</b><small>Trascina: un gradino ogni 30 cm</small></span></div>
-  <div class="menu-item tool-item" id="ti-stairL" onclick="pickTool('stairL')"><span class="ti">🪜</span><span class="tt"><b>Scala a L</b><small>Trascina la prima rampa: segue il pianerottolo e la seconda rampa a 90°</small></span></div>
+  <div class="menu-item tool-item" id="ti-stair" onclick="pickTool('stair')"><span class="ti">🪜</span><span class="tt"><b>Scala</b><small>Trascina: un gradino ogni 30 cm. Due rampe a 90° che si toccano diventano una scala col pianerottolo</small></span></div>
   <div class="menu-item tool-item" id="ti-pilastro" onclick="pickTool('pilastro')"><span class="ti">▪</span><span class="tt"><b>Pilastro o ingombro</b><small>Pilastro, camino, canna: su un punto; si toglie dalla superficie dell'ambiente</small></span></div>
   <div class="menu-item tool-item" id="ti-label" onclick="pickTool('label')"><span class="ti">🏷</span><span class="tt"><b>Etichetta</b><small>Testo libero sul disegno</small></span></div>
   <div class="menu-item tool-item" id="ti-pencil" onclick="pickTool('pencil')"><span class="ti">✏</span><span class="tt"><b>Matita</b><small>Disegno a mano libera</small></span></div>
@@ -413,6 +412,7 @@
 <div id="leg-box"></div>
 <div id="guide-card"></div>
 <button id="move-base-btn"  class="fab" onclick="toggleMoveBase()"      style="bottom:calc(144px + var(--tb-h,0px));background:#1a6a3a;border:1px solid #2a9a5a">✥ Base in spostamento - tocca per finire</button>
+<button id="paste-btn" class="fab" onclick="pasteBtnTap()" style="bottom:calc(144px + var(--tb-h,0px));background:#16213e;border:1px solid #bb7028">⎗ Incolla</button>
 <div id="sel-bar">
   <span id="selb-n" title="Elementi selezionati"></span>
   <button id="selb-add" title="Ogni tocco aggiunge o toglie un elemento" onclick="toggleMulti()">➕ Aggiungi</button>
@@ -750,42 +750,18 @@ function stairSet(s, a0, a1, c0, c1) {
   if (s.ax==='x') { s.x = a0; s.w = a1-a0; s.y = c1; s.h = c1-c0; }
   else            { s.y = a1; s.h = a1-a0; s.x = c0; s.w = c1-c0; }
 }
-function stairHeight(s) { return (s.tipo==='L' ? s.n+s.n2+2 : s.n+1)*s.alzata; }
-// scala a L (tipo 'L'): rampa 1 di n gradini, pianerottolo quadrato (lato wd) e rampa 2 di n2 gradini a 90°. Assi locali: u lungo
-// la rampa 1 (verso sgn su ax), v verso il lato di svolta (turn +1 sinistra, -1 destra rispetto a chi sale). x,y,w,h restano l'ingombro
-// (spostamento, selezione, limiti): la forma si ricava da O (angolo di partenza) e dai parametri. Altezza = (n+n2+2) alzate.
-function stairLG(s) {
-  const L1 = s.n*s.pedata, L2 = s.n2*s.pedata, wd = s.wd, sg = s.sgn, tu = s.turn;
-  const U = s.ax==='x' ? {x:sg, y:0} : {x:0, y:sg}, V = s.ax==='x' ? {x:0, y:sg*tu} : {x:-sg*tu, y:0};
-  const Lu = L1+wd, Lv = wd+L2, ex = U.x*Lu+V.x*Lv, ey = U.y*Lu+V.y*Lv;
-  return {L1, L2, wd, U, V, ex, ey, O:{x: ex>=0 ? s.x : s.x+s.w, y: ey>=0 ? s.y-s.h : s.y}};
+// scala composta: rampe dritte (senza tipo) e pianerottoli (tipo 'P': un rettangolo senza gradini) con lo stesso grp sono UNA scala:
+// una sola etichetta e un solo calcolo. Altezza superata = (gradini di tutte le rampe + pianerottoli + 1) alzate.
+function stairGroup(s) { return s.grp ? state.scale.filter(q => q.grp===s.grp && !hid(q)) : [s]; }
+function stairTotals(s) {
+  const G = stairGroup(s), R = G.filter(q => q.tipo!=='P');
+  return {G, R, lands:G.length-R.length, steps:R.reduce((a,q) => a+q.n, 0)};
 }
-function stairLFit(s, O) {                  // riporta l'ingombro all'angolo di partenza O dopo un cambio di misure
-  const g = stairLG(s); s.w = Math.abs(g.ex); s.h = Math.abs(g.ey);
-  s.x = g.ex>=0 ? O.x : O.x+g.ex; s.y = g.ey>=0 ? O.y+g.ey : O.y;
-}
-function stairLPieces(s) {                  // i tre pezzi (rampa 1, pianerottolo, rampa 2) come rettangoli locali
-  const g = stairLG(s);
-  return {g, p:[{u0:0, u1:g.L1, v0:0, v1:g.wd}, {u0:g.L1, u1:g.L1+g.wd, v0:0, v1:g.wd}, {u0:g.L1, u1:g.L1+g.wd, v0:g.wd, v1:g.wd+g.L2}]};
-}
-function stairLW(g, u, v) { return {x:g.O.x+g.U.x*u+g.V.x*v, y:g.O.y+g.U.y*u+g.V.y*v}; }
-function stairLQuad(g, r) { return [stairLW(g,r.u0,r.v0), stairLW(g,r.u1,r.v0), stairLW(g,r.u1,r.v1), stairLW(g,r.u0,r.v1)]; }
-function stairLPath(s) {                    // percorso di salita: dal 12% della rampa 1, al centro del pianerottolo, fino all'88% della rampa 2
-  const g = stairLG(s), c = g.wd/2;
-  return [stairLW(g, g.L1*0.12, c), stairLW(g, g.L1+c, c), stairLW(g, g.L1+c, g.wd+g.L2*0.88)];
-}
-function stairHit(wx, wy, s) {
-  if (s.tipo!=='L') return inRectWorld(wx, wy, s);
-  const {g, p} = stairLPieces(s), dx = wx-g.O.x, dy = wy-g.O.y, u = dx*g.U.x+dy*g.U.y, v = dx*g.V.x+dy*g.V.y;
-  return p.some(r => u>=r.u0 && u<=r.u1 && v>=r.v0 && v<=r.v1);
-}
-function stairArea(s) { return s.tipo==='L' ? s.wd*(s.n*s.pedata + s.wd + s.n2*s.pedata) : s.w*s.h; }
-function stairCenter(s) {                   // punto mondo dentro la scala (per sapere in che ambiente cade)
-  if (s.tipo!=='L') return {x:s.x+s.w/2, y:s.y-s.h/2};
-  const g = stairLG(s); return stairLW(g, g.L1+g.wd/2, g.wd/2);
-}
+function stairHeight(s) { const T = stairTotals(s); return (T.steps+T.lands+1)*s.alzata; }
+function stairHit(wx, wy, s) { return inRectWorld(wx, wy, s); }
+function stairArea(s) { return s.w*s.h; }
+function stairCenter(s) { return {x:s.x+s.w/2, y:s.y-s.h/2}; }   // punto mondo dentro la scala (per sapere in che ambiente cade)
 function stairSetPedata(s, p) {             // la lunghezza si adatta, la partenza resta ferma
-  if (s.tipo==='L') { const O = stairLG(s).O; s.pedata = p; stairLFit(s, O); return; }
   const b = stairB(s), st = s.sgn>0 ? b.a0 : b.a1, e = st + s.sgn*s.n*p;
   s.pedata = p; stairSet(s, Math.min(st,e), Math.max(st,e), b.c0, b.c1);
 }
@@ -800,12 +776,41 @@ function stairFromDrag(r) {                  // null se il trascinamento non arr
   if (c1-c0 < STAIR_MINW) { const m = (c0+c1)/2; c0 = m-STAIR_MINW/2; c1 = m+STAIR_MINW/2; }
   const s = { ax, sgn, n, pedata:p, alzata:ls.a, x:0, y:0, w:0, h:0 };
   stairSet(s, Math.min(aS,aE), Math.max(aS,aE), c0, c1);
-  if (r.L) {                                 // a L: la rampa 2 parte uguale alla 1 e gira a sinistra; si cambia da doppio clic
-    const tu = 1, wd = c1-c0, O = ax==='x' ? {x:sgn>0 ? s.x : s.x+s.w, y:sgn*tu>0 ? c0 : c1} : {x:-sgn*tu>0 ? c0 : c1, y:sgn>0 ? s.y-s.h : s.y};
-    Object.assign(s, {tipo:'L', n2:n, wd, turn:tu});
-    stairLFit(s, O);
-  }
   return s;
+}
+// pianerottolo tra due rampe a 90: L e' la rampa bassa, U quella alta. Il pianerottolo e' attaccato alla fine di L, largo come L
+// e lungo quanto e' larga U; U deve partire dal suo lato (con una tolleranza: poi viene allineata). null se non combaciano.
+function stairLandingPlan(L, U) {
+  const bL = stairB(L), bU = stairB(U), tol = 0.15;
+  const aE = L.sgn>0 ? bL.a1 : bL.a0, aF = aE + L.sgn*(bU.c1-bU.c0), lo = Math.min(aE,aF), hi = Math.max(aE,aF);
+  const side = U.sgn>0 ? bL.c1 : bL.c0, uS = U.sgn>0 ? bU.a0 : bU.a1;
+  if (Math.abs(uS-side) > tol || Math.abs(bU.c0-lo) > tol || Math.abs(bU.c1-hi) > tol) return null;
+  const land = {ax:L.ax}; stairSet(land, lo, hi, bL.c0, bL.c1);
+  return {L, U, lo, hi, side, land};
+}
+// dopo che una rampa e' stata spostata o creata: se tocca in un vertice un'altra rampa a 90 (non gia' della stessa scala), propone il pianerottolo
+function stairLinkCheck(i) {
+  const A = state.scale[i]; if (!A || A.tipo==='P' || hid(A) || locked(A)) return;
+  for (let j=0; j<state.scale.length; j++) {
+    const B = state.scale[j];
+    if (j===i || !B || B.tipo==='P' || hid(B) || locked(B) || B.ax===A.ax || (A.grp && A.grp===B.grp)) continue;
+    const plan = stairLandingPlan(A, B) || stairLandingPlan(B, A); if (!plan) continue;
+    askDialog('Pianerottolo', [], 'Le due rampe si toccano in un vertice. Creo il pianerottolo che le collega e ne faccio una sola scala?', () => stairLink(plan));
+    return;
+  }
+}
+function stairLink(plan) {
+  const {L, U, lo, hi, side, land} = plan; if (!state.scale.includes(L) || !state.scale.includes(U)) return;
+  saveHistory();
+  const old = new Set([L.grp, U.grp].filter(Boolean)), gid = L.grp || U.grp || Math.max(0, ...state.scale.map(q => q.grp||0)) + 1;
+  state.scale.forEach(q => { if (q.grp && old.has(q.grp)) q.grp = gid; });
+  L.grp = U.grp = gid;
+  const len = U.n*U.pedata;                                    // la rampa alta si allinea al pianerottolo
+  stairSet(U, U.sgn>0 ? side : side-len, U.sgn>0 ? side+len : side, lo, hi);
+  state.scale.push({tipo:'P', ax:L.ax, sgn:L.sgn, n:0, pedata:L.pedata, alzata:L.alzata, x:land.x, y:land.y, w:land.w, h:land.h, grp:gid, label:L.label});
+  state.scale.forEach(q => { if (q.grp===gid) q.label = L.label; });
+  state.sel = {kind:'scala', idx:state.scale.length-1};
+  commit('Pianerottolo creato: le rampe sono ora una scala sola ('+L.label+'), H '+stairHeight(L).toFixed(2)+' m. Si sposta tutta insieme.');
 }
 function stairHandles(s) {                   // centri (mondo) dei 4 lati
   const b = stairB(s), am = (b.a0+b.a1)/2, cm = (b.c0+b.c1)/2;
@@ -814,7 +819,7 @@ function stairHandles(s) {                   // centri (mondo) dei 4 lati
 }
 function hitStairHandle(sx, sy) {
   if (!state.sel || state.sel.kind!=='scala') return null;
-  const s = state.scale[state.sel.idx]; if (!s || s.tipo==='L') return null;
+  const s = state.scale[state.sel.idx]; if (!s) return null;
   const h = stairHandles(s);
   for (const k of ['a0','a1','c0','c1']) {
     const q = w2s(h[k].x, h[k].y);
@@ -823,6 +828,12 @@ function hitStairHandle(sx, sy) {
   return null;
 }
 function stairResize(s, side, w) {           // w = punto mondo del puntatore
+  if (s.tipo==='P') {                         // pianerottolo: lati liberi, nessun gradino
+    const b = stairB(s), v = side[0]==='a' ? (s.ax==='x' ? w.x : w.y) : (s.ax==='x' ? w.y : w.x), MIN = 0.30;
+    let {a0, a1, c0, c1} = b;
+    if (side==='a0') a0 = Math.min(v, a1-MIN); else if (side==='a1') a1 = Math.max(v, a0+MIN); else if (side==='c0') c0 = Math.min(v, c1-MIN); else c1 = Math.max(v, c0+MIN);
+    stairSet(s, a0, a1, c0, c1); return;
+  }
   const b = stairB(s), p = s.pedata, st = s.sgn>0 ? b.a0 : b.a1, en = s.sgn>0 ? b.a1 : b.a0;
   if (side==='c0' || side==='c1') {
     const c = s.ax==='x' ? w.y : w.x;
@@ -841,10 +852,10 @@ function stairResize(s, side, w) {           // w = punto mondo del puntatore
   }
 }
 function stairInfo(s) {
-  if (s.tipo==='L') return ['Pedata '+Math.round(s.pedata*100)+' cm   Alzata '+Math.round(s.alzata*100)+' cm',
-          s.n+' + '+s.n2+' gradini e pianerottolo   H '+stairHeight(s).toFixed(2)+' m'];
-  return ['Pedata '+Math.round(s.pedata*100)+' cm   Alzata '+Math.round(s.alzata*100)+' cm',
-          s.n+' gradini   H '+stairHeight(s).toFixed(2)+' m ('+(s.n+1)+' alzate)'];
+  const T = stairTotals(s), R = T.R.length ? T.R[0] : s, l0 = 'Pedata '+Math.round(R.pedata*100)+' cm   Alzata '+Math.round(R.alzata*100)+' cm';
+  if (T.G.length<=1 && s.tipo!=='P') return [l0, s.n+' gradini   H '+stairHeight(s).toFixed(2)+' m ('+(s.n+1)+' alzate)'];
+  const gr = T.R.length ? T.R.map(q => q.n).join(' + ')+' gradini'+(T.lands ? ' e '+(T.lands===1 ? 'pianerottolo' : T.lands+' pianerottoli') : '') : 'Pianerottolo';
+  return [l0, gr+'   H '+stairHeight(s).toFixed(2)+' m'];
 }
 function drawStairArrow(pts) {              // freccia di salita lungo la spezzata pts (punti mondo), con il pallino alla partenza
   const P = pts.map(q => w2s(q.x,q.y)), A0 = P[0], A1 = P[P.length-1];
@@ -868,23 +879,12 @@ function drawStairLabel(s, c) {             // etichetta: solo a scala seleziona
   ctx.fillStyle = '#cfe6ff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(t[0], c.x, c.y-8); ctx.fillText(t[1], c.x, c.y+9);
 }
-function drawStairL(s, mode) {
-  const {g, p} = stairLPieces(s), pd = s.pedata;
-  const poly = r => { const q = stairLQuad(g, r).map(a => w2s(a.x,a.y)); ctx.beginPath(); ctx.moveTo(q[0].x,q[0].y); for (let i=1;i<4;i++) ctx.lineTo(q[i].x,q[i].y); ctx.closePath(); };
-  p.forEach(r => { poly(r); if (!PRINT) { ctx.fillStyle = 'rgba(120,160,200,.14)'; ctx.fill(); } ctx.strokeStyle = mode==='sel' ? '#ffe066' : C.stair; ctx.lineWidth = prLw(2, 0.25); ctx.stroke(); });
-  ctx.strokeStyle = C.stair; ctx.lineWidth = prLw(1, 0.13);
-  const ln = (u0,v0,u1,v1) => { const a = stairLW(g,u0,v0), b = stairLW(g,u1,v1), A = w2s(a.x,a.y), B = w2s(b.x,b.y); ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke(); };
-  for (let k=1; k<s.n; k++) ln(k*pd, 0, k*pd, g.wd);
-  for (let k=1; k<s.n2; k++) ln(g.L1, g.wd+k*pd, g.L1+g.wd, g.wd+k*pd);
-  drawStairArrow(stairLPath(s));
-  if (mode) { const c = stairCenter(s); drawStairLabel(s, w2s(c.x, c.y)); }
-}
-function drawStair(s, mode) {
-  if (s.tipo==='L') { drawStairL(s, mode); return; }
+function drawStair(s, mode, lab) {          // lab=false: la scala e' composta e l'etichetta unica sta su un altro pezzo
   const b = stairB(s), p = s.pedata, st = s.sgn>0 ? b.a0 : b.a1;
   rectPath(s);
   if (!PRINT) { ctx.fillStyle = 'rgba(120,160,200,.14)'; ctx.fill(); }
   ctx.strokeStyle = mode==='sel' ? '#ffe066' : C.stair; ctx.lineWidth = prLw(2, 0.25); ctx.stroke();
+  if (s.tipo==='P') { if (mode && lab!==false) drawStairLabel(s, rectCenter(s)); return; }
   ctx.strokeStyle = C.stair; ctx.lineWidth = prLw(1, 0.13);
   for (let k=1; k<s.n; k++) {
     const a = st + s.sgn*k*p;
@@ -893,7 +893,7 @@ function drawStair(s, mode) {
   }
   const cm = (b.c0+b.c1)/2, L = s.n*p, f0 = st + s.sgn*L*0.12, f1 = st + s.sgn*L*0.88;
   drawStairArrow(s.ax==='x' ? [{x:f0,y:cm},{x:f1,y:cm}] : [{x:cm,y:f0},{x:cm,y:f1}]);
-  if (mode) drawStairLabel(s, rectCenter(s));
+  if (mode && lab!==false) drawStairLabel(s, rectCenter(s));
 }
 
 // colonna dei comandi: righe quante ne entrano nell'altezza, il canvas parte dopo la colonna
@@ -1058,6 +1058,8 @@ function drawNow() {
   if (bm) bm.classList.toggle('ok', !!state.moveBase);
   const mbb = document.getElementById('move-base-btn');
   if (mbb) setDisp(mbb, state.moveBase ? 'block' : 'none');       // il blocco "sposta base" deve sempre vedersi, anche a pannello chiuso
+  const pb = document.getElementById('paste-btn');                // dopo una copia compare "Incolla"; mentre si incolla diventa "Fine"
+  if (pb) { const pasting = state.tool==='paste' || state.tool==='pasteOp'; setDisp(pb, (CLIP && !state.moveBase) || pasting ? 'block' : 'none'); setTxt(pb, pasting ? '✔ Fine' : '⎗ Incolla'); }
   updateMagnetBtn();
   const hb = document.getElementById('hand-btn');
   if (hb) { setTxt(hb, state.handMode ? '✋ Mano attiva - tocca per finire' : '✋'); hb.classList.toggle('on', !!state.handMode); }
@@ -1382,9 +1384,11 @@ function drawPilastri() {
 }
 
 function drawScale() {
-  state.scale.forEach((s,i) => !hid(s) && drawStair(s, PRINT ? '' : isSel('scala',i) ? 'sel' : (state.hoverScala===i ? 'hover' : '')));
-  if (!PRINT && state.sel && state.sel.kind==='scala' && state.scale[state.sel.idx] && state.scale[state.sel.idx].tipo!=='L') {       // maniglie (la scala a L si cambia da doppio clic)
-    const h = stairHandles(state.scale[state.sel.idx]);
+  const sel = state.sel && state.sel.kind==='scala' ? state.scale[state.sel.idx] : null, hv = state.hoverScala!=null ? state.scale[state.hoverScala] : null;
+  const same = (a, q) => a && (a===q || (a.grp && a.grp===q.grp));                  // i pezzi della stessa scala si evidenziano insieme
+  state.scale.forEach((s,i) => !hid(s) && drawStair(s, PRINT ? '' : same(sel,s) ? 'sel' : (same(hv,s) ? 'hover' : ''), sel ? isSel('scala',i) : state.hoverScala===i));
+  if (!PRINT && sel) {                                                                // maniglie del pezzo selezionato
+    const h = stairHandles(sel);
     const hs = COARSE ? 9 : 6;
     ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#e94560'; ctx.lineWidth=2;
     ['a0','a1','c0','c1'].forEach(k => { const q = w2s(h[k].x, h[k].y); ctx.fillRect(q.x-hs,q.y-hs,hs*2,hs*2); ctx.strokeRect(q.x-hs,q.y-hs,hs*2,hs*2); });
@@ -2023,8 +2027,7 @@ const TIPS = {
   split:    'Clicca su una linea per spezzarla con un nuovo punto; trascina i punti per correggere le inclinazioni.',
   opening:  'Clicca sulla parete dove inserire il serramento.',
   pilastro: 'Clicca un punto rilevato (il pilastro si aggancia) oppure un punto qualsiasi della pianta.',
-  stair:    'Trascina nel verso di salita: un gradino ogni 30 cm. Poi maniglie per allargare o allungare, doppio clic per pedata e alzata.',
-  stairL:   'Trascina la prima rampa nel verso di salita: un gradino ogni 30 cm. Pianerottolo e seconda rampa (a 90°) vengono dopo: doppio clic per gradini, larghezza e verso di svolta.',
+  stair:    'Trascina nel verso di salita: un gradino ogni 30 cm. Poi maniglie per allargare o allungare, doppio clic per pedata e alzata. Avvicina due rampe a 90° fino a toccarle in un vertice: l\'app propone il pianerottolo.',
   label:    'Clicca per l\'etichetta. In Seleziona la trascini e col doppio click la modifichi.',
   pencil:   'Trascina per disegnare a mano libera.',
   roompts:  'Tocca i vertici dell\'ambiente in ordine, poi di nuovo il primo per chiuderlo. Nel Progetto serve per le stanze unite o divise.',
@@ -2036,9 +2039,9 @@ const TIPS = {
 };
 
 // strumento attivo: il pulsante del suo gruppo ne prende icona e nome, la voce nella lista si evidenzia
-const TOOL_ICON  = {pasteOp:'⎗', inherit:'⇉', boundary:'⬚', roompts:'⬠',wall:'▭', room:'⬚', point:'+', connect:'/', trilatere:'◎', measure:'📏', split:'✂', opening:'🚪', pilastro:'▪', stair:'🪜', stairL:'🪜', label:'🏷', pencil:'✏'};
-const TOOL_NAME  = {paste:'Incolla', pasteOp:'Incolla serramento', inherit:'Eredita proprietà', boundary:'Ambiente da area', roompts:'Ambiente da punti',wall:'Muro', room:'Stanza', point:'Punto', connect:'Collega', trilatere:'Trilatera', measure:'Misura', split:'Spezza', opening:'Serramento', pilastro:'Pilastro', stair:'Scala', stairL:'Scala a L', label:'Etichetta', pencil:'Matita'};
-const TOOL_GROUP = {pasteOp:'draw', inherit:'draw', boundary:'draw', roompts:'draw',wall:'draw', room:'draw', point:'draw', connect:'draw', trilatere:'draw', measure:'draw', split:'draw', opening:'ins', pilastro:'ins', stair:'ins', stairL:'ins', label:'ins', pencil:'ins'};
+const TOOL_ICON  = {pasteOp:'⎗', inherit:'⇉', boundary:'⬚', roompts:'⬠',wall:'▭', room:'⬚', point:'+', connect:'/', trilatere:'◎', measure:'📏', split:'✂', opening:'🚪', pilastro:'▪', stair:'🪜', label:'🏷', pencil:'✏'};
+const TOOL_NAME  = {paste:'Incolla', pasteOp:'Incolla serramento', inherit:'Eredita proprietà', boundary:'Ambiente da area', roompts:'Ambiente da punti',wall:'Muro', room:'Stanza', point:'Punto', connect:'Collega', trilatere:'Trilatera', measure:'Misura', split:'Spezza', opening:'Serramento', pilastro:'Pilastro', stair:'Scala', label:'Etichetta', pencil:'Matita'};
+const TOOL_GROUP = {pasteOp:'draw', inherit:'draw', boundary:'draw', roompts:'draw',wall:'draw', room:'draw', point:'draw', connect:'draw', trilatere:'draw', measure:'draw', split:'draw', opening:'ins', pilastro:'ins', stair:'ins', label:'ins', pencil:'ins'};
 const GROUP_DEF  = {draw:{icon:'📐', name:'Disegna'}, ins:{icon:'🧱', name:'Inserisci'}};
 function markTool(t) {
   document.querySelectorAll('.tool-btn, .tool-item').forEach(b => b.classList.remove('active'));
@@ -2315,7 +2318,8 @@ function finishStair() {
   state.scalaCounter++; s.label = 'SCALA '+state.scalaCounter;
   state.scale.push(s);
   state.sel = {kind:'scala', idx:state.scale.length-1};
-  commit(s.tipo==='L' ? 'Scala a L creata: '+s.n+' + '+s.n2+' gradini e pianerottolo. Doppio clic per cambiare gradini, larghezza e verso di svolta.' : 'Scala creata: '+s.n+' gradini. Trascina le maniglie per cambiarla, doppio clic per pedata e alzata.');
+  commit('Scala creata: '+s.n+' gradini. Trascina le maniglie per cambiarla, doppio clic per pedata e alzata. Per il pianerottolo avvicina un\'altra rampa a 90°.');
+  stairLinkCheck(state.scale.length-1);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3048,32 +3052,14 @@ function entityMenuAction(action) {
   }
   if (s.kind==='scala') {
     const c = state.scale[s.idx]; if (!c) return;
-    if (c.tipo==='L') {
-      askDialog('Modifica '+c.label, [
-        {label:'Gradini rampa 1', id:'n1', value:String(c.n), type:'number', half:true},
-        {label:'Gradini rampa 2', id:'n2', value:String(c.n2), type:'number', half:true},
-        {label:'Larghezza e pianerottolo (cm)', id:'wd', value:String(Math.round(c.wd*100)), type:'number'},
-        {label:'Pedata (cm)', id:'ped', value:String(Math.round(c.pedata*100)), type:'number', half:true},
-        {label:'Alzata (cm)', id:'alz', value:String(Math.round(c.alzata*100)), type:'number', half:true},
-        {label:'Svolta salendo', id:'tu', type:'select', value:String(c.turn), options:[{value:'1', label:'A sinistra'}, {value:'-1', label:'A destra'}]},
-      ], 'Il pianerottolo è un quadrato largo come le rampe. Altezza superata: (gradini 1 + gradini 2 + 2) alzate.', v => {
-        const n1 = Math.round(parseFloat(v.n1)), n2 = Math.round(parseFloat(v.n2)), wd = parseFloat(v.wd)/100, ped = parseFloat(v.ped)/100, alz = parseFloat(v.alz)/100;
-        if (!(n1>=1) || !(n2>=1) || !(wd>=STAIR_MINW) || !(ped>0.05) || !(alz>0.05)) { setTip('Valori non validi: almeno un gradino per rampa e larghezza di '+Math.round(STAIR_MINW*100)+' cm.'); return; }
-        saveHistory(); const O = stairLG(c).O;
-        Object.assign(c, {n:n1, n2, wd, pedata:ped, alzata:alz, turn:+v.tu});
-        stairLFit(c, O);
-        commit('Scala aggiornata: '+n1+' + '+n2+' gradini, H '+stairHeight(c).toFixed(2)+' m.');
-      });
-      return;
-    }
-    askDialog('Modifica '+c.label, [
-      {label:'Pedata (cm)', id:'ped', value:String(Math.round(c.pedata*100)), type:'number'},
+    const land = c.tipo==='P';
+    askDialog('Modifica '+c.label, (land ? [] : [{label:'Pedata (cm)', id:'ped', value:String(Math.round(c.pedata*100)), type:'number'}]).concat([
       {label:'Alzata (cm)', id:'alz', value:String(Math.round(c.alzata*100)), type:'number'},
-    ], c.n+' gradini: la lunghezza si adatta alla nuova pedata.', v => {
-      const ped = parseFloat(v.ped)/100, alz = parseFloat(v.alz)/100;
+    ]), land ? 'L\'alzata vale per tutta la scala. Le misure del pianerottolo si cambiano con le maniglie.' : c.n+' gradini: la lunghezza si adatta alla nuova pedata. L\'alzata vale per tutta la scala.', v => {
+      const ped = land ? 0.3 : parseFloat(v.ped)/100, alz = parseFloat(v.alz)/100;
       if (!isFinite(ped) || ped<=0.05 || !isFinite(alz) || alz<=0.05) return;
-      saveHistory(); stairSetPedata(c, ped); c.alzata = alz;
-      commit('Scala aggiornata: '+c.n+' gradini, H '+stairHeight(c).toFixed(2)+' m.');
+      saveHistory(); if (!land) stairSetPedata(c, ped); stairGroup(c).forEach(q => { q.alzata = alz; });
+      commit('Scala aggiornata: H '+stairHeight(c).toFixed(2)+' m.');
     });
   }
 }
@@ -3466,7 +3452,6 @@ canvas.addEventListener('pointerdown', e => {
   switch (state.tool) {
     case 'pencil': state.pencilCurrent = {pts:[s2w(sx,sy)]}; return;
     case 'stair':  { const w=s2w(sx,sy); state.rectDraw={x0:w.x,y0:w.y,x1:w.x,y1:w.y}; return; }
-    case 'stairL': { const w=s2w(sx,sy); state.rectDraw={x0:w.x,y0:w.y,x1:w.x,y1:w.y,L:true}; return; }
     case 'room':   { const c=roomCorner(sx,sy); state.roomDraw={x0:c.x, y0:c.y, x1:c.x, y1:c.y, a:c.pi, b:null}; return; }
     case 'wall':   return;                  // i vertici si mettono al clic (handleClick)
     case 'opening': {
@@ -3497,7 +3482,7 @@ canvas.addEventListener('pointerdown', e => {
       const qi = hitPilastro(sx,sy);
       if (qi!==null && !locked(state.pilastri[qi])) { const w=s2w(sx,sy); state.drag={kind:'pilastro', idx:qi, ox:w.x-state.pilastri[qi].x, oy:w.y-state.pilastri[qi].y}; return; }
       const ci = hitScala(sx,sy);
-      if (ci!==null && !locked(state.scale[ci])) { const w=s2w(sx,sy); state.drag={kind:'scala', idx:ci, ox:w.x-state.scale[ci].x, oy:w.y-state.scale[ci].y}; return; }
+      if (ci!==null && !locked(state.scale[ci])) { const w=s2w(sx,sy), sc=state.scale[ci]; state.drag={kind:'scala', idx:ci, ox:w.x-sc.x, oy:w.y-sc.y, x0:sc.x, y0:sc.y, mem:stairGroup(sc).filter(q => !locked(q)).map(q => ({q, x:q.x, y:q.y}))}; return; }
       state.selBox={x0:sx,y0:sy,x1:sx,y1:sy,keep,base};   // vuoto: riquadro di selezione
       return;
     }
@@ -3553,7 +3538,7 @@ canvas.addEventListener('pointermove', e => {
   if (state.stairResize) {                   // maniglie della scala: la lunghezza va a gradini interi
     const r = state.stairResize, sc = state.scale[r.idx];
     dragSnap();
-    if (sc) { stairResize(sc, r.side, s2w(sx,sy)); showTooltip(sc.n+' gradini - H '+stairHeight(sc).toFixed(2)+' m', e.clientX, e.clientY); }
+    if (sc) { stairResize(sc, r.side, s2w(sx,sy)); showTooltip(sc.tipo==='P' ? 'Pianerottolo '+sc.w.toFixed(2)+' x '+sc.h.toFixed(2)+' m' : sc.n+' gradini - H '+stairHeight(sc).toFixed(2)+' m', e.clientX, e.clientY); }
     draw(); return;
   }
   if (state.openingResize) {                 // maniglia: un estremo resta fermo, l'altro segue il puntatore
@@ -3598,7 +3583,7 @@ canvas.addEventListener('pointermove', e => {
     }
     if (d.kind==='label')    { state.labels[d.idx].x=w.x-d.ox; state.labels[d.idx].y=w.y-d.oy; }
     if (d.kind==='pilastro') { state.pilastri[d.idx].x=w.x-d.ox; state.pilastri[d.idx].y=w.y-d.oy; }
-    if (d.kind==='scala')    { state.scale[d.idx].x=w.x-d.ox;  state.scale[d.idx].y=w.y-d.oy; }
+    if (d.kind==='scala')    { const dx = w.x-d.ox-d.x0, dy = w.y-d.oy-d.y0; d.mem.forEach(m => { m.q.x = m.x+dx; m.q.y = m.y+dy; }); }       // la scala composta si sposta tutta
     draw(); return;
   }
 
@@ -3666,9 +3651,9 @@ function endPointer(e) {
   }
   if (state.drag && (state.drag.kind==='multi' || state.drag.kind==='base')) { state.drag=null; dragEnd(true); persist(); draw(); return; }
   if (state.drag) {
-    const wasMoved = state.moved;
+    const wasMoved = state.moved, dk = state.drag.kind, di = state.drag.idx;
     state.drag=null; dragEnd(wasMoved);
-    if (wasMoved) { persist(); draw(); }
+    if (wasMoved) { persist(); draw(); if (dk==='scala') stairLinkCheck(di); }
     else handleClick(sx, sy, e.clientX, e.clientY);
     return;
   }
@@ -3831,7 +3816,7 @@ const photoStore = new Map(); let photoSeq = 0;
 // COMPATIBILITA' DEI PROGETTI: un rilievo di qualsiasi versione si apre sempre. Ogni modifica del formato dei dati
 // alza DATA_FMT e aggiunge qui il suo passo, che aggiorna il progetto e dice cosa e' cambiato e cosa controllare a mano.
 // I passi si applicano in ordine dal formato del progetto in poi. Formato 1 = progetti fino alla 2.02 (senza "fmt").
-const DATA_FMT = 6;
+const DATA_FMT = 7;
 const MIGRATIONS = [
   { fmt:2, ver:'2.03', run:o => {
     (o.ambienti||[]).forEach(a => { if (a.outdoor && !a.category) a.category = 'balconi'; delete a.outdoor; });   // flag "senza volume" delle 1.16-1.19
@@ -3861,6 +3846,25 @@ const MIGRATIONS = [
     return n ? ['Porte-finestre: niente più pannelli ciechi (sotto finestra). '+(n===1 ? 'Una porta-finestra li aveva' : n+' porte-finestre li avevano')+' e ora sono a zero: controlla le specchiature.'] : [];
   }},
   { fmt:6, ver:'2.13', run:o => [] },   // scale a L (tipo 'L' con n2, wd, turn): le scale dritte restano come sono
+  { fmt:7, ver:'2.14', run:o => {       // la scala a L diventa rampa + pianerottolo + rampa con lo stesso grp (vedi stairGroup)
+    let n = 0, gid = Math.max(0, ...(o.scale||[]).map(q => q.grp||0));
+    const out = [];
+    (o.scale||[]).forEach(s => {
+      if (s.tipo!=='L') { out.push(s); return; }
+      n++; gid++;
+      const sg = s.sgn, tu = s.turn, L1 = s.n*s.pedata, L2 = s.n2*s.pedata, wd = s.wd;
+      const U = s.ax==='x' ? {x:sg, y:0} : {x:0, y:sg}, V = s.ax==='x' ? {x:0, y:sg*tu} : {x:-sg*tu, y:0};
+      const ex = U.x*(L1+wd)+V.x*(wd+L2), ey = U.y*(L1+wd)+V.y*(wd+L2), O = {x: ex>=0 ? s.x : s.x+s.w, y: ey>=0 ? s.y-s.h : s.y};
+      const W = (u,v) => ({x:O.x+U.x*u+V.x*v, y:O.y+U.y*u+V.y*v});
+      const rect = (u0,u1,v0,v1) => { const a = W(u0,v0), b = W(u1,v1), x0 = Math.min(a.x,b.x), x1 = Math.max(a.x,b.x), y0 = Math.min(a.y,b.y), y1 = Math.max(a.y,b.y); return {x:x0, y:y1, w:x1-x0, h:y1-y0}; };
+      const base = Object.assign({}, s); ['tipo','n2','wd','turn'].forEach(k => delete base[k]); base.grp = gid;
+      out.push(Object.assign({}, base, rect(0, L1, 0, wd)));
+      out.push(Object.assign({}, base, {tipo:'P', n:0}, rect(L1, L1+wd, 0, wd)));
+      out.push(Object.assign({}, base, {ax: s.ax==='x' ? 'y' : 'x', sgn: s.ax==='x' ? sg*tu : -sg*tu, n:s.n2}, rect(L1, L1+wd, wd, wd+L2)));
+    });
+    o.scale = out;
+    return n ? ['Scale a L: '+(n===1 ? 'la scala a L è diventata' : 'le '+n+' scale a L sono diventate')+' due rampe dritte unite da un pianerottolo (una scala sola). Ogni rampa si cambia con le sue maniglie.'] : [];
+  }},
 ];
 // aggiorna il progetto letto (file o browser) al formato corrente; restituisce le note per chi lo apre ([] se era gia' aggiornato)
 function migrate(o) {
@@ -4436,7 +4440,7 @@ function exportDXF() {
   hideAllMenus(); refreshGW();
   // layer: [nome, colore]; colore negativo = spento all'apertura (QUOTE_CORTE: quote che non stanno nel loro muro)
   const LAYERS = [['MURI',5],['MURI_EST',6],['MURI_COM',3],['MURI_NONRISC',30],['MURI_ND',200],['MURI_GRAFICI',8],['QUOTE',2],['QUOTE_CORTE',-2],['SERRAMENTI',5],
-                  ['AMBIENTI',4],['AMBIENTI_TESTO',7],['PILASTRI',8],['SCALE',6],['SCALE_TESTO',8],['ETICHETTE',1],['MATITA',30],['TABELLE',3],['DEMOLIZIONI',2],['COSTRUZIONI',1]];
+                  ['AMBIENTI',4],['AMBIENTI_TESTO',7],['PILASTRI',8],['SCALE',6],['SCALE_TESTO',8],['ETICHETTE',1],['MATITA',30],['DEMOLIZIONI',2],['COSTRUZIONI',1]];
   const D = dxfWriter(LAYERS), {line, poly, mtext, rect} = D;
   const CW = 0.7;                                   // larghezza media di un carattere in altezze di testo (stima degli ingombri, larga: i CAD sostituiscono il carattere)
   const readable = (ux, uy) => (ux < -1e-9 || (Math.abs(ux) < 1e-9 && uy < 0)) ? {x:-ux, y:-uy} : {x:ux, y:uy};   // testo lungo il muro, mai capovolto
@@ -4458,8 +4462,8 @@ function exportDXF() {
   });
   cuts.jambs.forEach(j => { const s = state.segments[j.si]; line(s ? lay(s, wallLayer(s)) : 'MURI', j.a.x, j.a.y, j.b.x, j.b.y); });
 
-  // ambienti: poligono e un'etichetta MTEXT a piu' righe con cornice (come EC700), alta al massimo 10 cm e ridotta
-  // finche' sta nell'ingombro dell'ambiente; etichetta portata fuori = linea di richiamo fino alla cornice
+  // ambienti: poligono e un'etichetta MTEXT a piu' righe (senza cornice), alta al massimo 10 cm e ridotta
+  // finche' sta nell'ingombro dell'ambiente
   state.ambienti.forEach(a => {
     const pts = a.indices.map(i=>state.points[i]).filter(Boolean);
     if (pts.length<3 || !live(a)) return;
@@ -4469,11 +4473,7 @@ function exportDXF() {
     const bw = Math.max(...pts.map(p=>p.x)) - Math.min(...pts.map(p=>p.x)), bh = Math.max(...pts.map(p=>p.y)) - Math.min(...pts.map(p=>p.y));
     const nc = Math.max(...rows.map(r => r.length)), LS = 5/3;          // interlinea MTEXT = 5/3 dell'altezza
     const h = Math.max(0.04, Math.min(0.10, bw*0.85/(nc*CW), bh*0.85/(rows.length*LS)));
-    const pad = h*0.4, hw = nc*h*CW/2 + pad, hh = rows.length*h*LS/2 + pad;
     mtext('AMBIENTI_TESTO', cx, cy, h, rows, {att:5});
-    rect('AMBIENTI_TESTO', cx-hw, cy-hh, cx+hw, cy+hh);
-    const S = ambLeaderStart(pts, {x:cx, y:cy});
-    if (S) { const e = boxEntry(S, {x:cx, y:cy}, {x0:cx-hw, x1:cx+hw, y0:cy-hh, y1:cy+hh}); if (e) line('AMBIENTI_TESTO', S.x, S.y, e.x, e.y); }
   });
 
   // serramenti: varco con le battute, testo lungo il muro dal lato opposto alla quota
@@ -4506,16 +4506,11 @@ function exportDXF() {
     const a = pts[pts.length-2], b = pts[pts.length-1], l = Math.hypot(b.x-a.x, b.y-a.y) || 1, ux = (b.x-a.x)/l, uy = (b.y-a.y)/l, hs = 0.12;
     line('SCALE', b.x, b.y, b.x-ux*hs-uy*hs/2, b.y-uy*hs+ux*hs/2); line('SCALE', b.x, b.y, b.x-ux*hs+uy*hs/2, b.y-uy*hs-ux*hs/2);
   };
+  const doneG = new Set();
   state.scale.forEach(c => {
     if (hid(c)) return;
-    if (c.tipo==='L') {
-      const {g, p} = stairLPieces(c), pd = c.pedata, W = (u,v) => stairLW(g,u,v);
-      p.forEach(r => poly('SCALE', stairLQuad(g, r), true));
-      for (let k=1; k<c.n; k++)  { const a = W(k*pd,0), b = W(k*pd,g.wd); line('SCALE', a.x,a.y, b.x,b.y); }
-      for (let k=1; k<c.n2; k++) { const a = W(g.L1,g.wd+k*pd), b = W(g.L1+g.wd,g.wd+k*pd); line('SCALE', a.x,a.y, b.x,b.y); }
-      arrow(stairLPath(c));
-    } else {
-      rect('SCALE', c.x, c.y-c.h, c.x+c.w, c.y);
+    rect('SCALE', c.x, c.y-c.h, c.x+c.w, c.y);
+    if (c.tipo!=='P') {
       const b = stairB(c), st = c.sgn>0 ? b.a0 : b.a1;
       for (let k=1; k<c.n; k++) {
         const a = st + c.sgn*k*c.pedata;
@@ -4524,6 +4519,7 @@ function exportDXF() {
       const cm = (b.c0+b.c1)/2, L = c.n*c.pedata, f0 = st+c.sgn*L*0.12, f1 = st+c.sgn*L*0.88;
       arrow(c.ax==='x' ? [{x:f0,y:cm},{x:f1,y:cm}] : [{x:cm,y:f0},{x:cm,y:f1}]);
     }
+    if (c.grp) { if (doneG.has(c.grp)) return; doneG.add(c.grp); }          // scala composta: un solo testo
     const ct = stairCenter(c);
     mtext('SCALE_TESTO', ct.x, ct.y, 0.08, [c.label].concat(stairInfo(c).map(t => t.replace(/ {2,}/g,'  '))));
   });
@@ -4537,31 +4533,8 @@ function exportDXF() {
 
   state.pencilLines.forEach(l => !hid(l) && poly('MATITA', l.pts, false));
 
-  // tabelle, le stesse delle esportazioni (vedi TABLES), affiancate a destra del disegno: griglia di linee e una cella MTEXT
-  // per voce, come le distinte di EC700. Ogni cella si modifica da CAD; le colonne sono larghe quanto il testo piu' lungo.
-  const hT = 0.10, rowH = 0.25, padT = 0.06, gap = 0.6, top = isFinite(D.ext.y1) ? D.ext.y1 : 0;
-  let bx = (isFinite(D.ext.x1) ? D.ext.x1 : 0) + 1;
-  TABLES.forEach(t => {
-    const d = t.data(); if (!d) return;
-    const tv = tableView(d, true), all = [tv.head].concat(tv.rows).map(r => r.map(c => String(c==null ? '' : c).replace(/m²/g,'mq').replace(/m³/g,'mc')));   // m² e m³ non tutti i CAD li leggono
-    if (!tv.head.length) return;
-    const ws = tv.head.map((_,j) => Math.max(...all.map(r => String(r[j]||'').length))*hT*CW + 2*padT);
-    const title = tableTitle(t), sum = ws.reduce((s,w) => s+w, 0), totW = Math.max(sum, title.length*hT*1.1*CW + 2*padT);
-    ws[ws.length-1] += totW - sum;                  // titolo piu' lungo delle colonne: si allarga l'ultima
-    const nr = all.length+1, y0 = top - nr*rowH;
-    for (let i=0; i<=nr; i++) line('TABELLE', bx, top-i*rowH, bx+totW, top-i*rowH);
-    line('TABELLE', bx, top, bx, y0); line('TABELLE', bx+totW, top, bx+totW, y0);
-    let x = bx; ws.slice(0,-1).forEach(w => { x += w; line('TABELLE', x, top-rowH, x, y0); });     // la riga del titolo non ha colonne
-    mtext('TABELLE', bx+padT, top-rowH/2, hT*1.1, title, {att:4});
-    all.forEach((r,i) => {
-      const yc = top-(i+1.5)*rowH; let cx = bx;
-      r.forEach((s,j) => { if (s) mtext('TABELLE', cx+padT, yc, hT, s, {att:4}); cx += ws[j]; });
-    });
-    bx += totW + gap;
-  });
-
   download(stamp()+'_rilievo'+(hasProject() ? (prog() ? '_progetto' : '_stato_di_fatto') : '')+'.dxf', D.finish(), 'application/dxf');
-  setTip('DXF esportato (R2000, unità metri, testi MTEXT). Layer separati per muri, quote, serramenti, pilastri, scale, ambienti e tabelle; le quote che non stanno nel muro sono nel layer QUOTE_CORTE, spento.');
+  setTip('DXF esportato (R2000, unità metri, testi MTEXT). Layer separati per muri, quote, serramenti, pilastri, scale, ambienti; le tabelle non si esportano nel DXF (restano in PDF, JPG e CSV); le quote che non stanno nel muro sono nel layer QUOTE_CORTE, spento.');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -6619,7 +6592,7 @@ function clipCopy(pts0, segs0, ops0, ambs0) {
     ambs:[...ambs].filter(k => state.ambienti[k].indices.every(i => pm.has(i))).map(k => { const a = strip(state.ambienti[k], ['fase']); a.indices = a.indices.map(i => pm.get(i)); return a; }),
   };
   try { localStorage.setItem(CLIP_KEY, JSON.stringify(CLIP)); } catch (err) {}
-  setTip('Copiati: '+CLIP.segs.length+' muri, '+CLIP.ops.length+' serramenti, '+CLIP.ambs.length+' ambienti. Incolla dal menu Disegna o con Ctrl+V.');
+  setTip('Copiati: '+CLIP.segs.length+' muri, '+CLIP.ops.length+' serramenti, '+CLIP.ambs.length+' ambienti. Incolla dal pulsante in basso a destra, dal menu Disegna o con Ctrl+V.'); draw();
 }
 function copySelection() {
   const s = state.sel, set = k => new Set(state[k]||[]);
@@ -6641,6 +6614,10 @@ function startPaste() {
   if (!clipLoad()) { setTip('Niente da incollare: copia prima muri, serramenti o un ambiente.'); return; }
   if (CLIP.op) { setTool('pasteOp'); setTip(TIPS.pasteOp); draw(); return; }
   setTool('paste'); state.paste = {at:null}; setTip(TIPS.paste); draw();
+}
+function pasteBtnTap() {
+  if (state.tool==='paste' || state.tool==='pasteOp') { setTool('select'); setTip('Incolla finito.'); return; }
+  startPaste();
 }
 function pasteInPlace() { hideAllMenus(); if (!clipLoad()) { setTip('Niente da incollare: copia prima muri, serramenti o un ambiente.'); return; } if (CLIP.op) { startPaste(); return; } placePaste(CLIP.ox, CLIP.oy); }
 // TABELLA SERRAMENTI: tutte le bucature in una schermata, una riga per serramento. Ogni cella cambiata si applica subito
@@ -6690,6 +6667,41 @@ function opTableRender() {
   });
   body.innerHTML = h+'</table>';
   body.querySelectorAll('[data-k]').forEach(el => el.addEventListener('change', () => opTableSet(+el.dataset.i, el.dataset.k, el.value)));
+  // inserimento veloce: Invio conferma e passa alla riga sotto della stessa colonna (testo gia' selezionato)
+  body.querySelectorAll('input[data-k]').forEach(el => {
+    el.addEventListener('focus', () => { try { el.select(); } catch (err) {} });
+    el.addEventListener('keydown', e => {
+      if (e.key!=='Enter') return;
+      e.preventDefault();
+      const k = el.dataset.k, col = [...body.querySelectorAll('input[data-k="'+k+'"]:not([disabled])')], nx = col[col.indexOf(el)+1];
+      el.blur();                                                   // se il valore e' cambiato scatta change e la tabella si ridisegna; il fuoco si sposta dopo
+      setTimeout(() => { const b = $id('optab-body'), t = nx && b ? b.querySelector('input[data-i="'+nx.dataset.i+'"][data-k="'+k+'"]') : null; if (t) { t.focus(); t.select(); } }, 0);
+    });
+  });
+  // riempi in basso: si trascina il quadratino accanto a una cella sulle righe sotto (o sopra) e il valore si copia in tutte
+  body.querySelectorAll('input[data-k]:not([data-k="label"]):not([disabled]), select[data-k]:not([disabled])').forEach(el => {
+    const hd = document.createElement('span');
+    hd.title = 'Trascina sulle righe sotto per copiare questo valore';
+    hd.style.cssText = 'display:inline-block;width:16px;height:16px;margin-left:3px;vertical-align:middle;background:#bb7028;border-radius:3px;cursor:crosshair;touch-action:none';
+    el.after(hd);
+    const cellsOf = k => [...body.querySelectorAll('[data-k="'+k+'"]:not([disabled])')];
+    let col = null, a = -1, b = -1;
+    const mark = () => col.forEach((c, j) => { c.style.outline = (j>=Math.min(a,b) && j<=Math.max(a,b)) ? '2px solid #ffe066' : ''; });
+    hd.addEventListener('pointerdown', e => { e.preventDefault(); hd.setPointerCapture(e.pointerId); col = cellsOf(el.dataset.k); a = b = col.indexOf(el); mark(); });
+    hd.addEventListener('pointermove', e => {
+      if (!col) return;
+      const tr = document.elementFromPoint(e.clientX, e.clientY)?.closest('tr'), t = tr && tr.querySelector('[data-k="'+el.dataset.k+'"]');
+      const j = col.indexOf(t); if (j>=0 && j!==b) { b = j; mark(); }
+    });
+    hd.addEventListener('pointerup', () => {
+      if (!col) return;
+      const k = el.dataset.k, val = el.value, list = col.filter((c, j) => j>=Math.min(a,b) && j<=Math.max(a,b) && c!==el).map(c => +c.dataset.i);
+      mark(); col.forEach(c => { c.style.outline = ''; }); col = null;
+      if (!list.length) return;
+      saveHistory(); list.forEach(i => opTableSet(i, k, val, true));
+      commit(list.length+' righe riempite con '+val+'.', true); opTableRefresh();
+    });
+  });
   body.querySelectorAll('[data-en]').forEach(el => el.addEventListener('click', () => {
     const i = +el.dataset.en; state.sel = {kind:'opening', idx:i};
     $id('optab-overlay').style.display = 'none';
@@ -6700,8 +6712,9 @@ function opTableRender() {
 function opTableRefresh() {                 // ridisegna la tabella dopo l'evento (non dentro: il campo che perde il fuoco sparirebbe), scorrimento invariato
   setTimeout(() => { const b = $id('optab-body'); if (!b) return; const t = b.scrollTop, l = b.scrollLeft; opTableRender(); b.scrollTop = t; b.scrollLeft = l; }, 0);
 }
-function opTableSet(i, k, raw) {
+function opTableSet(i, k, raw, noHist) {            // noHist: il riempimento in basso salva un solo passo di Annulla per tutte le righe
   const o = state.openings[i]; if (!o || locked(o)) return;
+  const saveHistory = noHist ? () => {} : window.saveHistory;
   if (k==='label') { const t = String(raw).trim(); if (!t) { opTableRefresh(); return; } saveHistory(); o.label = t; commit('Serramento rinominato in '+t+'.', true); opTableRefresh(); return; }
   if (k==='type') {
     if (raw===o.type) return;
@@ -6728,7 +6741,7 @@ function clipCopyOpening(i) {
   const c = JSON.parse(JSON.stringify(o)); ['fase','label','segIdx','t'].forEach(k => delete c[k]);
   CLIP = {op:c};
   try { localStorage.setItem(CLIP_KEY, JSON.stringify(CLIP)); } catch (err) {}
-  setTip('Copiato '+o.label+' ('+(+o.width).toFixed(2)+' x '+(+opHb(o)).toFixed(2)+'), senza muro. Incolla dal menu Disegna o con Ctrl+V, poi tocca i muri.');
+  setTip('Copiato '+o.label+' ('+(+o.width).toFixed(2)+' x '+(+opHb(o)).toFixed(2)+'), senza muro. Incolla dal pulsante in basso a destra o con Ctrl+V, poi tocca i muri.'); draw();
 }
 function placePaste(ax, ay) {
   if (!CLIP) return;
@@ -6874,8 +6887,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.13';
-const APP_NOTE = ["DXF in formato R2000: tutti i testi sono MTEXT, modificabili dal CAD; ogni ambiente ha un'etichetta su più righe con cornice (nome, superficie, altezza, volume) che si rimpicciolisce per stare nella stanza", "DXF: quote e testi dei serramenti scritti lungo il muro; le quote che non stanno nel loro muro vanno nel layer QUOTE_CORTE, spento all'apertura", "DXF: tutte le tabelle (ambienti, serramenti, superficie commerciale, demolizioni e costruzioni) affiancate al disegno, con griglia e una cella per voce", "Copia di un serramento: si copia solo il serramento, senza muro; Incolla resta attivo e ogni muro toccato ne riceve uno con le stesse misure e gli stessi dati energetici", "Nuova Tabella serramenti (menu Inserisci o menu del serramento): tutte le bucature in una schermata, con nome, tipo, larghezza, altezza, davanzale e nicchia modificabili e i dati energetici a portata di riga", "Nuova Scala a L (menu Inserisci): trascini la prima rampa, seguono pianerottolo e seconda rampa a 90°; con doppio clic cambi gradini delle due rampe, larghezza e verso di svolta"];
+const APP_VERSION = '2.14';
+const APP_NOTE = ["Tabella serramenti: Invio conferma la cella e passa alla riga sotto della stessa colonna, con il testo già selezionato", "Tabella serramenti: il quadratino arancione accanto a ogni cella si trascina sulle righe sotto (o sopra) per copiare il valore, come in Edilclima; un solo passo di Annulla", "Dopo una copia compare il pulsante \"⎗ Incolla\" in basso a destra (utile da telefono); mentre si incolla diventa \"✔ Fine\". Su desktop resta Ctrl+V", "Scale: addio alla Scala a L. Si disegnano rampe dritte come prima; avvicinando due rampe a 90° fino a toccarle in un vertice l'app propone il pianerottolo che le collega, e le rampe diventano una scala sola (un'etichetta, altezza con gradini e pianerottolo, si sposta tutta insieme). Il pianerottolo può essere rettangolare e ha le sue maniglie", "Le scale a L già salvate si aprono come due rampe più il pianerottolo", "DXF: l'etichetta dell'ambiente non ha più la cornice; le tabelle non si esportano più nel DXF (restano in PDF, JPG e CSV)"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
