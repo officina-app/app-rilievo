@@ -2024,7 +2024,7 @@ function drawOpenings() {
     ctx.setLineDash([]);
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillStyle=col; ctx.font=prFont(11, 2, true); ctx.fillText(op.label, q.x, q.y-prU(7));
-    if (!PRINT) { ctx.fillStyle='#ccc'; ctx.font='10px Segoe UI'; ctx.fillText(p.A.label+'→ '+(op.t*segLen).toFixed(2)+' m', q.x, q.y+6); }
+    if (!PRINT && on) { ctx.fillStyle='#ccc'; ctx.font='10px Segoe UI'; ctx.fillText(p.A.label+'→ '+(op.t*segLen).toFixed(2)+' m', q.x, q.y+6); }       // la distanza dal punto serve per posizionare: solo sul serramento selezionato
     ctx.restore();
   });
 }
@@ -7209,8 +7209,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.20';
-const APP_NOTE = ["Etichetta della scala: la regola di Blondel (2a+p tra 62 e 64 cm) compare solo come avviso rosso quando non è rispettata; alzata sopra 18 cm e pedata sotto 25 cm restano segnalate solo se fuori soglia"];
+const APP_VERSION = '2.21';
+const APP_NOTE = ["Serramenti: la distanza dal punto (es. \"P1→ 1,20 m\") non resta più scritta sull'etichetta di tutti i serramenti; compare solo sul serramento selezionato, per posizionarlo, e nel suggerimento mentre lo trascini"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
