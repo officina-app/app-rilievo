@@ -1843,6 +1843,26 @@ function ambHighlightTip(k) {
   return state.ambienti[k].name+': celeste = pareti del contorno'+(H.conf.size ? ', arancione = confinano con un altro ambiente' : '')+(H.cont.size ? ', viola = muri dentro l’ambiente' : '')+'.';
 }
 
+// DISEGNO DEL SERRAMENTO: una sola definizione per video, PDF/JPG e DXF, cosi' cio' che si esporta e' sempre cio' che si vede.
+// Coordinate locali in metri reali: x lungo il muro dall'inizio del varco, y perpendicolare (positivo a sinistra del verso del muro),
+// origine sull'asse del muro. Finestra e porta-finestra: telaio spesso 5 cm (due linee), un quadrato da 5 cm a ogni estremita' e per ogni
+// montante (divisori verticali dei dati energetici, a distanze uguali), una linea di vetro in mezzeria dei profili.
+// Porta: anta spessa 5 cm aperta a 90 gradi con la cerniera all'inizio del varco e quarto di circonferenza tratteggiato.
+const OP_PR = 0.05;
+function openingNv(op) { return Math.max(0, Math.round(+(op.energy && op.energy.nv) || 0)); }
+function openingGeom(type, w, nv) {
+  const h = OP_PR/2, segs = [], polys = [], arcs = [];
+  if (type==='P') {
+    polys.push([{x:0,y:0},{x:OP_PR,y:0},{x:OP_PR,y:w},{x:0,y:w}]);
+    arcs.push({r:Math.hypot(OP_PR, w), a0:0, a1:Math.atan2(w, OP_PR)*180/Math.PI, dash:true});
+    return {segs, polys, arcs};
+  }
+  const xs = [0].concat(Array.from({length:nv}, (_,k) => w*(k+1)/(nv+1) - h)).concat([w-OP_PR]);     // inizio dei profili: estremi e montanti
+  segs.push([0,-h,w,-h], [0,h,w,h]);
+  xs.forEach(x0 => { segs.push([x0,-h,x0,h], [x0+OP_PR,-h,x0+OP_PR,h]); });
+  for (let k=0; k<xs.length-1; k++) segs.push([xs[k]+OP_PR, 0, xs[k+1], 0]);                          // vetro
+  return {segs, polys, arcs};
+}
 function drawOpenings() {
   state.openings.forEach((op,i) => {
     const p = openingPos(i); if (!p) return;
@@ -1854,15 +1874,15 @@ function drawOpenings() {
     const col     = faseCol(op) || (PRINT ? (op.type==='P' ? C.door : C.win) : (op.type==='F' ? C.win : op.type==='P' ? C.door : C.pf));
 
     ctx.save(); ctx.translate(p.sx,p.sy); ctx.rotate(ang);
-    const tk = prU(8), gl = prU(4);                 // stipiti e vetro (il muro sotto e' gia' interrotto dal varco)
-    ctx.strokeStyle = on ? '#fff' : col; ctx.lineWidth = on ? 3.5 : prLw(2.5, 0.25);
-    ctx.beginPath(); ctx.moveTo(-halfPx,0); ctx.lineTo(halfPx,0); ctx.stroke();
-    [-halfPx,halfPx].forEach(x => { ctx.beginPath(); ctx.moveTo(x,-tk); ctx.lineTo(x,tk); ctx.stroke(); });
-    if (op.type==='F' || op.type==='PF') {          // doppia linea = vetro
-      ctx.lineWidth=prLw(1.5, 0.13);
-      ctx.beginPath(); ctx.moveTo(-halfPx,-gl); ctx.lineTo(halfPx,-gl); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-halfPx, gl); ctx.lineTo(halfPx, gl); ctx.stroke();
-    }
+    const kpx = segLen>0 ? segLenPx/segLen : state.zoom, G = openingGeom(op.type, op.width, openingNv(op));      // px per metro reale
+    const X = x => (x - op.width/2)*kpx, Y = y => -y*kpx;                                                    // locale -> locale del canvas (y verso il basso)
+    ctx.strokeStyle = on ? '#fff' : col; ctx.lineWidth = on ? 2.5 : prLw(1.5, 0.18);
+    G.segs.forEach(([x1,y1,x2,y2]) => { ctx.beginPath(); ctx.moveTo(X(x1),Y(y1)); ctx.lineTo(X(x2),Y(y2)); ctx.stroke(); });
+    G.polys.forEach(pl => { ctx.beginPath(); pl.forEach((q,j) => j ? ctx.lineTo(X(q.x),Y(q.y)) : ctx.moveTo(X(q.x),Y(q.y))); ctx.closePath(); ctx.stroke(); });
+    G.arcs.forEach(a => {
+      ctx.setLineDash(a.dash ? [prU(4), prU(3)] : []); ctx.beginPath();
+      ctx.arc(X(0), Y(0), a.r*kpx, -a.a0*Math.PI/180, -a.a1*Math.PI/180, true); ctx.stroke(); ctx.setLineDash([]);
+    });
     ctx.restore();
 
     // nome e, solo a video, distanza dall'estremo A (serve a collocarlo, non in stampa); spostabile, la linea di richiamo la segue
@@ -4337,12 +4357,15 @@ function expGo() {
 function dxfWriter(layers) {
   const B = [], g = (c,v) => { B.push(String(c)); B.push(String(v)); };
   let H = 0x100; const hd = () => (H++).toString(16).toUpperCase();
+  const LT_DASH = hd();                              // tipo di linea TRATTEGGIATA (archi di apertura delle porte)
   const n = v => (Math.round(v*10000)/10000).toFixed(4);
   const enc = s => String(s).replace(/[^\x20-\x7e]/g, ch => '\\U+'+ch.charCodeAt(0).toString(16).toUpperCase().padStart(4,'0'));
   const X = {x0:Infinity, y0:Infinity, x1:-Infinity, y1:-Infinity};
   const grow = (x,y) => { X.x0 = Math.min(X.x0,x); X.y0 = Math.min(X.y0,y); X.x1 = Math.max(X.x1,x); X.y1 = Math.max(X.y1,y); };
   const MS = '1F', PS = '20';                       // BLOCK_RECORD di *Model_Space e *Paper_Space
-  const ent = (type, layer) => { g(0,type); g(5,hd()); g(330,MS); g(100,'AcDbEntity'); g(8,layer); };
+  let owner = MS;                                   // proprietario delle entita' che si scrivono: il modello, o il blocco in definizione
+  const BLK = new Map();                            // blocchi: nome -> {br, hb, he, lines}
+  const ent = (type, layer, lt) => { g(0,type); g(5,hd()); g(330,owner); g(100,'AcDbEntity'); g(8,layer); if (lt) g(6,lt); };
   const W = {
     line(layer, x1,y1, x2,y2) {
       ent('LINE', layer); g(100,'AcDbLine');
@@ -4365,6 +4388,23 @@ function dxfWriter(layers) {
       g(1, body.slice(last));
       g(7,'APTOS');
       if (o.dir) { g(11,n(o.dir.x)); g(21,n(o.dir.y)); g(31,'0.0'); }
+      grow(x,y);
+    },
+    arc(layer, cx, cy, r, a0, a1, lt) {
+      ent('ARC', layer, lt); g(100,'AcDbCircle'); g(10,n(cx)); g(20,n(cy)); g(30,'0.0'); g(40,n(r)); g(100,'AcDbArc'); g(50,n(a0)); g(51,n(a1));
+      grow(cx-r, cy-r); grow(cx+r, cy+r);
+    },
+    // blocco: fn disegna le entita' in coordinate locali (layer '0': prendono il layer dell'inserimento). Definito una volta per nome.
+    defBlock(name, fn) {
+      if (BLK.has(name)) return;
+      const br = hd(), hb = hd(), he = hd(), keep = {...X}, mark = B.length, prev = owner;
+      owner = br; fn(); owner = prev;
+      BLK.set(name, {br, hb, he, lines:B.splice(mark)});
+      Object.assign(X, keep);                         // le coordinate locali non contano per l'estensione del disegno
+    },
+    insert(layer, name, x, y, rot, sx, sy) {
+      ent('INSERT', layer); g(100,'AcDbBlockReference'); g(2,name);
+      g(10,n(x)); g(20,n(y)); g(30,'0.0'); g(41,n(sx)); g(42,n(sy)); g(43,'1.0'); g(50,n(rot));
       grow(x,y);
     },
     rect(layer, x0, y0, x1, y1) { W.poly(layer, [{x:x0,y:y0},{x:x1,y:y0},{x:x1,y:y1},{x:x0,y:y1}], true); },
@@ -4390,30 +4430,37 @@ function dxfWriter(layers) {
       [[10,0],[20,0],[11,1],[21,1],[12,n(cx)],[22,n(cy)],[13,0],[23,0],[14,0.5],[24,0.5],[15,0.5],[25,0.5],[16,0],[26,0],[36,1],[17,0],[27,0],[37,0],
        [40,n(vh)],[41,1.5],[42,50],[43,0],[44,0],[50,0],[51,0],[71,0],[72,1000],[73,1],[74,3],[75,0],[76,0],[77,0],[78,0]].forEach(([c,v]) => g(c,v));
       g(0,'ENDTAB');
-      tab('LTYPE','2',3);
+      tab('LTYPE','2',4);
       [['11','ByBlock'],['12','ByLayer'],['13','Continuous']].forEach(([h,nm]) => { rec('LTYPE',h,'2','AcDbLinetypeTableRecord'); g(2,nm); g(70,0); g(3,nm==='Continuous' ? 'Solid line' : ''); g(72,65); g(73,0); g(40,'0.0'); });
+      rec('LTYPE',LT_DASH,'2','AcDbLinetypeTableRecord'); g(2,'TRATTEGGIATA'); g(70,0); g(3,'Tratteggiata __ __ __ __'); g(72,65); g(73,2); g(40,'0.075'); g(49,'0.05'); g(74,0); g(49,'-0.025'); g(74,0);
       g(0,'ENDTAB');
       const LY = [['0',7]].concat(layers);
       tab('LAYER','1',LY.length);
       LY.forEach(([nm,col],i) => { rec('LAYER',(0x30+i).toString(16).toUpperCase(),'1','AcDbLayerTableRecord'); g(2,nm); g(70,0); g(62,col); g(6,'Continuous'); g(370,-3); g(390,'0'); });
       g(0,'ENDTAB');
       tab('STYLE','5',2);
-      rec('STYLE','16','5','AcDbTextStyleTableRecord'); g(2,'Standard'); g(70,0); g(40,'0.0'); g(41,'1.0'); g(50,'0.0'); g(71,0); g(42,'0.2'); g(3,'arial.ttf'); g(4,'');
+      rec('STYLE','16','5','AcDbTextStyleTableRecord'); g(2,'Standard'); g(70,0); g(40,'0.0'); g(41,'1.0'); g(50,'0.0'); g(71,0); g(42,'0.2'); g(3,'aptos.ttf'); g(4,'');
       rec('STYLE','17','5','AcDbTextStyleTableRecord'); g(2,'APTOS'); g(70,0); g(40,'0.0'); g(41,'1.0'); g(50,'0.0'); g(71,0); g(42,'0.2'); g(3,'aptos.ttf'); g(4,'');
       g(0,'ENDTAB');
       tab('VIEW','7',0); g(0,'ENDTAB');
       tab('UCS','6',0); g(0,'ENDTAB');
       tab('APPID','3',1); rec('APPID','14','3','AcDbRegAppTableRecord'); g(2,'ACAD'); g(70,0); g(0,'ENDTAB');
       tab('DIMSTYLE','4',1, () => g(100,'AcDbDimStyleTable')); rec('DIMSTYLE','15','4','AcDbDimStyleTableRecord'); g(2,'Standard'); g(70,0); g(0,'ENDTAB');
-      tab('BLOCK_RECORD','9',2);
+      tab('BLOCK_RECORD','9',2+BLK.size);
       rec('BLOCK_RECORD',MS,'9','AcDbBlockTableRecord'); g(2,'*Model_Space'); g(340,'25');
       rec('BLOCK_RECORD',PS,'9','AcDbBlockTableRecord'); g(2,'*Paper_Space'); g(340,'26');
+      BLK.forEach((b, nm) => { rec('BLOCK_RECORD',b.br,'9','AcDbBlockTableRecord'); g(2,nm); });
       g(0,'ENDTAB');
       g(0,'ENDSEC');
       g(0,'SECTION'); g(2,'BLOCKS');
       [[MS,'21','22','*Model_Space'],[PS,'23','24','*Paper_Space']].forEach(([br,hb,he,nm]) => {
         g(0,'BLOCK'); g(5,hb); g(330,br); g(100,'AcDbEntity'); g(8,'0'); g(100,'AcDbBlockBegin'); g(2,nm); g(70,0); g(10,'0.0'); g(20,'0.0'); g(30,'0.0'); g(3,nm); g(1,'');
         g(0,'ENDBLK'); g(5,he); g(330,br); g(100,'AcDbEntity'); g(8,'0'); g(100,'AcDbBlockEnd');
+      });
+      BLK.forEach((b, nm) => {
+        g(0,'BLOCK'); g(5,b.hb); g(330,b.br); g(100,'AcDbEntity'); g(8,'0'); g(100,'AcDbBlockBegin'); g(2,nm); g(70,0); g(10,'0.0'); g(20,'0.0'); g(30,'0.0'); g(3,nm); g(1,'');
+        b.lines.forEach(l => B.push(l));
+        g(0,'ENDBLK'); g(5,b.he); g(330,b.br); g(100,'AcDbEntity'); g(8,'0'); g(100,'AcDbBlockEnd');
       });
       g(0,'ENDSEC');
       g(0,'SECTION'); g(2,'ENTITIES'); B.push(...E); g(0,'ENDSEC');
@@ -4440,7 +4487,7 @@ function exportDXF() {
   hideAllMenus(); refreshGW();
   // layer: [nome, colore]; colore negativo = spento all'apertura (QUOTE_CORTE: quote che non stanno nel loro muro)
   const LAYERS = [['MURI',5],['MURI_EST',6],['MURI_COM',3],['MURI_NONRISC',30],['MURI_ND',200],['MURI_GRAFICI',8],['QUOTE',2],['QUOTE_CORTE',-2],['SERRAMENTI',5],
-                  ['AMBIENTI',4],['AMBIENTI_TESTO',7],['PILASTRI',8],['SCALE',6],['SCALE_TESTO',8],['ETICHETTE',1],['MATITA',30],['DEMOLIZIONI',2],['COSTRUZIONI',1]];
+                  ['PORTE',4],['AMBIENTI',4],['AMBIENTI_TESTO',7],['PILASTRI',8],['SCALE',6],['SCALE_TESTO',8],['ETICHETTE',1],['MATITA',30],['DEMOLIZIONI',2],['COSTRUZIONI',1]];
   const D = dxfWriter(LAYERS), {line, poly, mtext, rect} = D;
   const CW = 0.7;                                   // larghezza media di un carattere in altezze di testo (stima degli ingombri, larga: i CAD sostituiscono il carattere)
   const readable = (ux, uy) => (ux < -1e-9 || (Math.abs(ux) < 1e-9 && uy < 0)) ? {x:-ux, y:-uy} : {x:ux, y:uy};   // testo lungo il muro, mai capovolto
@@ -4476,17 +4523,24 @@ function exportDXF() {
     mtext('AMBIENTI_TESTO', cx, cy, h, rows, {att:5});
   });
 
-  // serramenti: varco con le battute, testo lungo il muro dal lato opposto alla quota
+  // serramenti: un blocco per misura, in mezzeria del muro. Finestra e porta-finestra = telaio spesso 5 cm (due linee), quadrato da 5 cm
+  // a ogni estremita' e per ogni montante, una linea di vetro in mezzeria tra i profili. Porta = anta da 5 cm aperta a 90 gradi e quarto
+  // di circonferenza tratteggiato. Il testo resta fuori dal blocco, spostabile e modificabile. I montanti sono i divisori verticali dei dati energetici.
+  const mm = v => Math.round(v*1000);
+  const defOp = (name, G) => D.defBlock(name, () => {                // la stessa geometria che si vede a video (openingGeom)
+    G.segs.forEach(([x1,y1,x2,y2]) => line('0', x1, y1, x2, y2));
+    G.polys.forEach(pl => poly('0', pl, true));
+    G.arcs.forEach(a => D.arc('0', 0, 0, a.r, a.a0, a.a1, a.dash ? 'TRATTEGGIATA' : ''));
+  });
   state.openings.forEach(op => {
     const s = state.segments[op.segIdx]; if(!s || hid(op)) return;
     const A=state.points[s.a], B=state.points[s.b]; if(!A||!B) return;
     const len = Math.hypot(B.x-A.x, B.y-A.y); if (len===0) return;
-    const SL = lay(op, 'SERRAMENTI');
+    const door = op.type==='P', SL = lay(op, door ? 'PORTE' : 'SERRAMENTI');
     const mx=A.x+(B.x-A.x)*op.t, my=A.y+(B.y-A.y)*op.t;
-    const ux=(B.x-A.x)/len, uy=(B.y-A.y)/len, hw=op.width/2;
-    line(SL, mx-ux*hw, my-uy*hw, mx+ux*hw, my+uy*hw);
-    line(SL, mx-ux*hw+uy*0.06, my-uy*hw-ux*0.06, mx-ux*hw-uy*0.06, my-uy*hw+ux*0.06);     // trattini di battuta agli stipiti
-    line(SL, mx+ux*hw+uy*0.06, my+uy*hw-ux*0.06, mx+ux*hw-uy*0.06, my+uy*hw+ux*0.06);
+    const ux=(B.x-A.x)/len, uy=(B.y-A.y)/len, hw=op.width/2, rot = Math.atan2(uy, ux)*180/Math.PI;
+    const nv = door ? 0 : openingNv(op), nm = door ? 'PORTA_'+mm(op.width) : 'SERR_'+op.type+'_'+mm(op.width)+'_V'+nv;
+    defOp(nm, openingGeom(op.type, op.width, nv)); D.insert(SL, nm, mx-ux*hw, my-uy*hw, rot, 1, 1);
     const H = opHb(op), st = op.h0 ?? OPENING_DEF[op.type].h0, d = readable(ux, uy), hS = 0.08;
     let info = op.label+' '+(+op.width).toFixed(2)+'x'+(+H).toFixed(2);
     if (op.type==='F') info += ' dav. '+(+st).toFixed(2);
@@ -6887,8 +6941,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.14';
-const APP_NOTE = ["Tabella serramenti: Invio conferma la cella e passa alla riga sotto della stessa colonna, con il testo già selezionato", "Tabella serramenti: il quadratino arancione accanto a ogni cella si trascina sulle righe sotto (o sopra) per copiare il valore, come in Edilclima; un solo passo di Annulla", "Dopo una copia compare il pulsante \"⎗ Incolla\" in basso a destra (utile da telefono); mentre si incolla diventa \"✔ Fine\". Su desktop resta Ctrl+V", "Scale: addio alla Scala a L. Si disegnano rampe dritte come prima; avvicinando due rampe a 90° fino a toccarle in un vertice l'app propone il pianerottolo che le collega, e le rampe diventano una scala sola (un'etichetta, altezza con gradini e pianerottolo, si sposta tutta insieme). Il pianerottolo può essere rettangolare e ha le sue maniglie", "Le scale a L già salvate si aprono come due rampe più il pianerottolo", "DXF: l'etichetta dell'ambiente non ha più la cornice; le tabelle non si esportano più nel DXF (restano in PDF, JPG e CSV)"];
+const APP_VERSION = '2.15';
+const APP_NOTE = ["DXF: finestre e porte-finestre sono blocchi in mezzeria del muro, a misure reali: telaio spesso 5 cm (due linee), quadrato da 5 cm a ogni estremità e per ogni montante, una linea di vetro in mezzeria dei profili. I montanti vengono dai divisori verticali dei dati energetici e il disegno si aggiorna a ogni esportazione", "DXF: le porte sono un blocco con l'anta spessa 5 cm aperta a 90° e il quarto di circonferenza tratteggiato, in un layer PORTE", "Gli stessi disegni si vedono anche a video e nei PDF/JPG: finestre, porte-finestre e porte hanno una sola definizione, usata da video, stampa e DXF, quindi ciò che esporti è sempre ciò che vedi", "DXF: il testo del serramento resta fuori dal blocco, spostabile e modificabile; tutti i testi in Aptos"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
