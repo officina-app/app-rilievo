@@ -107,12 +107,10 @@
     #exp-bar button.ok { background:#1a6a3a; border-color:#2a9a5a; }
     #exp-bar button:disabled { opacity:.4; cursor:not-allowed; }
     #exp-info { flex:1 1 220px; font-size:12px; }
-    #hand-btn { position:fixed; top:10px; right:10px; z-index:160; min-width:46px; height:46px; border-radius:23px; padding:0 14px; font-size:20px; background:rgba(22,33,62,.82); color:#fff; border:1px solid #4a9eff; box-shadow:0 2px 10px rgba(0,0,0,.45); }
-    #hand-btn.on { background:#1a6a3a; border-color:#2a9a5a; font-size:15px; }
-    #mag-btn { position:fixed; top:64px; right:10px; z-index:160; min-width:46px; height:46px; border-radius:23px; padding:0 14px; font-size:20px; background:rgba(22,33,62,.82); color:#fff; border:1px solid #4a9eff; box-shadow:0 2px 10px rgba(0,0,0,.45); }
-    #help-btn, #leg-btn { position:fixed; right:10px; z-index:160; min-width:46px; height:46px; border-radius:23px; padding:0 14px; font-size:20px; background:rgba(22,33,62,.82); color:#fff; border:1px solid #4a9eff; box-shadow:0 2px 10px rgba(0,0,0,.45); }
-    #help-btn { top:118px; font-weight:bold; }
-    #leg-btn { top:172px; }
+    #rbtns { position:fixed; top:10px; right:10px; z-index:160; display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
+    #rbtns button { min-width:46px; height:46px; border-radius:23px; padding:0 14px; font-size:20px; background:rgba(22,33,62,.82); color:#fff; border:1px solid #4a9eff; box-shadow:0 2px 10px rgba(0,0,0,.45); cursor:pointer; }
+    #rbtns button.on { background:#1a6a3a; border-color:#2a9a5a; font-size:15px; }
+    #help-btn { font-weight:bold; }
     #leg-box { position:fixed; top:172px; right:64px; z-index:160; display:none; background:rgba(22,33,62,.95); border:1px solid #0f3460; border-radius:8px; padding:8px 12px; font-size:12px; color:#ddd; }
     #leg-box div { display:flex; align-items:center; gap:8px; margin:3px 0; }
     #leg-box i { width:22px; border-top:3px solid; }
@@ -405,14 +403,17 @@
 </div>
 <div id="snap-indicator">⟂ 90°</div>
 <div id="hint-tooltip"></div>
+<div id="rbtns">
 <button id="hand-btn" title="Mano: sposta la vista con un dito" onclick="toggleHand()">✋</button>
 <button id="mag-btn" title="Calamita: angoli, ortogonali e allineamenti" onclick="toggleMagnet()">🧲</button>
 <button id="help-btn" title="Guida: cosa devi fare oggi?" onclick="guideMenu()">?</button>
-<button id="leg-btn" title="Legenda dei colori dei muri" onclick="toggleLegend()" style="display:none">🎨</button>
+<button id="leg-btn" title="Legenda dei colori" onclick="toggleLegend()">🎨</button>
+<button id="oppanel-btn" title="Disegno dei serramenti: specchiature di tutti i serramenti, accanto alla pianta" onclick="toggleOpPanel()">🪟</button>
+<button id="paste-btn" title="Incolla (compare dopo una copia)" onclick="pasteBtnTap()" style="display:none">⎗</button>
+</div>
 <div id="leg-box"></div>
 <div id="guide-card"></div>
 <button id="move-base-btn"  class="fab" onclick="toggleMoveBase()"      style="bottom:calc(144px + var(--tb-h,0px));background:#1a6a3a;border:1px solid #2a9a5a">✥ Base in spostamento - tocca per finire</button>
-<button id="paste-btn" class="fab" onclick="pasteBtnTap()" style="bottom:calc(144px + var(--tb-h,0px));background:#16213e;border:1px solid #bb7028">⎗ Incolla</button>
 <div id="sel-bar">
   <span id="selb-n" title="Elementi selezionati"></span>
   <button id="selb-add" title="Ogni tocco aggiunge o toglie un elemento" onclick="toggleMulti()">➕ Aggiungi</button>
@@ -624,8 +625,9 @@ function ambLabelPos(am) {
 function ambBlockBox(am, c) {
   const dy = prU(16), hn = PRINT ? 2.5*PX_MM : 14, hs = PRINT ? 2*PX_MM : 13;
   ctx.font = prFont(14, 2.5, true); let w = ctx.measureText(am.name).width;
-  ctx.font = prFont(13, 2, true);   w = Math.max(w, ctx.measureText(ambNet(am).toFixed(2)+' m²').width, ctx.measureText('H. '+Number(am.h).toFixed(2)+' m').width);
-  return { x0:c.x-w/2, x1:c.x+w/2, y0:c.y-dy-hn*0.6, y1:c.y+(ambNoVol(am) ? dy : 2*dy)+hs*0.6 };
+  const showH = +am.h > 0;
+  ctx.font = prFont(13, 2, true);   w = Math.max(w, ctx.measureText(ambNet(am).toFixed(2)+' m²').width, showH ? ctx.measureText('H. '+Number(am.h).toFixed(2)+' m').width : 0);
+  return { x0:c.x-w/2, x1:c.x+w/2, y0:c.y-dy-hn*0.6, y1:c.y+(!showH ? 0 : ambNoVol(am) ? dy : 2*dy)+hs*0.6 };
 }
 // punto della linea S->c dove entra nel riquadro b (null se S e' gia' dentro)
 function boxEntry(S, c, b) {
@@ -716,8 +718,7 @@ function updateValid() {
   if (el && el.textContent !== txt) el.textContent = txt;
   const nd = state.segments.filter(g => g.cv==='dubbio' && !hid(g) && !GWS.has(g)).length, ed = document.getElementById('sb-dubbi');
   if (ed) { setDisp(ed, nd ? '' : 'none'); setTxt(ed, '⚠ Muri non assegnati: '+nd); }
-  const cls = nd > 0 || state.segments.some(g => g.commType) || (prog() && hasProject());   // legenda solo se c'e' qualcosa da leggere
-  setDisp($id('leg-btn'), cls ? '' : 'none'); if (!cls) setDisp($id('leg-box'), 'none');
+
 }
 
 // ---- quota dei serramenti: spostabile, con la linea di richiamo sempre tracciata
@@ -757,7 +758,22 @@ function stairTotals(s) {
   const G = stairGroup(s), R = G.filter(q => q.tipo!=='P');
   return {G, R, lands:G.length-R.length, steps:R.reduce((a,q) => a+q.n, 0)};
 }
-function stairHeight(s) { const T = stairTotals(s); return (T.steps+T.lands+1)*s.alzata; }
+function stairHeight(s) { const T = stairTotals(s), R0 = T.R[0] || s; return T.R.reduce((h,q) => h+q.n*q.alzata, 0) + (T.lands+1)*R0.alzata; }
+function nextSid() { return Math.max(0, ...state.scale.map(q => q.sid||0)) + 1; }
+// il pianerottolo agganciato (from = rampa bassa, to = rampa alta, per sid) e' sempre derivato dalle rampe: se cambi lunghezza o larghezza di
+// una rampa il pianerottolo e la rampa dopo lo seguono. Si ricalcola a ogni modifica delle rampe.
+function stairSolve(s) {
+  if (!s || !s.grp) return;
+  const G = state.scale.filter(q => q.grp===s.grp), byS = id => G.find(q => q.sid===id);
+  for (let pass=0; pass<4; pass++) G.filter(q => q.tipo==='P' && q.from).forEach(P => {
+    const L = byS(P.from), U = byS(P.to);
+    if (!L || !U) { delete P.from; delete P.to; return; }                       // una rampa e' stata cancellata: il pianerottolo resta libero
+    const bL = stairB(L), bU = stairB(U), aE = L.sgn>0 ? bL.a1 : bL.a0, aF = aE + L.sgn*(bU.c1-bU.c0), lo = Math.min(aE,aF), hi = Math.max(aE,aF);
+    const side = U.sgn>0 ? bL.c1 : bL.c0, len = U.n*U.pedata;
+    stairSet(U, U.sgn>0 ? side : side-len, U.sgn>0 ? side+len : side, lo, hi);
+    P.ax = L.ax; stairSet(P, lo, hi, bL.c0, bL.c1);
+  });
+}
 function stairHit(wx, wy, s) { return inRectWorld(wx, wy, s); }
 function stairArea(s) { return s.w*s.h; }
 function stairCenter(s) { return {x:s.x+s.w/2, y:s.y-s.h/2}; }   // punto mondo dentro la scala (per sapere in che ambiente cade)
@@ -800,17 +816,18 @@ function stairLinkCheck(i) {
   }
 }
 function stairLink(plan) {
-  const {L, U, lo, hi, side, land} = plan; if (!state.scale.includes(L) || !state.scale.includes(U)) return;
+  const {L, U} = plan; if (!state.scale.includes(L) || !state.scale.includes(U)) return;
   saveHistory();
+  [L, U].forEach(q => { if (!q.sid) q.sid = nextSid(); });
   const old = new Set([L.grp, U.grp].filter(Boolean)), gid = L.grp || U.grp || Math.max(0, ...state.scale.map(q => q.grp||0)) + 1;
   state.scale.forEach(q => { if (q.grp && old.has(q.grp)) q.grp = gid; });
   L.grp = U.grp = gid;
-  const len = U.n*U.pedata;                                    // la rampa alta si allinea al pianerottolo
-  stairSet(U, U.sgn>0 ? side : side-len, U.sgn>0 ? side+len : side, lo, hi);
-  state.scale.push({tipo:'P', ax:L.ax, sgn:L.sgn, n:0, pedata:L.pedata, alzata:L.alzata, x:land.x, y:land.y, w:land.w, h:land.h, grp:gid, label:L.label});
+  const P = {tipo:'P', ax:L.ax, sgn:L.sgn, n:0, pedata:L.pedata, alzata:L.alzata, x:0, y:0, w:0, h:0, grp:gid, label:L.label, from:L.sid, to:U.sid, sid:nextSid()};
+  state.scale.push(P);
   state.scale.forEach(q => { if (q.grp===gid) q.label = L.label; });
+  stairSolve(P);
   state.sel = {kind:'scala', idx:state.scale.length-1};
-  commit('Pianerottolo creato: le rampe sono ora una scala sola ('+L.label+'), H '+stairHeight(L).toFixed(2)+' m. Si sposta tutta insieme.');
+  commit('Pianerottolo creato: le rampe sono ora una scala sola ('+L.label+'), H '+stairHeight(L).toFixed(2)+' m. Si sposta tutta insieme e segue le maniglie delle rampe.');
 }
 function stairHandles(s) {                   // centri (mondo) dei 4 lati
   const b = stairB(s), am = (b.a0+b.a1)/2, cm = (b.c0+b.c1)/2;
@@ -819,7 +836,7 @@ function stairHandles(s) {                   // centri (mondo) dei 4 lati
 }
 function hitStairHandle(sx, sy) {
   if (!state.sel || state.sel.kind!=='scala') return null;
-  const s = state.scale[state.sel.idx]; if (!s) return null;
+  const s = state.scale[state.sel.idx]; if (!s || (s.tipo==='P' && s.from)) return null;          // il pianerottolo agganciato segue le rampe
   const h = stairHandles(s);
   for (const k of ['a0','a1','c0','c1']) {
     const q = w2s(h[k].x, h[k].y);
@@ -851,11 +868,17 @@ function stairResize(s, side, w) {           // w = punto mondo del puntatore
     const st2 = en - s.sgn*s.n*p; stairSet(s, Math.min(st2,en), Math.max(st2,en), b.c0, b.c1);
   }
 }
+// righe di verifica della scala: alzate, pedate, altezza superata e regola di Blondel (2a+p tra 62 e 64 cm). "(!)" = da controllare
 function stairInfo(s) {
-  const T = stairTotals(s), R = T.R.length ? T.R[0] : s, l0 = 'Pedata '+Math.round(R.pedata*100)+' cm   Alzata '+Math.round(R.alzata*100)+' cm';
-  if (T.G.length<=1 && s.tipo!=='P') return [l0, s.n+' gradini   H '+stairHeight(s).toFixed(2)+' m ('+(s.n+1)+' alzate)'];
-  const gr = T.R.length ? T.R.map(q => q.n).join(' + ')+' gradini'+(T.lands ? ' e '+(T.lands===1 ? 'pianerottolo' : T.lands+' pianerottoli') : '') : 'Pianerottolo';
-  return [l0, gr+'   H '+stairHeight(s).toFixed(2)+' m'];
+  const T = stairTotals(s), R = T.R.length ? T.R : [s], a = R[0].alzata, p = R[0].pedata, nAlz = T.steps + T.lands + 1;
+  const cm = v => String(Math.round(v*1000)/10).replace('.', ','), land = T.G.find(q => q.tipo==='P');
+  const aDiv = [...new Set(T.G.map(q => cm(q.alzata)))], pDiv = [...new Set(R.map(q => cm(q.pedata)))], bl = 200*a + 100*p;
+  const rows = ['Alzate: '+nAlz+' x '+cm(a)+' cm'+(aDiv.length>1 ? ' (!) diverse: '+aDiv.join(' / ') : a>0.18 ? ' (!) oltre 18 cm' : ''),
+                'Pedate: '+R.map(q => q.n).join(' + ')+' x '+cm(p)+' cm'+(pDiv.length>1 ? ' (!) diverse: '+pDiv.join(' / ') : p<0.25 ? ' (!) sotto 25 cm' : '')];
+  if (land) rows.push(T.lands===1 ? 'Pianerottolo: '+Math.round(land.w*100)+' x '+Math.round(land.h*100)+' cm' : T.lands+' pianerottoli');
+  rows.push('H superata: '+stairHeight(s).toFixed(2).replace('.', ',')+' m');
+  rows.push('2a+p = '+Math.round(bl)+' cm'+(bl<62 || bl>64 ? ' (!) fuori da 62-64' : ''));
+  return rows;
 }
 function drawStairArrow(pts) {              // freccia di salita lungo la spezzata pts (punti mondo), con il pallino alla partenza
   const P = pts.map(q => w2s(q.x,q.y)), A0 = P[0], A1 = P[P.length-1];
@@ -868,23 +891,22 @@ function drawStairArrow(pts) {              // freccia di salita lungo la spezza
   ctx.closePath(); ctx.fill();
   ctx.beginPath(); ctx.arc(A0.x,A0.y,prU(3),0,Math.PI*2); ctx.fill();
 }
-function drawStairLabel(s, c) {             // etichetta: solo a scala selezionata o col mouse sopra; c = centro a video
-  const t = stairInfo(s);
-  ctx.font = 'bold 12px Segoe UI';
-  const w = Math.max(ctx.measureText(t[0]).width, ctx.measureText(t[1]).width) + 20;
-  ctx.fillStyle = 'rgba(22,33,62,0.94)'; ctx.strokeStyle = '#7aa8d0'; ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(c.x-w/2, c.y-22, w, 44, 6); else ctx.rect(c.x-w/2, c.y-22, w, 44);
-  ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#cfe6ff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(t[0], c.x, c.y-8); ctx.fillText(t[1], c.x, c.y+9);
+function drawStairText(s, cw) {             // etichetta sempre visibile, come quella dei locali: nome e righe di verifica; in rosso quello da controllare
+  const rows = [s.label].concat(stairInfo(s)), c = w2s(cw.x, cw.y), dy = prU(13), y0 = c.y - dy*(rows.length-1)/2;
+  ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+  rows.forEach((t, k) => {
+    ctx.font = k ? prFont(11, 1.8) : prFont(13, 2.2, true);
+    if (!PRINT) { ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(26,26,46,.85)'; ctx.strokeText(t, c.x, y0+k*dy); }
+    ctx.fillStyle = t.includes('(!)') ? '#ff6b6b' : (k ? C.ambH : C.ambName); ctx.fillText(t, c.x, y0+k*dy);
+  });
+  ctx.restore();
 }
 function drawStair(s, mode, lab) {          // lab=false: la scala e' composta e l'etichetta unica sta su un altro pezzo
   const b = stairB(s), p = s.pedata, st = s.sgn>0 ? b.a0 : b.a1;
   rectPath(s);
   if (!PRINT) { ctx.fillStyle = 'rgba(120,160,200,.14)'; ctx.fill(); }
   ctx.strokeStyle = mode==='sel' ? '#ffe066' : C.stair; ctx.lineWidth = prLw(2, 0.25); ctx.stroke();
-  if (s.tipo==='P') { if (mode && lab!==false) drawStairLabel(s, rectCenter(s)); return; }
+  if (s.tipo==='P') return;
   ctx.strokeStyle = C.stair; ctx.lineWidth = prLw(1, 0.13);
   for (let k=1; k<s.n; k++) {
     const a = st + s.sgn*k*p;
@@ -893,7 +915,6 @@ function drawStair(s, mode, lab) {          // lab=false: la scala e' composta e
   }
   const cm = (b.c0+b.c1)/2, L = s.n*p, f0 = st + s.sgn*L*0.12, f1 = st + s.sgn*L*0.88;
   drawStairArrow(s.ax==='x' ? [{x:f0,y:cm},{x:f1,y:cm}] : [{x:cm,y:f0},{x:cm,y:f1}]);
-  if (mode && lab!==false) drawStairLabel(s, rectCenter(s));
 }
 
 // colonna dei comandi: righe quante ne entrano nell'altezza, il canvas parte dopo la colonna
@@ -1059,7 +1080,8 @@ function drawNow() {
   const mbb = document.getElementById('move-base-btn');
   if (mbb) setDisp(mbb, state.moveBase ? 'block' : 'none');       // il blocco "sposta base" deve sempre vedersi, anche a pannello chiuso
   const pb = document.getElementById('paste-btn');                // dopo una copia compare "Incolla"; mentre si incolla diventa "Fine"
-  if (pb) { const pasting = state.tool==='paste' || state.tool==='pasteOp'; setDisp(pb, (CLIP && !state.moveBase) || pasting ? 'block' : 'none'); setTxt(pb, pasting ? '✔ Fine' : '⎗ Incolla'); }
+  if (pb) { const pasting = state.tool==='paste' || state.tool==='pasteOp'; setDisp(pb, (CLIP && !state.moveBase) || pasting ? '' : 'none'); setTxt(pb, pasting ? '✔ Fine' : '⎗'); pb.classList.toggle('on', pasting); }
+  if (OPPANEL) opPanelUpdate(false);
   updateMagnetBtn();
   const hb = document.getElementById('hand-btn');
   if (hb) { setTxt(hb, state.handMode ? '✋ Mano attiva - tocca per finire' : '✋'); hb.classList.toggle('on', !!state.handMode); }
@@ -1408,8 +1430,14 @@ function drawPilastri() {
 function drawScale() {
   const sel = state.sel && state.sel.kind==='scala' ? state.scale[state.sel.idx] : null, hv = state.hoverScala!=null ? state.scale[state.hoverScala] : null;
   const same = (a, q) => a && (a===q || (a.grp && a.grp===q.grp));                  // i pezzi della stessa scala si evidenziano insieme
-  state.scale.forEach((s,i) => !hid(s) && drawStair(s, PRINT ? '' : same(sel,s) ? 'sel' : (same(hv,s) ? 'hover' : ''), sel ? isSel('scala',i) : state.hoverScala===i));
-  if (!PRINT && sel) {                                                                // maniglie del pezzo selezionato
+  state.scale.forEach(s => !hid(s) && drawStair(s, PRINT ? '' : same(sel,s) ? 'sel' : (same(hv,s) ? 'hover' : '')));
+  const done = new Set();                                                               // una sola etichetta per scala, sul pianerottolo se c'e'
+  state.scale.forEach(s => {
+    if (hid(s)) return;
+    const key = s.grp || s; if (done.has(key)) return; done.add(key);
+    const T = stairTotals(s); drawStairText(s, stairCenter(T.G.find(q => q.tipo==='P') || T.R[0] || s));
+  });
+  if (!PRINT && sel && !(sel.tipo==='P' && sel.from)) {                                // maniglie del pezzo selezionato
     const h = stairHandles(sel);
     const hs = COARSE ? 9 : 6;
     ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#e94560'; ctx.lineWidth=2;
@@ -1522,6 +1550,7 @@ const COMM_UI = {                                  // gruppo e nome breve per il
 };
 const COMM_APERTO = new Set(['balconi','terrazziLogge','terrazzoTasca','portici','corti','giardinoApp','giardinoVilla','postoScoperto']);
 function ambNoVol(a) { return COMM_APERTO.has(a.category); }
+const OUT_NAME = {balconi:'Balcone', terrazziLogge:'Terrazzo', terrazzoTasca:'Terrazzo', portici:'Portico', corti:'Corte', giardinoApp:'Giardino', giardinoVilla:'Giardino', postoScoperto:'Posto scoperto'};
 // classi dei muri: colore a video, peso nella superficie commerciale e (con lo stato di progetto) cosa si puo' demolire.
 // Solo l'Interno e' demolibile; sugli altri si fanno tracce, tinteggiature e finiture. "Non assegnato" = tipo proposto
 // dall'app e non ancora validato (cv 'dubbio'), tratteggiato in fucsia. I valori salvati restano quelli della 2.01.
@@ -1731,7 +1760,8 @@ function ambMenuAction(action) {
         options:[{value:'',label:'Non classificato'}].concat(Object.keys(COMM_CAT).map(k => ({value:k, label:COMM_CAT[k].label, group:COMM_UI[k][0], short:COMM_UI[k][1]})))},
     ]), 'Superficie '+ambNet(amb).toFixed(2)+' m²'+(pw ? ', pareti '+pw.lorde.toFixed(2)+' m² lorde, '+pw.nette.toFixed(2)+' m² nette' : ''), v => {
       const hh = parseFloat(v.h); saveHistory();
-      amb.name = roomNameRead(v, amb, amb.name); if (isFinite(hh) && hh>0) amb.h = hh;
+      const out = COMM_APERTO.has(v.cat);                                  // balcone, terrazzo...: prende il nome della categoria, senza numerazione, e puo' avere altezza 0
+      amb.name = out && v.rn!=='altro' ? OUT_NAME[v.cat] : roomNameRead(v, amb, amb.name); if (isFinite(hh) && (hh>0 || (hh===0 && out))) amb.h = hh;
       amb.category = v.cat || undefined;
       commit('Ambiente aggiornato.');
     });
@@ -1775,8 +1805,8 @@ function drawAmbienti() {
     const dy = prU(16);
     ctx.fillStyle=C.ambName; ctx.font=prFont(14, 2.5, true); ctx.fillText(amb.name, c.x, c.y-dy);
     ctx.fillStyle=C.ambArea; ctx.font=prFont(13, 2, true);   ctx.fillText(area.toFixed(2)+' m²', c.x, c.y);
-    ctx.fillStyle=C.ambH;    ctx.font=prFont(13, 2, true);   ctx.fillText('H. '+Number(amb.h).toFixed(2)+' m', c.x, c.y+dy);
-    if (!ambNoVol(amb)) { ctx.fillStyle=C.ambVol; ctx.font=prFont(11, 1.8); ctx.fillText((area*amb.h).toFixed(2)+' m³', c.x, c.y+2*dy); }
+    if (+amb.h > 0) { ctx.fillStyle=C.ambH;    ctx.font=prFont(13, 2, true);   ctx.fillText('H. '+Number(amb.h).toFixed(2)+' m', c.x, c.y+dy); }      // altezza 0 (terrazzo): la riga sparisce
+    if (+amb.h > 0 && !ambNoVol(amb)) { ctx.fillStyle=C.ambVol; ctx.font=prFont(11, 1.8); ctx.fillText((area*amb.h).toFixed(2)+' m³', c.x, c.y+2*dy); }
   });
 }
 
@@ -2358,7 +2388,7 @@ function finishStair() {
   const s = r ? stairFromDrag(r) : null;
   if (!s) { draw(); setTip('Scala non creata: serve almeno una pedata (30 cm) di lunghezza.'); return; }
   saveHistory();
-  state.scalaCounter++; s.label = 'SCALA '+state.scalaCounter;
+  state.scalaCounter++; s.label = 'SCALA '+state.scalaCounter; s.sid = nextSid();
   state.scale.push(s);
   state.sel = {kind:'scala', idx:state.scale.length-1};
   commit('Scala creata: '+s.n+' gradini. Trascina le maniglie per cambiarla, doppio clic per pedata e alzata. Per il pianerottolo avvicina un\'altra rampa a 90°.');
@@ -2484,6 +2514,23 @@ function openingGlass(op) {
 }
 // schema del serramento nella finestra Dati energetici: sta fisso in cima, bucatura in proporzione, telaio e specchiature a griglia
 // (le ultime sono i pannelli ciechi, in grigio). Si aggiorna mentre scrivi.
+function opSketchSvg(L, H, e, p, maxW, maxH) {          // e = null: senza dati energetici, solo la bucatura
+  const g = e ? glassGrid(L, H, e) : null;
+  const S = Math.min(maxW/L, maxH/H), W = Math.ceil(L*S+2), Hh = Math.ceil(H*S+2);
+  const r = (x, y, w, h, fill, stroke) => '<rect x="'+(x*S).toFixed(1)+'" y="'+(y*S).toFixed(1)+'" width="'+Math.max(0, w*S).toFixed(1)+'" height="'+Math.max(0, h*S).toFixed(1)+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1"/>';
+  let svg = r(0, 0, L, H, '#5a6478', '#ccc'), msg;
+  if (!e) msg = ['#e0a030', 'Dati energetici da compilare'];
+  else if (!g) msg = ['#ff6b6b', 'Troppi divisori o profilo troppo largo per queste misure'];
+  else {
+    const blind = Math.min(p, g.n);
+    for (let k=0; k<g.n; k++) {
+      const i = k % (g.nv+1), j = Math.floor(k/(g.nv+1)), cieco = k >= g.n - blind;
+      svg += r(g.s + i*(g.w+g.s), g.s + j*(g.h+g.s), g.w, g.h, cieco ? '#9aa0aa' : 'rgba(0,229,255,0.35)', cieco ? '#ddd' : '#00e5ff');
+    }
+    msg = ['#5ef38c', g.n+(g.n===1 ? ' specchiatura' : ' specchiature')+' da '+Math.round(g.w*100)+' x '+Math.round(g.h*100)+' cm'+(blind ? ', di cui '+blind+(blind===1 ? ' cieca' : ' cieche') : '')];
+  }
+  return {svg:'<svg width="'+W+'" height="'+Hh+'" viewBox="-1 -1 '+W+' '+Hh+'" style="overflow:visible">'+svg+'</svg>', msg};
+}
 function opSketch(op) {
   const box = document.createElement('div'); box.className = 'dlg-sketch';
   $id('dialog-fields').prepend(box);
@@ -2491,26 +2538,43 @@ function opSketch(op) {
   const m2 = v => v.toFixed(2).replace('.', ',');
   const upd = () => {
     const L = op.width, H = opHb(op), p = op.type==='PF' ? 0 : Math.max(0, Math.round(num('pannelli')) || 0);
-    const e = {nv:Math.round(num('nv')) || 0, no:Math.round(num('no')) || 0, spTelaio:num('spTelaio')};
-    const g = glassGrid(L, H, e);
-    const S = Math.min(220/L, (window.innerHeight < 640 ? 80 : 120)/H), W = Math.ceil(L*S+2), Hh = Math.ceil(H*S+2);
-    const r = (x, y, w, h, fill, stroke) => '<rect x="'+(x*S).toFixed(1)+'" y="'+(y*S).toFixed(1)+'" width="'+Math.max(0, w*S).toFixed(1)+'" height="'+Math.max(0, h*S).toFixed(1)+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1"/>';
-    let svg = r(0, 0, L, H, '#5a6478', '#ccc'), msg;
-    if (!g) msg = ['#ff6b6b', 'Troppi divisori o profilo troppo largo per queste misure'];
-    else {
-      const blind = Math.min(p, g.n);
-      for (let k=0; k<g.n; k++) {
-        const i = k % (g.nv+1), j = Math.floor(k/(g.nv+1)), cieco = k >= g.n - blind;
-        svg += r(g.s + i*(g.w+g.s), g.s + j*(g.h+g.s), g.w, g.h, cieco ? '#9aa0aa' : 'rgba(0,229,255,0.35)', cieco ? '#ddd' : '#00e5ff');
-      }
-      msg = ['#5ef38c', g.n+(g.n===1 ? ' specchiatura' : ' specchiature')+' da '+Math.round(g.w*100)+' x '+Math.round(g.h*100)+' cm'+(blind ? ', di cui '+blind+(blind===1 ? ' cieca' : ' cieche') : '')];
-    }
-    box.innerHTML = '<div style="color:#aaa;margin-bottom:3px">Bucatura '+m2(L)+' x '+m2(H)+' m</div>'+
-      '<svg width="'+W+'" height="'+Hh+'" viewBox="-1 -1 '+W+' '+Hh+'" style="overflow:visible">'+svg+'</svg>'+
-      '<div style="color:'+msg[0]+';margin-top:3px">'+msg[1]+'</div>';
+    const r = opSketchSvg(L, H, {nv:Math.round(num('nv')) || 0, no:Math.round(num('no')) || 0, spTelaio:num('spTelaio')}, p, 220, window.innerHeight < 640 ? 80 : 120);
+    box.innerHTML = '<div style="color:#aaa;margin-bottom:3px">Bucatura '+m2(L)+' x '+m2(H)+' m</div>'+r.svg+'<div style="color:'+r.msg[0]+';margin-top:3px">'+r.msg[1]+'</div>';
   };
   upd();
   ['nv','no','pannelli','spTelaio'].forEach(id => $id('dlg_'+id).addEventListener('input', upd));
+}
+// PANNELLO DEI SERRAMENTI accanto alla pianta (pulsante 🪟, si accende e si spegne): lo schema di tutte le finestre e porte-finestre con le
+// specchiature, per vedere subito dove i dati non tornano dopo un inserimento in blocco. Un tocco su una scheda seleziona il serramento.
+let OPPANEL = false, OPPANEL_SIG = '';
+try { OPPANEL = localStorage.getItem('app_rilievo_oppanel')==='1'; } catch (err) {}
+function toggleOpPanel() {
+  OPPANEL = !OPPANEL; try { localStorage.setItem('app_rilievo_oppanel', OPPANEL ? '1' : '0'); } catch (err) {}
+  opPanelUpdate(true); draw();
+}
+function opPanelUpdate(force) {
+  const btn = $id('oppanel-btn'); if (btn) btn.classList.toggle('on', OPPANEL);
+  let pn = $id('oppanel');
+  if (!OPPANEL) { if (pn) pn.style.display = 'none'; return; }
+  if (!pn) {
+    pn = document.createElement('div'); pn.id = 'oppanel';
+    pn.style.cssText = 'position:fixed;left:calc(var(--tb-w,0px) + 10px);top:10px;width:250px;max-height:calc(var(--vh,100vh) - 130px);overflow-y:auto;z-index:150;background:rgba(22,33,62,.96);border:1px solid #0f3460;border-radius:8px;padding:8px;font-size:12px;color:#ccc';
+    document.body.appendChild(pn);
+  }
+  const idx = state.openings.map((o,i) => i).filter(i => !hid(state.openings[i]) && state.openings[i].type!=='P')
+    .sort((a,b) => String(state.openings[a].label).localeCompare(String(state.openings[b].label), 'it', {numeric:true}));
+  const cur = state.sel && state.sel.kind==='opening' ? state.sel.idx : -1;
+  const sig = JSON.stringify([idx.map(i => { const o = state.openings[i], e = o.energy; return [o.label, o.type, o.width, opHb(o), e && [e.nv, e.no, e.pannelli, e.spTelaio]]; }), cur]);
+  if (!force && sig===OPPANEL_SIG && pn.style.display!=='none') return;
+  OPPANEL_SIG = sig; pn.style.display = 'block';
+  const m2 = v => v.toFixed(2).replace('.', ',');
+  pn.innerHTML = '<div style="color:#aaa;margin-bottom:6px">Serramenti: specchiature dai dati energetici. Tocca una scheda per selezionarlo.</div>'+(idx.length ? '' : '<div>Nessuna finestra o porta-finestra.</div>')+
+    idx.map(i => {
+      const o = state.openings[i], p = o.type==='PF' ? 0 : Math.max(0, (o.energy && o.energy.pannelli) || 0), r = opSketchSvg(o.width, opHb(o), o.energy || null, p, 220, 70);
+      return '<div data-pi="'+i+'" style="cursor:pointer;margin-bottom:6px;padding:6px;border-radius:6px;border:1px solid '+(i===cur ? '#ffe066' : '#1a4a7a')+';background:'+(i===cur ? 'rgba(255,224,102,.10)' : 'transparent')+'">'+
+        '<b style="color:#fff">'+o.label+'</b> <span>'+m2(o.width)+' x '+m2(opHb(o))+' m</span><div style="margin:4px 0">'+r.svg+'</div><div style="color:'+r.msg[0]+'">'+r.msg[1]+'</div></div>';
+    }).join('');
+  pn.querySelectorAll('[data-pi]').forEach(el => el.addEventListener('click', () => { state.sel = {kind:'opening', idx:+el.dataset.pi}; draw(); }));
 }
 // superficie di bucatura, vetrata e telaio per differenza
 function openingAreas(op) {
@@ -2643,7 +2707,7 @@ function openingMenuAction(action) {
       {type:'head', label:'Vetri'},
       {label:'Vetro', id:'vetro', type:'select', value:pf('vetro','D'),
         options:[{value:'S',label:'Singolo'},{value:'D',label:'Doppio'},{value:'T',label:'Triplo'}]},
-      {label:'Spessore vetro (mm)', id:'spVetro', type:'number', half:true, value:pf('spVetro','')},
+      {label:'Spessore vetro (mm)', id:'spVetro', type:'number', half:true, value:pf('spVetro','4')},
       {label:'Distanziale', id:'distanz', type:'select', half:true, sec:'dist', value:dsel, options:DIST.map(v => ({value:v, label:v}))},
       {label:'Altro distanziale (materiale e spessore)', id:'distanzAlt', type:'text', sec:'distalt', value:DIST.includes(dcur) ? '' : dcur},
       {type:'head', label:'Specchiature'},
@@ -2655,7 +2719,7 @@ function openingMenuAction(action) {
         options:[{value:'pers',label:'Persiana'},{value:'avv',label:'Avvolgibile'},{value:'scuri',label:'Scuri'},{value:'no',label:'Nessuno'}]},
       {type:'head', label:'Cassonetto', sec:'cass'},
       {label:'Isolato', id:'cassIso', type:'select', sec:'cass', value:pf('cassIso','no'), options:yn},
-      {label:'Altezza (cm)', id:'cassH', type:'number', half:true, sec:'cass', value:pf('cassH','')},
+      {label:'Altezza (cm)', id:'cassH', type:'number', half:true, sec:'cass', value:pf('cassH','35')},
       {label:'Profondità (cm)', id:'cassP', type:'number', half:true, sec:'cass', value:pf('cassP','')},
       {type:'head', label:'Note'},
       {label:'Note', id:'note', type:'textarea', value:e0.note||''},      // la nota e' del singolo serramento: non si propaga
@@ -3101,7 +3165,7 @@ function entityMenuAction(action) {
     ]), land ? 'L\'alzata vale per tutta la scala. Le misure del pianerottolo si cambiano con le maniglie.' : c.n+' gradini: la lunghezza si adatta alla nuova pedata. L\'alzata vale per tutta la scala.', v => {
       const ped = land ? 0.3 : parseFloat(v.ped)/100, alz = parseFloat(v.alz)/100;
       if (!isFinite(ped) || ped<=0.05 || !isFinite(alz) || alz<=0.05) return;
-      saveHistory(); if (!land) stairSetPedata(c, ped); stairGroup(c).forEach(q => { q.alzata = alz; });
+      saveHistory(); if (!land) stairSetPedata(c, ped); stairGroup(c).forEach(q => { q.alzata = alz; }); stairSolve(c);
       commit('Scala aggiornata: H '+stairHeight(c).toFixed(2)+' m.');
     });
   }
@@ -3581,7 +3645,7 @@ canvas.addEventListener('pointermove', e => {
   if (state.stairResize) {                   // maniglie della scala: la lunghezza va a gradini interi
     const r = state.stairResize, sc = state.scale[r.idx];
     dragSnap();
-    if (sc) { stairResize(sc, r.side, s2w(sx,sy)); showTooltip(sc.tipo==='P' ? 'Pianerottolo '+sc.w.toFixed(2)+' x '+sc.h.toFixed(2)+' m' : sc.n+' gradini - H '+stairHeight(sc).toFixed(2)+' m', e.clientX, e.clientY); }
+    if (sc) { stairResize(sc, r.side, s2w(sx,sy)); stairSolve(sc); showTooltip(sc.tipo==='P' ? 'Pianerottolo '+sc.w.toFixed(2)+' x '+sc.h.toFixed(2)+' m' : sc.n+' gradini - H '+stairHeight(sc).toFixed(2)+' m', e.clientX, e.clientY); }
     draw(); return;
   }
   if (state.openingResize) {                 // maniglia: un estremo resta fermo, l'altro segue il puntatore
@@ -3859,7 +3923,7 @@ const photoStore = new Map(); let photoSeq = 0;
 // COMPATIBILITA' DEI PROGETTI: un rilievo di qualsiasi versione si apre sempre. Ogni modifica del formato dei dati
 // alza DATA_FMT e aggiunge qui il suo passo, che aggiorna il progetto e dice cosa e' cambiato e cosa controllare a mano.
 // I passi si applicano in ordine dal formato del progetto in poi. Formato 1 = progetti fino alla 2.02 (senza "fmt").
-const DATA_FMT = 7;
+const DATA_FMT = 8;
 const MIGRATIONS = [
   { fmt:2, ver:'2.03', run:o => {
     (o.ambienti||[]).forEach(a => { if (a.outdoor && !a.category) a.category = 'balconi'; delete a.outdoor; });   // flag "senza volume" delle 1.16-1.19
@@ -3907,6 +3971,15 @@ const MIGRATIONS = [
     });
     o.scale = out;
     return n ? ['Scale a L: '+(n===1 ? 'la scala a L è diventata' : 'le '+n+' scale a L sono diventate')+' due rampe dritte unite da un pianerottolo (una scala sola). Ogni rampa si cambia con le sue maniglie.'] : [];
+  }},
+  { fmt:8, ver:'2.17', run:o => {       // pianerottoli delle 2.14-2.16 e delle scale a L migrate: si agganciano alle rampe, cosi' le seguono (vedi stairSolve)
+    const sc = o.scale || []; let sid = Math.max(0, ...sc.map(q => q.sid||0));
+    sc.forEach(q => { if (!q.sid) q.sid = ++sid; });
+    sc.filter(q => q.tipo==='P' && !q.from).forEach(P => {
+      const R = sc.filter(q => q.grp===P.grp && q.tipo!=='P');
+      for (const L of R) for (const U of R) { if (L!==U && L.ax!==U.ax && stairLandingPlan(L, U)) { P.from = L.sid; P.to = U.sid; return; } }
+    });
+    return [];
   }},
 ];
 // aggiorna il progetto letto (file o browser) al formato corrente; restituisce le note per chi lo apre ([] se era gia' aggiornato)
@@ -4539,7 +4612,7 @@ function exportDXF() {
     if (pts.length<3 || !live(a)) return;
     poly('AMBIENTI', pts, true);
     const cc = ambCenter(a), cx = cc.x+(a.lo?a.lo.x:0), cy = cc.y+(a.lo?a.lo.y:0), net = ambNet(a);
-    const rows = [a.name, 'Sup. netta: '+net.toFixed(2)+' mq', 'Altezza: '+(+a.h).toFixed(2)+' m'].concat(ambNoVol(a) ? [] : ['Volume: '+(net*a.h).toFixed(2)+' mc']);
+    const rows = [a.name, 'Sup. netta: '+net.toFixed(2)+' mq'].concat(+a.h > 0 ? ['Altezza: '+(+a.h).toFixed(2)+' m'] : [], ambNoVol(a) || !(+a.h > 0) ? [] : ['Volume: '+(net*a.h).toFixed(2)+' mc']);
     const bw = Math.max(...pts.map(p=>p.x)) - Math.min(...pts.map(p=>p.x)), bh = Math.max(...pts.map(p=>p.y)) - Math.min(...pts.map(p=>p.y));
     const nc = Math.max(...rows.map(r => r.length)), LS = 5/3;          // interlinea MTEXT = 5/3 dell'altezza
     const h = Math.max(0.04, Math.min(0.10, bw*0.85/(nc*CW), bh*0.85/(rows.length*LS)));
@@ -6780,6 +6853,32 @@ function opTableRender() {
       commit(list.length+' righe riempite con '+val+'.', true); opTableRefresh();
     });
   });
+  // riempi in basso anche i dati energetici: il quadratino accanto a "Compilati" copia la scheda sulle righe toccate (porta-finestra: senza pannelli ciechi)
+  const enBtns = [...body.querySelectorAll('[data-en]')];
+  enBtns.forEach(el => {
+    const hd = document.createElement('span');
+    hd.title = 'Trascina sulle righe sotto (o sopra) per copiare i dati energetici di questo serramento';
+    hd.style.cssText = 'display:inline-block;width:16px;height:16px;margin-left:3px;vertical-align:middle;background:#bb7028;border-radius:3px;cursor:crosshair;touch-action:none';
+    el.after(hd);
+    let a = -1, b = -1, on = false;
+    const mark = () => enBtns.forEach((c, j) => { c.style.outline = on && j>=Math.min(a,b) && j<=Math.max(a,b) ? '2px solid #ffe066' : ''; });
+    hd.addEventListener('pointerdown', e => { e.preventDefault(); hd.setPointerCapture(e.pointerId); on = true; a = b = enBtns.indexOf(el); mark(); });
+    hd.addEventListener('pointermove', e => {
+      if (!on) return;
+      const tr = document.elementFromPoint(e.clientX, e.clientY)?.closest('tr'), t = tr && tr.querySelector('[data-en]');
+      const j = enBtns.indexOf(t); if (j>=0 && j!==b) { b = j; mark(); }
+    });
+    hd.addEventListener('pointerup', () => {
+      if (!on) return;
+      const src = state.openings[+el.dataset.en], list = enBtns.filter((c, j) => j>=Math.min(a,b) && j<=Math.max(a,b) && c!==el).map(c => +c.dataset.en).filter(i => state.openings[i] && !locked(state.openings[i]));
+      on = false; mark();
+      if (!src || !src.energy) { setTip('Compila prima i dati energetici di '+(src ? src.label : 'questo serramento')+': poi li trascini sulle altre righe.'); return; }
+      if (!list.length) return;
+      saveHistory();
+      list.forEach(i => { const t = state.openings[i]; t.energy = Object.assign(JSON.parse(JSON.stringify(src.energy)), {t:Date.now()}); delete t.energy.note; if (t.type==='PF') t.energy.pannelli = 0; });
+      commit('Dati energetici di '+src.label+' copiati su '+list.length+(list.length===1 ? ' serramento.' : ' serramenti.'), true); opTableRefresh();
+    });
+  });
   body.querySelectorAll('[data-en]').forEach(el => el.addEventListener('click', () => {
     const i = +el.dataset.en; state.sel = {kind:'opening', idx:i};
     $id('optab-overlay').style.display = 'none';
@@ -6856,7 +6955,11 @@ function drawPastePreview() {
 function toggleLegend() {
   const b = $id('leg-box'), open = b.style.display!=='block';
   if (open) b.innerHTML = Object.keys(WALL_STYLE).map(k => '<div><i style="border-top-color:'+COL_SCREEN[WALL_STYLE[k].col]+(k==='nd' ? ';border-top-style:dashed' : '')+'"></i>'+WALL_STYLE[k].name+'</div>').join('')+
-    (prog() ? '<div><i style="border-top-color:'+FASE_COL.demo[0]+'"></i>Demolizione</div><div><i style="border-top-color:'+FASE_COL.nuovo[0]+'"></i>Costruzione</div>' : '');
+    (prog() ? '<div><i style="border-top-color:'+FASE_COL.demo[0]+'"></i>Demolizione</div><div><i style="border-top-color:'+FASE_COL.nuovo[0]+'"></i>Costruzione</div>' : '')+
+    '<div style="color:#aaa;margin-top:6px">Con un ambiente selezionato:</div>'+
+    '<div><i style="border-top-color:'+AH_COL.comp+'"></i>Pareti del contorno</div>'+
+    '<div><i style="border-top-color:'+AH_COL.conf+';border-top-style:dashed"></i>Lato in comune con un altro ambiente</div>'+
+    '<div><i style="border-top-color:'+AH_COL.cont+';border-top-style:dotted"></i>Muro dentro l\'ambiente</div>';
   b.style.display = open ? 'block' : 'none';
 }
 
@@ -6965,8 +7068,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.16';
-const APP_NOTE = ["Serramenti: stanno nello spessore del muro. Con la linea esterna del muro disegnata sono in mezzeria della bucatura, tra le due facce; senza linea esterna restano a filo interno ma tutti dentro il muro (mezzo telaio verso l'esterno). Vale a video, in PDF/JPG e nel DXF", "Spessore dei muri dalla grafica: il filo interno di un muro (la linea che chiude un ambiente) prende da solo lo spessore dalla linea esterna parallela, a meno di 65 cm, e lo aggiorna se la sposti. Uno spessore scritto a mano non viene più toccato"];
+const APP_VERSION = '2.17';
+const APP_NOTE = ["Scale con pianerottolo: il pianerottolo resta agganciato alle due rampe e le segue quando cambi lunghezza o larghezza con le maniglie (le scale già salvate si agganciano da sole all'apertura)", "Etichetta della scala sempre visibile, come quella dei locali: alzate, pedate, pianerottolo, altezza superata e regola di Blondel (2a+p tra 62 e 64 cm); in rosso quello da controllare, comprese alzate o pedate diverse tra le rampe. Vale a video, in PDF/JPG e nel DXF", "Tabella serramenti: il quadratino accanto a \"Compilati\" copia i dati energetici sulle righe sotto o sopra, come per le altre celle", "Dati energetici: proposti vetro 4 mm e cassonetto alto 35 cm; le specchiature restano da inserire", "Nuovo pulsante 🪟: pannello accanto alla pianta con lo schema di tutte le finestre e porte-finestre e le loro specchiature; un tocco su una scheda seleziona il serramento", "Balcone, terrazzo e simili: scegliendo la categoria l'ambiente prende il nome (Balcone, Terrazzo...) senza numerazione; con altezza 0 la riga dell'altezza sparisce dall'etichetta", "Pulsanti a destra tutti uguali e in colonna, compreso Incolla (compare dopo una copia e diventa verde mentre incolli); il pulsante legenda 🎨 è sempre presente e spiega anche i colori dell'ambiente selezionato"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
