@@ -5574,11 +5574,40 @@ function rxCleanRing(P, th, px, o) {
   return V.map(v=>({x:v.x*c-v.y*s, y:v.x*s+v.y*c}));
 }
 
+// distanza (in pixel) di ogni pixel dal tratto piu' vicino: due passate, lati 1 e diagonali 1,414
+function rxDistInk(ink, w, h) {
+  const INF = 1e9, d = new Float32Array(w*h), D = 1.4142;
+  for (let i=0;i<w*h;i++) d[i] = ink[i] ? 0 : INF;
+  for (let y=0;y<h;y++) for (let x=0;x<w;x++) { const i=y*w+x; let v=d[i]; if (!v) continue;
+    if (x>0) v=Math.min(v, d[i-1]+1); if (y>0) { v=Math.min(v, d[i-w]+1); if (x>0) v=Math.min(v, d[i-w-1]+D); if (x<w-1) v=Math.min(v, d[i-w+1]+D); } d[i]=v; }
+  for (let y=h-1;y>=0;y--) for (let x=w-1;x>=0;x--) { const i=y*w+x; let v=d[i]; if (!v) continue;
+    if (x<w-1) v=Math.min(v, d[i+1]+1); if (y<h-1) { v=Math.min(v, d[i+w]+1); if (x<w-1) v=Math.min(v, d[i+w+1]+D); if (x>0) v=Math.min(v, d[i+w-1]+D); } d[i]=v; }
+  return d;
+}
+// chiude i varchi tra tratti di muro allineati (moncone e muro di fronte, porte, passaggi): dove due tratti lunghi stanno sulla stessa riga o colonna
+// con meno di gapMax tra l'uno e l'altro, il vuoto si riempie. Si usano solo tratti lunghi (>= minLen): due muri paralleli ravvicinati, come
+// quelli di un corridoio, hanno tratti corti nella direzione trasversale e non si toccano.
+function rxBridge(ink, w, h, minLen, gapMax) {
+  const out = ink.slice();
+  const run = (n, at, put) => {                           // n elementi lungo la linea, at(i) = ink, put(i) = riempi
+    let i = 0, prevEnd = -1;
+    while (i < n) {
+      if (!at(i)) { i++; continue; }
+      let j = i; while (j < n && at(j)) j++;
+      if (j - i >= minLen) { if (prevEnd >= 0 && i - prevEnd > 1 && i - prevEnd <= gapMax) for (let k=prevEnd; k<i; k++) put(k); prevEnd = j; }
+      i = j;
+    }
+  };
+  for (let y=0;y<h;y++) run(w, x => ink[y*w+x], x => { out[y*w+x] = 1; });
+  for (let x=0;x<w;x++) run(h, y => ink[y*w+x], y => { out[y*w+x] = 1; });
+  return out;
+}
 function roomsExtract(mask, w, h, mpp, opt) {
   const o=Object.assign({}, ROOM_DEFAULTS, opt||{}), px=m=>m/mpp;
   const clean=wxRemoveSmall(mask, w, h, Math.max(2, Math.round(px(o.minDimM))));   // scritte e simboli piccoli
   const rc=px(o.closeM);
-  const ink = rc>0 ? wxErode(wxDilate(clean,w,h,rc),w,h,rc) : clean;
+  const ink0 = rc>0 ? wxErode(wxDilate(clean,w,h,rc),w,h,rc) : clean;
+  const ink = rxBridge(ink0, w, h, px(0.8), px(2.5));          // muri allineati con un varco: si chiudono
   const R=px(o.doorM/2), near=wxDilate(ink, w, h, R);
   // semi: lo spazio libero che dista dai muri piu' di mezza porta (le porte non passano)
   const lab=new Int32Array(w*h), stack=new Int32Array(w*h);
@@ -5598,6 +5627,45 @@ function roomsExtract(mask, w, h, mpp, opt) {
     else if (mem.length<minSeed) mem.forEach(p=>lab[p]=-1);
   }
   for (let i=0;i<w*h;i++) if (lab[i]<0) lab[i]=0;
+  // spazi aperti: un seme che racchiude piu' locali uniti da passaggi larghi (nessuna porta, solo monconi di muro) si divide dove la larghezza
+  // si strozza, come farebbe l'occhio. I pezzi devono essere stanze vere (raggio >= 70 cm) e il passaggio piu' stretto del 60% del loro raggio:
+  // un locale a L o con una rientranza non si taglia.
+  {
+    const dt = rxDistInk(ink, w, h), rMin = px(0.7), rStep = Math.max(1, px(0.1)), rMax = px(1.6), minCore = Math.max(6, px(0.3)*px(0.3));
+    const coreS = new Int32Array(w*h), visS = new Int32Array(w*h), memS = new Int32Array(w*h), asgS = new Int32Array(w*h), asg = new Int32Array(w*h);
+    let stampN = 0;
+    const nbs = (p, f) => { const x = p%w; if (x>0) f(p-1); if (x<w-1) f(p+1); if (p>=w) f(p-w); if (p<w*h-w) f(p+w); };
+    const split = (pix, Rs) => {
+      for (let R=Rs+rStep; R<=rMax; R+=rStep) {
+        const st = ++stampN, core = [];
+        for (const p of pix) if (dt[p] > R) { core.push(p); coreS[p] = st; }
+        if (core.length < minCore) break;
+        const pieces = [];
+        for (const s0 of core) {
+          if (visS[s0] === st) continue;
+          const mem = [s0]; visS[s0] = st; let mx = dt[s0];
+          for (let qi=0; qi<mem.length; qi++) { const p = mem[qi]; if (dt[p] > mx) mx = dt[p]; nbs(p, k => { if (coreS[k]===st && visS[k]!==st) { visS[k] = st; mem.push(k); } }); }
+          pieces.push({mem, mx});
+        }
+        const good = pieces.filter(c => c.mx >= rMin && c.mem.length >= minCore);
+        if (good.length < 2 || R > 0.6*Math.min(...good.map(c => c.mx))) continue;
+        const st2 = ++stampN, queue = [];
+        for (const p of pix) memS[p] = st2;
+        good.forEach((c, gi) => c.mem.forEach(p => { asg[p] = gi+1; asgS[p] = st2; queue.push(p); }));
+        for (let qi=0; qi<queue.length; qi++) { const p = queue[qi]; nbs(p, k => { if (memS[k]===st2 && asgS[k]!==st2) { asgS[k] = st2; asg[k] = asg[p]; queue.push(k); } }); }
+        const subs = good.map(() => []);
+        for (const p of pix) subs[(asgS[p]===st2 ? asg[p] : 1) - 1].push(p);
+        return [].concat(...subs.map(sp => split(sp, R)));
+      }
+      return [pix];
+    };
+    const comps = new Map();
+    for (let i=0;i<w*h;i++) { const L0 = lab[i]; if (L0 >= 2) { let a = comps.get(L0); if (!a) comps.set(L0, a = []); a.push(i); } }
+    comps.forEach((pix, L0) => {
+      const parts = split(pix, R);
+      for (let k=1;k<parts.length;k++) { const id = next++; for (const p of parts[k]) lab[p] = id; }
+    });
+  }
   for (let x=0;x<w;x++) { if (!ink[x]) lab[x]=1; if (!ink[(h-1)*w+x]) lab[(h-1)*w+x]=1; }
   for (let y=0;y<h;y++) { if (!ink[y*w]) lab[y*w]=1; if (!ink[y*w+w-1]) lab[y*w+w-1]=1; }
   // crescita: ogni pixel libero va al seme piu' vicino; nelle porte il confine cade a meta' varco
@@ -5662,7 +5730,7 @@ function roomsExtract(mask, w, h, mpp, opt) {
       }
       E.push({a,b,ux,uy,nx,ny,smp});
     }
-    if (!tot || walled/tot<0.6) continue;
+    if (!tot || walled/tot<0.3) continue;                       // meno di un terzo di muro intorno: balcone o cortile (con piu' muro si propone, e si toglie la spunta)
     for (const e of E) {
       const S=e.smp; if (!S.length) continue;
       if (S.filter(q=>q.beyond>=2).length > 0.5*S.length) continue;           // lato interno: dietro c'e' un altro ambiente
@@ -7276,8 +7344,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.24';
-const APP_NOTE = ["Serramenti nei muri: corretto il calcolo della faccia opposta del muro. Con linee appena inclinate (frazioni di grado, normali nei rilievi a mano) la distanza veniva misurata dall'estremo della linea opposta e non dalla linea: le spalle del varco uscivano oltre il muro o restavano corte, il serramento non stava a metà dello spessore, la quota dello spessore era sbagliata (41 cm invece di 38) e a volte la linea opposta non veniva interrotta. Ora spalle, varchi, spessore e posizione del serramento coincidono con le linee disegnate, a video, in PDF/JPG e nel DXF. Lo stesso errore è corretto nelle facce parallele usate da demolizioni e quantità e nel riconoscimento dei muri esterni."];
+const APP_VERSION = '2.25';
+const APP_NOTE = ["Ricalco ambienti da immagine: ora trova anche gli ambienti che prima sparivano. I muri allineati con un varco in mezzo (un moncone di muro e il muro di fronte, porte, passaggi fino a 2,5 m) si chiudono, come farebbe l'occhio; uno spazio aperto che racchiude più locali si divide dove la larghezza si strozza (senza tagliare i locali a L); e un ambiente con almeno un terzo di muro intorno si propone sempre (prima serviva il 60%), con la spunta per toglierlo. Su una catastale di prova a piani multipli: da 2 a 7 ambienti sul piano terra, da 0 a 6 sul primo sottostrada, da 2 a 4 sul secondo; il risultato non cambia più di molto spostando il cursore delle porte."];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
