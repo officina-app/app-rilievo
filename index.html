@@ -301,6 +301,7 @@
   <div class="menu-item" onclick="segMenuAction('copy')">⎘ Copia<small class="md">Il muro con i suoi serramenti; poi Incolla</small></div>
   <div class="menu-item" onclick="segMenuAction('inherit')">🖌 Eredita proprietà<small class="md">Copia classe e spessore su altri muri: tocca i muri di destinazione</small></div>
   <div class="menu-item" data-lock onclick="segMenuAction('move')">✥ Sposta<small class="md">Trascina il muro dove va</small></div>
+  <div class="menu-item" data-lock id="sm-twflip" onclick="segMenuAction('twflip')">⇄ Spessore dall'altro lato<small class="md">La seconda linea della tramezza passa dall'altra parte</small></div>
   <div class="menu-item" onclick="segMenuAction('thick')">📏 Spessore e tipo<small class="md">Classe (colore) e spessore: servono a superficie commerciale e demolizioni</small></div>
   <div class="menu-item" id="sm-recalc" onclick="segMenuAction('recalc')">⟳ Ricalcola dalla grafica<small class="md">Toglie lo spessore scritto a mano: torna quello automatico delle linee</small></div>
   <div class="menu-item" data-demotract onclick="segMenuAction('demotract')">⛏ Demolisci un tratto<small class="md">Solo la parte indicata: varco o ampliamento di una bucatura</small></div>
@@ -1061,13 +1062,14 @@ function s2w(sx, sy) { return { x: (sx - state.panX)/state.zoom, y: -(sy - state
 //  HIT TEST   (in coordinate schermo, tranne i rettangoli
 //              che si testano in coordinate mondo)
 // ═══════════════════════════════════════════════════════════
-function hitPoint(sx, sy) {
+function hitPoint(sx, sy) {                // il punto piu' vicino al dito (le due facce di una tramezza sono a pochi pixel)
+  let best = null, bd = HIT_PT_PX;
   for (let i = state.points.length-1; i >= 0; i--) {
     if (hid(state.points[i])) continue;
-    const s = w2s(state.points[i].x, state.points[i].y);
-    if (Math.hypot(sx-s.x, sy-s.y) <= HIT_PT_PX) return i;
+    const s = w2s(state.points[i].x, state.points[i].y), d = Math.hypot(sx-s.x, sy-s.y);
+    if (d <= bd) { bd = d; best = i; }
   }
-  return null;
+  return best;
 }
 function hitSegment(sx, sy) {            // la linea piu' vicina al dito: con lo zoom piccolo le due facce di un muro sono a pochi pixel
   let best = null, bd = HIT_SEG_PX;
@@ -1600,6 +1602,7 @@ function segMenuAction(action) {
   if (action==='copy')   { clipCopy(new Set(), new Set([s.idx]), new Set(), new Set()); return; }
   if (action==='copy')   { clipCopy(new Set(), new Set([s.idx]), new Set(), new Set()); return; }
   if (action==='inherit') { inheritStart('segment', s.idx); return; }
+  if (action==='twflip') { twinFlip(s.idx); return; }
   if (action==='delete') { state.selSeg = new Set([s.idx]); state.selSet = null; state.selOpen = null; state.selPen = null; deleteSelection(); return; }
   if (action==='demo') { setDemo([s.idx], [], [], state.segments[s.idx].fase!=='demo'); return; }
   if (action==='move') {
@@ -2494,6 +2497,7 @@ function dragPointTo(i, w, sx, sy) {
     const r = snapResolve(sx, sy, w, angCons, excl);
     if (r) { x=r.x; y=r.y; guides=r.guides; marks=r.marks; text=r.text; }
   }
+  const js = jointSlide(i, x, y); if (js) { x = js.x; y = js.y; text = 'scorre lungo il muro esistente'; }
   P.x=x; P.y=y;
   if (text) { si.textContent=text; si.style.display='block'; } else si.style.display='none';
   const t=w2s(x,y); setAssist(sx,sy,{corner,guides,marks,tx:t.x,ty:t.y});
@@ -2572,12 +2576,24 @@ function finishWall() {
   let target = state.wallSnapPoint;
   if (target===null && Math.hypot(P.x-O.x, P.y-O.y) < 0.02) return;
   saveHistory(); state.history[state.history.length-1].wo = state.wallOrigin;   // Annulla riparte da questo vertice
+  const swapped = twinRemoveFor(state.wallOrigin, P, target);                    // seconda faccia disegnata a mano: la automatica sparisce prima
+  if (swapped) { state.wallOrigin = swapped.o; target = swapped.t; }             // i punti tolti spostano gli indici
   if (target===null) target = newPoint(P.x, P.y);
   const wn = weldWall(state.wallOrigin, target);                                 // innesto nelle pareti toccate e taglio degli sbordi
   if (!segExists(state.wallOrigin, target)) state.segments.push({a:state.wallOrigin, b:target});
+  if (swapped) { const N = state.segments.find(g => (g.a===state.wallOrigin && g.b===target) || (g.a===target && g.b===state.wallOrigin)); if (N) { N.tw = swapped.tw; N.twR = 'w'; } wn.push(swapped.msg); }
   const T = new Set([state.wallOrigin, target]);
   wn.push(...weldGaps(T));                                                       // tratto di parete sotto la tramezza
-  const gk = weldGapKeys(T), asked = weldRooms(T, gk);                           // ambienti divisi, locale nuovo
+  const gk = weldGapKeys(T), wr = weldRooms(T, gk);                              // ambienti divisi, locale nuovo
+  let asked = wr.asked;
+  const tw = wr.big && !swapped ? weldTwin(state.wallOrigin, target, wr.big) : null;         // tramezza: seconda linea a 10 cm, dentro l'ambiente che resta
+  if (tw) {
+    wn.push('Tramezza da '+Math.round(TWIN_T*100)+' cm: seconda linea creata (dal menu della linea "Spessore dall\'altro lato" la sposti di là).');
+    const T2 = new Set([tw.pa, tw.pb]);
+    weldGaps(T2);
+    const gk2 = weldGapKeys(new Set([state.wallOrigin, target, tw.pa, tw.pb]));
+    if (weldRooms(T2, gk2, asked).asked) asked = true;
+  }
   state.wallOrigin = target; state.wallPreview=null; state.wallSnapPoint=null; state.wallSnapAngle=null;
   clearAssist();
   if (!asked) checkClosedPolygon(target, gk);
@@ -2673,10 +2689,10 @@ function weldGaps(T) {
 // (demolito) e i locali nascono nuovi. Ritorna true se ha aperto la finestra di un ambiente nuovo.
 function weldGapKeys(T) { return new Set(gapPieces(T).map(xi => { const g = state.segments[xi]; return Math.min(g.a, g.b)+','+Math.max(g.a, g.b); })); }
 function cycHasGap(c, gk) { return c.some((k, i) => { const m = c[(i+1)%c.length]; return gk.has(Math.min(k, m)+','+Math.max(k, m)); }); }
-function weldRooms(T, gk) {
+function weldRooms(T, gk, noAsk) {
   const pip = (x, y, poly) => { let ins = false; for (let i=0, j=poly.length-1; i<poly.length; j=i++) { const A = poly[i], B = poly[j]; if ((A.y>y)!==(B.y>y) && x < (B.x-A.x)*(y-A.y)/(B.y-A.y)+A.x) ins = !ins; } return ins; };
   const key = c => [...c].sort((p, q) => p-q).join(',');
-  let asked = false;
+  let asked = !!noAsk, big = null;
   [...state.ambienti].forEach(A => {
     if (!live(A) || !A.indices.some(i => T.has(i)) || A.indices.length<3) return;
     const poly = A.indices.map(i => state.points[i]), areaA = Math.abs(shoelace(poly)), own = new Set(A.indices);
@@ -2694,15 +2710,260 @@ function weldRooms(T, gk) {
     found.sort((p, q) => q.ar-p.ar);
     if (found.reduce((s2, f) => s2+f.ar, 0) < 0.7*areaA) return;
     if (found.length===1 && key(found[0].cyc)===key(A.indices)) return;               // l'ambiente non e' cambiato
+    if (found.length>=2 && !big) big = found[0].poly;
     const mk = (f, name) => { const c = JSON.parse(JSON.stringify(A)); delete c.fase; delete c.ok; c.indices = f.cyc; c.name = name; c.color = AMB_COLORS[state.ambienti.length % AMB_COLORS.length]; return c; };
-    if (prog() && A.fase!=='nuovo') { A.fase = 'demo'; const base = roomBase(A.name); state.ambienti.push(mk(found[0], base ? roomName(base, null) : freeAmbName())); }     // l'ambiente esistente e' superato nel Progetto: il locale nuovo ha un nome suo, mai uguale
+    if (prog() && A.fase && A.fase!=='nuovo') { A.fase = 'demo'; const base = roomBase(A.name); state.ambienti.push(mk(found[0], base ? roomName(base, null) : freeAmbName())); }     // l'ambiente esistente e' superato nel Progetto: il locale nuovo ha un nome suo, mai uguale
     else A.indices = found[0].cyc;
     found.slice(1).forEach((f, k) => {
       if (!asked) { asked = true; askRoom(f.cyc); return; }
       state.ambienti.push(mk(f, freeAmbName()));
     });
   });
-  return asked;
+  return {asked: asked && !noAsk, big};
+}
+// ── TRAMEZZA DA 10 CM IN AUTOMATICO: la linea disegnata dentro un ambiente, da parete a parete, e' una faccia della tramezza; l'app
+// mette la seconda faccia a 10 cm, dalla parte dell'ambiente piu' grande (la linea di solito chiude il locale piccolo che si sta
+// ricavando). Non si crea se c'e' gia' una linea parallela vicina (la seconda faccia disegnata a mano).
+const TWIN_T = 0.10;
+function hasParallelFace(a, b) {
+  const A = state.points[a], B = state.points[b], L = Math.hypot(B.x-A.x, B.y-A.y); if (L < 1e-6) return false;
+  const ux = (B.x-A.x)/L, uy = (B.y-A.y)/L;
+  return state.segments.some(g => {
+    if ((g.a===a && g.b===b) || (g.a===b && g.b===a) || !live(g) || hid(g)) return false;
+    const C = state.points[g.a], D = state.points[g.b], Lc = Math.hypot(D.x-C.x, D.y-C.y); if (Lc < 1e-6) return false;
+    if (Math.abs(ux*(D.y-C.y)/Lc - uy*(D.x-C.x)/Lc) > 0.035) return false;
+    const dist = Math.abs((C.x-A.x)*uy - (C.y-A.y)*ux); if (dist < 0.02 || dist > 0.30) return false;
+    const s0 = (C.x-A.x)*ux + (C.y-A.y)*uy, s1 = (D.x-A.x)*ux + (D.y-A.y)*uy;
+    return Math.min(L, Math.max(s0, s1)) - Math.max(0, Math.min(s0, s1)) >= 0.5*L;
+  });
+}
+function weldTwin(a, b, big) {
+  const A = state.points[a], B = state.points[b], L = Math.hypot(B.x-A.x, B.y-A.y); if (!A || !B || L < 0.3) return null;
+  const ux = (B.x-A.x)/L, uy = (B.y-A.y)/L, nx = -uy, ny = ux, M = {x:(A.x+B.x)/2, y:(A.y+B.y)/2};
+  const pip = (x, y) => { let ins = false; for (let i=0, j=big.length-1; i<big.length; j=i++) { const P = big[i], Q = big[j]; if ((P.y>y)!==(Q.y>y) && x < (Q.x-P.x)*(y-P.y)/(Q.y-P.y)+P.x) ins = !ins; } return ins; };
+  const side = pip(M.x+nx*0.05, M.y+ny*0.05) ? 1 : pip(M.x-nx*0.05, M.y-ny*0.05) ? -1 : 0;
+  if (!side || hasParallelFace(a, b)) return null;
+  // il muro su cui si attacca ogni estremo: una linea che arriva al punto e non e' parallela alla tramezza
+  const wallAt = p => {
+    const P = state.points[p]; let best = null;
+    state.segments.forEach(g => {
+      if ((g.a===a && g.b===b) || (g.a===b && g.b===a) || !(g.a===p || g.b===p) || !live(g) || hid(g)) return;
+      const C = state.points[g.a===p ? g.b : g.a], l = Math.hypot(C.x-P.x, C.y-P.y); if (l < 1e-6) return;
+      const sn = Math.abs(((C.x-P.x)*uy - (C.y-P.y)*ux)/l); if (sn < WELD_MIN_SIN) return;
+      if (!best || sn > best.sn) best = {C, sn};
+    });
+    return best;
+  };
+  const hit = (p, w) => {                   // retta della seconda faccia (spostata di 10 cm) contro la retta del muro
+    const P = state.points[p], ox = P.x+nx*side*TWIN_T, oy = P.y+ny*side*TWIN_T, vx = w.C.x-P.x, vy = w.C.y-P.y, den = ux*vy - uy*vx;
+    if (Math.abs(den) < 1e-9) return null;
+    const t = ((P.x-ox)*vy - (P.y-oy)*vx)/den, q = {x:ox+ux*t, y:oy+uy*t};
+    return Math.hypot(q.x-P.x, q.y-P.y) <= TWIN_T/WELD_MIN_SIN ? q : null;
+  };
+  const wa = wallAt(a), wb = wallAt(b); if (!wa || !wb) return null;
+  const qa = hit(a, wa), qb = hit(b, wb); if (!qa || !qb) return null;
+  const bak = JSON.stringify({p:state.points, s:state.segments, o:state.openings, a:state.ambienti});
+  const pa = newPoint(qa.x, qa.y), pb = newPoint(qb.x, qb.y);
+  weldWall(pa, pb);
+  const tied = p => state.segments.some(g => g.a===p || g.b===p);
+  if (!tied(pa) || !tied(pb)) { const r = JSON.parse(bak); state.points = r.p; state.segments = r.s; state.openings = r.o; state.ambienti = r.a; return null; }   // non si e' attaccata: tutto come prima
+  if (!segExists(pa, pb)) state.segments.push({a:pa, b:pb});
+  const id = Date.now(), F = state.segments.find(g => (g.a===a && g.b===b) || (g.a===b && g.b===a)), Wg = state.segments.find(g => (g.a===pa && g.b===pb) || (g.a===pb && g.b===pa));
+  if (F) { F.tw = id; F.twR = 'f'; } if (Wg) { Wg.tw = id; Wg.twR = 'w'; }
+  return {pa, pb};
+}
+// la linea che si sta per creare (da o al punto t o alla posizione P) e' la seconda faccia disegnata a mano: quasi parallela alla prima
+// (fino a 20 gradi), a meno di 60 cm, da qualunque lato. La seconda faccia automatica sparisce e la parete torna com'era con la sola prima faccia; poi la linea nuova
+// si innesta normalmente. Restituisce i nuovi indici di o e t
+function twinRemoveFor(o, P, t) {
+  const O = state.points[o], Q = t!=null ? state.points[t] : P; if (!O || !Q) return null;
+  const L = Math.hypot(Q.x-O.x, Q.y-O.y); if (L < 0.3) return null;
+  const ux = (Q.x-O.x)/L, uy = (Q.y-O.y)/L, sdN = X => (X.x-O.x)*(-uy) + (X.y-O.y)*ux, Pt = i => state.points[i];
+  for (const W of state.segments) {
+    if (!W.tw || W.twR!=='w' || !live(W) || locked(W)) continue;
+    const F = state.segments.find(g => g.tw===W.tw && g.twR==='f' && live(g)); if (!F) continue;
+    const ends = [F.a, F.b, W.a, W.b]; if (ends.includes(o) && [F.a, F.b].includes(o) || (t!=null && [F.a, F.b].includes(t))) continue;     // partire dalla prima faccia non e' una seconda faccia
+    const Fa = Pt(F.a), Fb = Pt(F.b), lf = Math.hypot(Fb.x-Fa.x, Fb.y-Fa.y); if (lf < 1e-6) continue;
+    if (Math.abs(ux*(Fb.y-Fa.y)/lf - uy*(Fb.x-Fa.x)/lf) > WELD_SIN) continue;
+    const s0 = (Fa.x-O.x)*ux + (Fa.y-O.y)*uy, s1 = (Fb.x-O.x)*ux + (Fb.y-O.y)*uy;
+    if (Math.min(L, Math.max(s0, s1)) - Math.max(0, Math.min(s0, s1)) < 0.5*lf) continue;
+    const near = w => { const X = Pt(w); return Math.hypot(Fa.x-X.x, Fa.y-X.y) <= Math.hypot(Fb.x-X.x, Fb.y-X.y) ? F.a : F.b; };
+    const sfm = Math.abs(sdN({x:(Fa.x+Fb.x)/2, y:(Fa.y+Fb.y)/2}));            // la linea nuova e' l'altra faccia di F: vicina (fino a 60 cm), da qualunque lato
+    if (sfm < 0.02 || sfm > 0.6) continue;
+    // se il clic e' stato agganciato a un estremo della seconda faccia automatica (stanno a pochi pixel), la linea nuova parte da una copia del punto
+    let oo = o, tt = t;
+    if (W.a===o || W.b===o) oo = newPoint(O.x, O.y);
+    if (t!=null && (W.a===t || W.b===t)) tt = newPoint(Q.x, Q.y);
+    const id = F.tw, map = {[W.a]:near(W.a), [W.b]:near(W.b)}, wi = state.segments.indexOf(W);
+    removeItems(new Set(), new Set([wi]), new Set());
+    state.ambienti.forEach(am => { am.indices = am.indices.map(x => map[x]!==undefined ? map[x] : x).filter((x, k, arr) => arr.length < 2 || x!==arr[(k+1)%arr.length]); });
+    // Stato di fatto: il tratto di parete sotto la tramezza era stato tolto: lo rimetto per ricucire la parete fino alla prima faccia
+    Object.keys(map).forEach(k => {
+      const w = +k, a = map[k];
+      if (state.segments.some(g => (g.a===a && g.b===w) || (g.a===w && g.b===a))) return;
+      const piece = state.segments.find(g => g.a===w || g.b===w);
+      if (piece) { const ng = {...piece, a, b:w}; delete ng.tw; delete ng.twR; delete ng.ok; delete ng.qo; state.segments.push(ng); }
+    });
+    const gone = mergeLooseJoints() || new Set(), sh = i => i - [...gone].filter(g => g < i).length;
+    return {tw:id, o:sh(oo), t:tt!=null ? sh(tt) : null, msg:'La seconda linea disegnata sostituisce quella automatica.'};
+  }
+  return null;
+}
+// "Spessore dall'altro lato": la seconda faccia passa dall'altra parte della prima (stessa distanza); i pezzi di parete e gli ambienti
+// si ricollegano di conseguenza
+function twinFlip(si) {
+  const g0 = state.segments[si]; if (!g0 || !g0.tw) return;
+  const F = state.segments.find(g => g.tw===g0.tw && g.twR==='f' && live(g)), W = state.segments.find(g => g.tw===g0.tw && g.twR==='w' && live(g));
+  if (!F || !W) { setTip('Non trovo le due linee della tramezza.'); return; }
+  const P = i => state.points[i], d = (i, j) => Math.hypot(P(i).x-P(j).x, P(i).y-P(j).y);
+  const ends = [[F.a, d(F.a, W.a) <= d(F.a, W.b) ? W.a : W.b], [F.b, d(F.b, W.a) <= d(F.b, W.b) ? W.a : W.b]];
+  if (ends[0][1]===ends[1][1]) { setTip('Linee della tramezza non riconosciute.'); return; }
+  const plan = [];
+  for (const [f, w] of ends) {
+    const Fp = P(f), Wp = P(w), vx = Wp.x-Fp.x, vy = Wp.y-Fp.y;
+    const other = (g, i) => g.a===i ? g.b : g.a;
+    const kX = state.segments.findIndex(g => g!==F && g!==W && live(g) && (g.a===f || g.b===f) && ((P(other(g, f)).x-Fp.x)*vx + (P(other(g, f)).y-Fp.y)*vy) < 0);
+    const kY = state.segments.findIndex(g => g!==F && g!==W && live(g) && (g.a===w || g.b===w) && ((P(other(g, w)).x-Wp.x)*(-vx) + (P(other(g, w)).y-Wp.y)*(-vy)) < 0);
+    if (kX < 0 || kY < 0) { setTip('La tramezza non arriva su un muro da entrambi i lati: spostala a mano.'); return; }
+    const X = P(other(state.segments[kX], f)); if (Math.hypot(X.x-Fp.x, X.y-Fp.y) <= Math.hypot(vx, vy) + 0.01) { setTip('Dall\'altro lato non c\'è posto per lo spessore.'); return; }
+    plan.push({f, w, kX, kY, to:{x:2*Fp.x-Wp.x, y:2*Fp.y-Wp.y}});
+  }
+  saveHistory();
+  const centers = state.openings.map(o => { const g = state.segments[o.segIdx]; if (!g) return null; const A = P(g.a), B = P(g.b); return {x:A.x+(B.x-A.x)*o.t, y:A.y+(B.y-A.y)*o.t}; });
+  plan.forEach(q => {
+    const gX = state.segments[q.kX], gY = state.segments[q.kY];
+    if (gX.a===q.f) gX.a = q.w; else gX.b = q.w;
+    if (gY.a===q.w) gY.a = q.f; else gY.b = q.f;
+    P(q.w).x = q.to.x; P(q.w).y = q.to.y;
+  });
+  state.openings.forEach((o, i) => {                                         // i serramenti restano dove erano nel mondo
+    const c = centers[i], g = state.segments[o.segIdx]; if (!c || !g) return;
+    const A = P(g.a), B = P(g.b), L2 = (B.x-A.x)**2 + (B.y-A.y)**2 || 1;
+    o.t = clampOpeningT(o, ((c.x-A.x)*(B.x-A.x) + (c.y-A.y)*(B.y-A.y))/L2);
+  });
+  const fa = plan[0].f, fb = plan[1].f, wa = plan[0].w, wb = plan[1].w;
+  state.ambienti.forEach(am => {
+    const has = i => am.indices.includes(i), sw = m => { am.indices = am.indices.map(i => m[i]!==undefined ? m[i] : i); };
+    if (has(fa) && has(fb) && !has(wa) && !has(wb)) sw({[fa]:wa, [fb]:wb});
+    else if (has(wa) && has(wb) && !has(fa) && !has(fb)) sw({[wa]:fa, [wb]:fb});
+  });
+  commit('Spessore della tramezza spostato dall\'altro lato.');
+}
+// cancellando una tramezza: gli ambienti che perdono vertici si ricalcolano dai muri rimasti (come "Ambiente da area"), quelli diventati
+// uguali si fondono (resta il primo); nel Progetto, se il locale nuovo torna uguale all'ambiente superato, l'ambiente esistente torna com'era
+function roomSeeds() {
+  const pip = (x, y, q) => { let ins = false; for (let i=0, j=q.length-1; i<q.length; j=i++) { const A = q[i], B = q[j]; if ((A.y>y)!==(B.y>y) && x < (B.x-A.x)*(y-A.y)/(B.y-A.y)+A.x) ins = !ins; } return ins; };
+  return state.ambienti.map((am, k) => {
+    am._rs = k+1;                                                      // segno che sopravvive alle copie di removeItems
+    const q = am.indices.map(i => state.points[i]).filter(Boolean); if (q.length < 3) return null;
+    const c = ambCenter(am); if (c && pip(c.x, c.y, q)) return {id:k+1, n:am.indices.length, seed:c};
+    const xs = q.map(v => v.x), ys = q.map(v => v.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    for (let i = 0; i < 10; i++) for (let j = 0; j < 10; j++) { const x = x0+(x1-x0)*(i+0.5)/10, y = y0+(y1-y0)*(j+0.5)/10; if (pip(x, y, q)) return {id:k+1, n:am.indices.length, seed:{x, y}}; }
+    return null;
+  }).filter(Boolean);
+}
+function roomsRebound(seeds) {
+  const key = c => [...c].sort((p, q) => p-q).join(',');
+  seeds.forEach(r => {
+    const am = state.ambienti.find(a => a._rs===r.id);
+    if (!am || am.indices.length >= r.n || !live(am)) return;
+    const cyc = boundaryAt(r.seed); if (typeof cyc!=='string') am.indices = cyc;
+  });
+  state.ambienti.forEach(am => { delete am._rs; });
+  const seen = new Map();
+  state.ambienti = state.ambienti.filter(am => {
+    if (!live(am)) return true;
+    const k = key(am.indices); if (seen.has(k)) return false; seen.set(k, am); return true;
+  });
+  if (prog()) {
+    const demo = new Map(state.ambienti.filter(am => am.fase==='demo').map(am => [key(am.indices), am]));
+    state.ambienti = state.ambienti.filter(am => { const d = am.fase==='nuovo' && demo.get(key(am.indices)); if (d) { d.fase = 'es'; return false; } return true; });
+  }
+  state.ambienti = state.ambienti.filter(am => am.indices.length >= 3);
+}
+// Progetto: punto nuovo che spezza un muro esistente (attacco di una tramezza nuova). Restituisce i due pezzi esistenti allineati
+function wallJoint(i) {
+  const P = state.points[i]; if (!P || locked(P)) return null;
+  const all = []; state.segments.forEach((g, k) => { if ((g.a===i || g.b===i) && !hid(g) && g.fase!==(prog() ? 'demo' : 'nuovo')) all.push(k); });
+  const onOld = prog() && all.some(k => state.segments[k].fase && state.segments[k].fase!=='nuovo');
+  if (!P.wj && !onOld) return null;
+  const o = k => { const g = state.segments[k]; return state.points[g.a===i ? g.b : g.a]; }, pairs = [];
+  for (let x = 0; x < all.length; x++) for (let y = x+1; y < all.length; y++) {
+    const C = o(all[x]), D = o(all[y]), cx = C.x-P.x, cy = C.y-P.y, dx = D.x-P.x, dy = D.y-P.y, lc = Math.hypot(cx, cy), ld = Math.hypot(dx, dy);
+    if (lc > 1e-9 && ld > 1e-9 && Math.abs(cx*dy - cy*dx)/(lc*ld) < 0.02 && cx*dx + cy*dy < 0) pairs.push({inc:[all[x], all[y]], C, D});
+  }
+  if (!pairs.length && P.wj && !onOld) {                             // un solo pezzo di parete (l'altro era sotto la tramezza): scorre sulla sua retta
+    const cand = all.filter(k => !state.segments[k].tw);
+    if (cand.length!==1) return null;
+    const C = o(cand[0]), ux = P.x-C.x, uy = P.y-C.y, l = Math.hypot(ux, uy); if (l < 1e-9) return null;
+    let lim = Infinity;                                                // non oltre il primo punto che sta sulla stessa retta
+    state.points.forEach((Q, j) => { if (j===i || !Q || hid(Q)) return; const dq = ((Q.x-C.x)*ux + (Q.y-C.y)*uy)/l, off = Math.abs((Q.x-C.x)*uy - (Q.y-C.y)*ux)/l; if (off < 0.01 && dq > l+1e-6 && dq-0.01 < lim) lim = dq-0.01; });
+    return {inc:cand, C, single:true, ux:ux/l, uy:uy/l, lim};
+  }
+  if (pairs.length!==1) return null;
+  if (onOld && !pairs[0].inc.every(k => state.segments[k].fase && state.segments[k].fase!=='nuovo')) return null;    // nel Progetto scorre solo sul muro esistente
+  return pairs[0];
+}
+// l'attacco scorre lungo il muro esistente: il muro non cambia forma
+function jointSlide(i, x, y) {
+  const J = wallJoint(i); if (!J) return null;
+  if (J.single) { const d = Math.max(0.02, Math.min(J.lim, (x-J.C.x)*J.ux + (y-J.C.y)*J.uy)); return {x:J.C.x+J.ux*d, y:J.C.y+J.uy*d}; }
+  const {C, D} = J, vx = D.x-C.x, vy = D.y-C.y, L2 = vx*vx + vy*vy; if (L2 < 1e-9) return null;
+  const m = 0.02/Math.sqrt(L2), t = Math.max(m, Math.min(1-m, ((x-C.x)*vx + (y-C.y)*vy)/L2));
+  return {x:C.x+vx*t, y:C.y+vy*t};
+}
+// prima di togliere un attacco: il muro esistente si ricuce in un pezzo solo (i due pezzi spariscono con il punto)
+function sewJoint(i) {
+  const J = wallJoint(i); if (!J || J.single) return false;
+  const g1 = state.segments[J.inc[0]], g2 = state.segments[J.inc[1]], c = g1.a===i ? g1.b : g1.a, d = g2.a===i ? g2.b : g2.a;
+  const C = state.points[c], D = state.points[d], L2 = (D.x-C.x)**2 + (D.y-C.y)**2 || 1;
+  const ng = {...g1, a:c, b:d}; delete ng.ok; delete ng.qo; state.segments.push(ng); const nk = state.segments.length-1;
+  state.openings.forEach(o => {
+    if (o.segIdx!==J.inc[0] && o.segIdx!==J.inc[1]) return;
+    const g = state.segments[o.segIdx], A = state.points[g.a], B = state.points[g.b], cx = A.x+(B.x-A.x)*o.t, cy = A.y+(B.y-A.y)*o.t;
+    o.segIdx = nk; o.t = clampOpeningT(o, ((cx-C.x)*(D.x-C.x) + (cy-C.y)*(D.y-C.y))/L2);
+  });
+  state.ambienti.forEach(am => { am.indices = am.indices.filter(x => x!==i); });
+  return true;
+}
+// dopo una cancellazione: gli attacchi rimasti senza tramezza (solo i due pezzi del muro esistente) si riassorbono
+function mergeLooseJoints() {           // restituisce gli indici (di prima) dei punti tolti
+  const orig = state.points.map((_, i) => i), gone = new Set(), deg = i => state.segments.filter(g => g.a===i || g.b===i).length;
+  const findOne = () => {
+    for (let i = 0; i < state.points.length; i++) if (wallJoint(i) && deg(i)===2 && sewJoint(i)) return new Set([i]);
+    // Stato di fatto: due attacchi rimasti con una linea sola ciascuno, allineati e vicini (era il tratto sotto la tramezza): la parete si richiude
+    for (let i = 0; i < state.points.length; i++) {
+      const P = state.points[i]; if (!P || !P.wj || deg(i)!==1) continue;
+      const k1 = state.segments.findIndex(g => g.a===i || g.b===i), g1 = state.segments[k1], c = g1.a===i ? g1.b : g1.a, C = state.points[c];
+      const ux = P.x-C.x, uy = P.y-C.y, l1 = Math.hypot(ux, uy); if (l1 < 1e-9) continue;
+      let best = null;
+      state.points.forEach((Q, j) => {
+        if (j===i || !Q || !Q.wj || deg(j)!==1) return;
+        const dq = ((Q.x-P.x)*ux + (Q.y-P.y)*uy)/l1, off = Math.abs((Q.x-P.x)*uy - (Q.y-P.y)*ux)/l1;
+        if (dq <= 0.005 || dq > WELD_OVERSHOOT+0.15 || off > 0.01) return;
+        const k2 = state.segments.findIndex(g => g.a===j || g.b===j), g2 = state.segments[k2], dd = g2.a===j ? g2.b : g2.a, D = state.points[dd];
+        if (((D.x-Q.x)*ux + (D.y-Q.y)*uy) <= 0 || Math.abs((D.x-Q.x)*uy - (D.y-Q.y)*ux)/l1 > 0.01) return;
+        if (!best || dq < best.dq) best = {j, k2, dd, dq};
+      });
+      if (!best) continue;
+      const D = state.points[best.dd], L2 = (D.x-C.x)**2 + (D.y-C.y)**2 || 1, ng = {...g1, a:c, b:best.dd}; delete ng.ok; delete ng.qo;
+      state.segments.push(ng); const nk = state.segments.length-1;
+      state.openings.forEach(o => {
+        if (o.segIdx!==k1 && o.segIdx!==best.k2) return;
+        const g = state.segments[o.segIdx], A = state.points[g.a], B = state.points[g.b], cx = A.x+(B.x-A.x)*o.t, cy = A.y+(B.y-A.y)*o.t;
+        o.segIdx = nk; o.t = clampOpeningT(o, ((cx-C.x)*(D.x-C.x) + (cy-C.y)*(D.y-C.y))/L2);
+      });
+      return new Set([i, best.j]);
+    }
+    return null;
+  };
+  for (let guard = 0; guard < 200; guard++) {
+    const del = findOne(); if (!del) break;
+    state.ambienti.forEach(am => { am.indices = am.indices.filter(x => !del.has(x)); });
+    removeItems(del, new Set(), new Set());
+    [...del].sort((a, b) => b-a).forEach(i => { gone.add(orig[i]); orig.splice(i, 1); });
+  }
+  return gone;
 }
 function resetWall() {
   state.wallOrigin=null; state.wallPreview=null; state.wallSnapAngle=null; state.wallSnapPoint=null;
@@ -3323,7 +3584,7 @@ function askRoom(cycle) {
     const h = parseFloat(v.h); if (!isFinite(h)||h<=0) return;
     saveHistory();                                   // passo di annulla suo: il primo ↩ toglie l'ambiente, non anche l'ultimo muro
     state.ambienti.push({
-      indices: cycle, name: roomNameRead(v, null, nm0),
+      indices: cycle, name: (n => state.ambienti.some(a => a.name===n) ? freeAmbName() : n)(roomNameRead(v, null, nm0)),     // mai un nome gia' usato
       h, color: AMB_COLORS[state.ambienti.length%AMB_COLORS.length], category:'utile'    // nasce interno: si cambia solo balcone, cantina, box...
     });
     commit('Ambiente registrato: '+area.toFixed(2)+' m², '+(area*h).toFixed(2)+' m³.');
@@ -3410,6 +3671,7 @@ function showMenu(id, x, y, above, avoid) {
     if (g && g.cv==='dubbio') { it.style.display = ''; it.textContent = '✔ Conferma: '+wallName(g.commType||'')+(g.thick ? ' '+Math.round(g.thick*100)+' cm' : ''); }
     else it.style.display = 'none';
     document.getElementById('sm-recalc').style.display = g && wallManual(g) ? '' : 'none';
+    document.getElementById('sm-twflip').style.display = g && g.tw && !lk ? '' : 'none';
   }
   if (id==='quota-context' && state.sel && state.sel.kind==='quota') {
     const g = state.segments[state.sel.idx], A = g && state.points[g.a], B = g && state.points[g.b];
@@ -3572,8 +3834,8 @@ function splitSegment(si, t) {
 function splitSegCore(si, t, usePt) {          // usePt: un punto gia' esistente (spostato sulla linea) che fa da nodo, invece di crearne uno
   const g = state.segments[si], A = state.points[g.a], B = state.points[g.b];
   const n = usePt!=null ? usePt : newPoint(A.x+(B.x-A.x)*t, A.y+(B.y-A.y)*t), oldB = g.b;
-  if (usePt!=null) { state.points[n].x = A.x+(B.x-A.x)*t; state.points[n].y = A.y+(B.y-A.y)*t; }
-  if (g.fase && g.fase!=='nuovo') state.points[n].fase = 'es';
+  if (usePt!=null) { state.points[n].x = A.x+(B.x-A.x)*t; state.points[n].y = A.y+(B.y-A.y)*t; state.points[n].wj = 1; }
+  if (g.fase && g.fase!=='nuovo' && usePt==null) state.points[n].fase = 'es';      // l'attacco di un muro disegnato (usePt) resta suo: nel Progetto e' nuovo e si sposta
   g.b = n; g.ok = false; delete g.qo;
   state.segments.push({...g, a:n, b:oldB});
   const ns = state.segments.length-1;
@@ -3608,7 +3870,10 @@ function deleteSelection(noHist) {
   segDel.forEach(i => { const s = state.segments[i]; [s.a,s.b].forEach(p => { const P = state.points[p]; if (!deg.get(p) && P && !P.note && !P.photo && !locked(P)) pts.add(p); }); });
 
   const pen = state.selPen || new Set(); state.pencilLines = state.pencilLines.filter((_,i) => !pen.has(i)); state.selPen = null;
+  const rs = roomSeeds();
+  pts.forEach(i => sewJoint(i));                                    // il muro si ricuce dove si toglie un attacco
   removeItems(pts, segDel, ops);
+  mergeLooseJoints(); roomsRebound(rs);
   state.multi = false; state.moveSel = false;
   commit('Eliminati '+segDel.size+' linee, '+pts.size+' punti, '+ops.size+' serramenti.');
 }
@@ -3618,7 +3883,10 @@ function deletePoints(indices, noHist) {
   if (indices.length && !del.size) { lockTip(); return; }
   if (!del.size) return;
   if (!noHist) saveHistory();
+  const rs = roomSeeds();
+  del.forEach(i => sewJoint(i));                                    // togliendo l'attacco di una tramezza il muro si ricuce
   removeItems(del, new Set(), new Set());
+  mergeLooseJoints(); roomsRebound(rs);
   commit(indices.length>1 ? indices.length+' punti eliminati.' : 'Punto eliminato.');
 }
 
@@ -4067,7 +4335,9 @@ canvas.addEventListener('pointermove', e => {
     if (d.kind!=='base') dragSnap();                           // la base non entra nell'annulla
     if (d.kind==='point')    dragPointTo(d.idx, w, sx, sy);
     if (d.kind==='multi')    { const m = alignMulti(d, w.x-d.x0, w.y-d.y0, sx, sy), dx=m.dx, dy=m.dy;
-      d.pts.forEach(p => { state.points[p.i].x=p.x+dx; state.points[p.i].y=p.y+dy; });
+      d.pts.forEach(p => { state.points[p.i].x=p.x; state.points[p.i].y=p.y; });                       // gli attacchi scorrono sul loro muro: lo si legge dalla posizione di partenza
+      const to = d.pts.map(p => jointSlide(p.i, p.x+dx, p.y+dy) || {x:p.x+dx, y:p.y+dy});
+      d.pts.forEach((p, k) => { state.points[p.i].x=to[k].x; state.points[p.i].y=to[k].y; });
       d.pen.forEach(q => { state.pencilLines[q.i].pts = q.o.map(p => ({x:p.x+dx, y:p.y+dy})); }); }
     if (d.kind==='base')     { state.underlay.x=d.ux+w.x-d.x0; state.underlay.y=d.uy+w.y-d.y0; }
     if (d.kind==='quota') {
@@ -7645,8 +7915,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.29';
-const APP_NOTE = ["Scale: taglio convenzionale della pianta a 1,50 m. La scala è disegnata piena fino alla quota di taglio; la rampa che la attraversa ha la doppia linea obliqua e quello che sta sopra (gradini, rampe, pianerottoli) è tratteggiato. Le quote si contano lungo la scala: la prima rampa parte da terra, ogni pianerottolo è alla quota raggiunta dalla rampa che ci arriva. Uguale a video, in PDF/JPG e nel DXF (linee tratteggiate)", "Scale a due ali: quando da un pianerottolo partono due rampe, la freccia di salita si divide: un tratto comune dalla partenza al pianerottolo e una freccia con la punta per ogni ala (anche nel DXF)", "Etichetta della scala: tolta l'altezza superata (con il taglio in pianta non serve). Restano le verifiche su alzata e pedata (alzate uguali, oltre 18 cm, pedata sotto 25 cm, regola di Blondel). Le alzate si contano per rampa (pedate + 1); il pianerottolo comune a due ali conta una volta sola"];
+const APP_VERSION = '2.30';
+const APP_NOTE = ["Tramezze: disegni una linea da parete a parete dentro un ambiente e l'app mette da sola la seconda faccia a 10 cm (dalla parte dell'ambiente più grande), taglia il tratto di parete sotto la tramezza e divide l'ambiente nei due locali. Funziona anche con linee e pareti inclinate. Nello Stato di fatto e nel Progetto", "Tramezze: se poi disegni tu la seconda linea (anche non parallela, entro 60 cm dalla prima) quella automatica sparisce e resta la tua, senza linee in mezzo", "Tramezze: nuovo comando \"Spessore dall'altro lato\" nel menu della linea, per mettere la seconda faccia dall'altra parte", "Progetto: la tramezza nuova si può spostare e modificare come nello Stato di fatto. I punti d'attacco sono nuovi e scorrono lungo il muro esistente senza deformarlo (trascinando il punto, o con \"Sposta\" sulla linea). Cancellando la tramezza il muro si ricuce e l'ambiente torna uno", "Punti vicini (le due facce di una tramezza): toccando si prende il più vicino al dito", "Ambienti: il nome non è mai uguale a uno già usato"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
