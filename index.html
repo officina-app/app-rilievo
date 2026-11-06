@@ -2505,10 +2505,10 @@ function finishWall() {
   if (!segExists(state.wallOrigin, target)) state.segments.push({a:state.wallOrigin, b:target});
   const T = new Set([state.wallOrigin, target]);
   wn.push(...weldGaps(T));                                                       // tratto di parete sotto la tramezza
-  const asked = weldRooms(T);                                                    // ambienti divisi, locale nuovo
+  const gk = weldGapKeys(T), asked = weldRooms(T, gk);                           // ambienti divisi, locale nuovo
   state.wallOrigin = target; state.wallPreview=null; state.wallSnapPoint=null; state.wallSnapAngle=null;
   clearAssist();
-  if (!asked) checkClosedPolygon(target);
+  if (!asked) checkClosedPolygon(target, gk);
   commit((wn.length ? wn.join(' ')+' ' : '')+'Clicca il vertice successivo. Per finire: clic sull\'ultimo punto, doppio clic o ESC.');
 }
 // ── Muri disegnati a mano che si innestano nel disegno (tramezze) ──────────────────────────────────────────────
@@ -2516,11 +2516,14 @@ function finishWall() {
 // collega; (2) uno sbordo (estremo oltre un muro, fino a 65 cm) si taglia sul muro; (3) la linea gia' coperta da una esistente non
 // si duplica; (4) il tratto di parete tra le due facce di una tramezza (l'attacco) sparisce, come nel disegno reale; (5) gli ambienti
 // attraversati si dividono e il locale nuovo si registra. Un solo passo di Annulla (la storia e' gia' salvata da finishWall).
-const WELD_OVERSHOOT = 0.65;
+const weldLocked = el => prog() && !!el && !!el.fase && el.fase!=='nuovo';      // rilievo esistente nel Progetto (un elemento appena creato non ha ancora la fase)
+const WELD_OVERSHOOT = 0.65, WELD_UNDERSHOOT = 0.12;                       // sbordo da tagliare, mancanza da prolungare fino al muro (m)
+const WELD_SIN = Math.sin(20*Math.PI/180), WELD_COS = Math.cos(20*Math.PI/180);      // le linee possono essere inclinate fino a 20 gradi rispetto all'ideale
+const WELD_MIN_SIN = 0.3;                                                    // sotto ~17 gradi tra le due linee non e' un attacco ma un affiancamento: niente taglio ne' prolungamento
 function weldTol() { return Math.min(0.06, Math.max(0.01, 6/state.zoom)); }
 function weldWall(a, b) {
   const msgs = [], tol = weldTol();
-  const free = p => { const Q = state.points[p]; return Q && Q.fase!=='es' && !state.segments.some(g => g.a===p || g.b===p); };    // punto appena nato, senza altre linee
+  const free = p => { const Q = state.points[p]; return !!Q && !weldLocked(Q) && !Q.note && !Q.photo && !state.segments.some(g => g.a===p || g.b===p); };    // punto senza linee (appena toccato come origine), non bloccato nel Progetto
   const one = (p, o) => {
     if (!free(p)) return;
     const P = state.points[p], O = state.points[o];
@@ -2540,27 +2543,35 @@ function weldWall(a, b) {
         const A = state.points[S.a], B = state.points[S.b], dx = B.x-A.x, dy = B.y-A.y, den = nx*dy-ny*dx, SL = Math.hypot(dx, dy);
         if (SL<1e-9 || Math.abs(den) < 1e-9*NL*SL) return;
         const sN = ((A.x-O.x)*dy-(A.y-O.y)*dx)/den, u = ((A.x-O.x)*ny-(A.y-O.y)*nx)/den, rest = (1-sN)*NL;
-        if (u<=tol/SL || u>=1-tol/SL || sN*NL<0.1 || rest<=tol || rest>WELD_OVERSHOOT) return;
+        if (u<=tol/SL || u>=1-tol/SL || sN*NL<0.1 || rest<=tol || rest>WELD_OVERSHOOT || Math.abs(den)/(NL*SL) < WELD_MIN_SIN) return;
         if (!best || sN<best.sN) best = {si, t:u, sN, cut:rest};
+      });
+      if (!best && NL>=0.1) state.segments.forEach((S, si) => {                  // (2b) mancanza: la linea si ferma a pochi cm dal muro, la si prolunga
+        if (!live(S) || hid(S) || S.a===S.b || S.a===o || S.b===o) return;
+        const A = state.points[S.a], B = state.points[S.b], dx = B.x-A.x, dy = B.y-A.y, den = nx*dy-ny*dx, SL = Math.hypot(dx, dy);
+        if (SL<1e-9 || Math.abs(den)/(NL*SL) < WELD_MIN_SIN) return;
+        const sN = ((A.x-O.x)*dy-(A.y-O.y)*dx)/den, u = ((A.x-O.x)*ny-(A.y-O.y)*nx)/den, gap = (sN-1)*NL;
+        if (u<=tol/SL || u>=1-tol/SL || gap<=tol || gap>WELD_UNDERSHOOT) return;
+        if (!best || gap<best.gap) best = {si, t:u, gap};
       });
     }
     if (!best) return;
     splitSegCore(best.si, best.t, p);
-    msgs.push(best.cut ? 'Sbordo di '+Math.round(best.cut*100)+' cm tagliato sul muro.' : 'Linea innestata nel muro.');
+    msgs.push(best.cut ? 'Sbordo di '+Math.round(best.cut*100)+' cm tagliato sul muro.' : best.gap ? 'Linea prolungata di '+Math.round(best.gap*100)+' cm fino al muro.' : 'Linea innestata nel muro.');
   };
   one(b, a); one(a, b);
   return msgs.filter((m, i) => msgs.indexOf(m)===i);
 }
 // il tratto di parete tra le due facce di una tramezza: lungo al massimo 65 cm, con ai due capi la parete che prosegue e una faccia
 // che attraversa il locale fino alla parete di fronte. Si toglie dove si puo' (non sul rilievo esistente nel Progetto).
-function weldGaps(T) {
+function gapPieces(T) {                    // indici dei tratti di parete sotto una tramezza (anche bloccati) che toccano i nodi T
   const adj = new Map(), P = i => state.points[i];
   const add = (p, w, si) => { if (!adj.has(p)) adj.set(p, []); adj.get(p).push({w, si}); };
   state.segments.forEach((g, si) => { if (live(g) && !hid(g) && g.a!==g.b) { add(g.a, g.b, si); add(g.b, g.a, si); } });
   const vec = (a, c) => ({x:P(c).x-P(a).x, y:P(c).y-P(a).y}), len = v => Math.hypot(v.x, v.y), del = new Set();
   state.segments.forEach((X, xi) => {
-    if (!live(X) || hid(X) || locked(X) || !(T.has(X.a) || T.has(X.b)) || state.openings.some(o => o.segIdx===xi)) return;
-    const e = vec(X.a, X.b), L = len(e); if (L<0.02 || L>WELD_OVERSHOOT) return;
+    if (!live(X) || hid(X) || !(T.has(X.a) || T.has(X.b)) || state.openings.some(o => o.segIdx===xi)) return;
+    const e = vec(X.a, X.b), L = len(e); if (L<0.02 || L>WELD_OVERSHOOT/WELD_COS+0.05) return;
     const side = (u, v) => {
       const o = adj.get(u) || []; if (o.length!==3) return null;
       const dir = vec(u, v); let cont = 0, stub = null, many = false;
@@ -2568,15 +2579,19 @@ function weldGaps(T) {
         if (r.si===xi) return;
         const f = vec(u, r.w), lf = len(f); if (lf<1e-9) { many = true; return; }
         const c = (f.x*dir.x+f.y*dir.y)/(lf*L);
-        if (c < -0.98) cont++; else if (Math.abs(c) < 0.15) { if (stub) many = true; stub = {w:r.w, f, lf}; } else many = true;
+        if (c < -WELD_COS) cont++; else if (Math.abs(c) < WELD_SIN+0.02) { if (stub) many = true; stub = {w:r.w, f, lf}; } else many = true;
       });
       return !many && cont===1 && stub ? stub : null;
     };
     const su = side(X.a, X.b), sv = side(X.b, X.a);
-    if (!su || !sv || su.lf<0.5 || sv.lf<0.5 || su.f.x*sv.f.x+su.f.y*sv.f.y < 0.95*su.lf*sv.lf) return;
+    if (!su || !sv || su.lf<0.5 || sv.lf<0.5 || su.f.x*sv.f.x+su.f.y*sv.f.y < WELD_COS*su.lf*sv.lf) return;
     if ((adj.get(su.w)||[]).length<3 || (adj.get(sv.w)||[]).length<3) return;             // la tramezza arriva alla parete di fronte
     del.add(xi);
   });
+  return [...del];
+}
+function weldGaps(T) {
+  const del = new Set(gapPieces(T).filter(xi => !weldLocked(state.segments[xi])));
   if (!del.size) return [];
   removeItems(new Set(), del, new Set());
   return [del.size===1 ? 'Tolto il tratto di parete sotto la tramezza.' : 'Tolti '+del.size+' tratti di parete sotto la tramezza.'];
@@ -2584,7 +2599,9 @@ function weldGaps(T) {
 // ambienti attraversati dai muri nuovi: dentro il vecchio contorno cerco i locali chiusi (come "Ambiente da muri") e li separo.
 // Stato di fatto: il vecchio ambiente prende il locale piu' grande, gli altri nascono nuovi. Progetto: l'ambiente esistente e' superato
 // (demolito) e i locali nascono nuovi. Ritorna true se ha aperto la finestra di un ambiente nuovo.
-function weldRooms(T) {
+function weldGapKeys(T) { return new Set(gapPieces(T).map(xi => { const g = state.segments[xi]; return Math.min(g.a, g.b)+','+Math.max(g.a, g.b); })); }
+function cycHasGap(c, gk) { return c.some((k, i) => { const m = c[(i+1)%c.length]; return gk.has(Math.min(k, m)+','+Math.max(k, m)); }); }
+function weldRooms(T, gk) {
   const pip = (x, y, poly) => { let ins = false; for (let i=0, j=poly.length-1; i<poly.length; j=i++) { const A = poly[i], B = poly[j]; if ((A.y>y)!==(B.y>y) && x < (B.x-A.x)*(y-A.y)/(B.y-A.y)+A.x) ins = !ins; } return ins; };
   const key = c => [...c].sort((p, q) => p-q).join(',');
   let asked = false;
@@ -2598,7 +2615,7 @@ function weldRooms(T) {
       if (!pip(x, y, poly) || found.some(f => pip(x, y, f.poly))) continue;
       const cyc = boundaryAt({x, y}); if (typeof cyc==='string') continue;
       const pl = cyc.map(k => state.points[k]), ar = Math.abs(shoelace(pl));
-      if (!cyc.every(k => own.has(k)) || ar < Math.max(0.3, 0.06*areaA) || ar > areaA+0.02) continue;
+      if (!cyc.every(k => own.has(k)) || ar < Math.max(0.3, 0.06*areaA) || ar > areaA+0.02 || cycHasGap(cyc, gk)) continue;
       found.push({cyc, poly:pl, ar});
     }
     if (!found.length) return;
@@ -3143,7 +3160,7 @@ function addPoint(p) {
 // ═══════════════════════════════════════════════════════════
 //  AMBIENTE CHIUSO
 // ═══════════════════════════════════════════════════════════
-function checkClosedPolygon(lastIdx) {
+function checkClosedPolygon(lastIdx, gk) {          // gk: tratti di attacco di una tramezza (il loro contorno non e' un locale)
   const adj = {};
   state.points.forEach((_,i) => adj[i]=[]);
   state.segments.forEach(s => { if (s.layer==='MURI_EST' || !live(s)) return;      // i muri esterni non chiudono mai un ambiente; ne' i demoliti nel Progetto
@@ -3159,6 +3176,7 @@ function checkClosedPolygon(lastIdx) {
     }
   })(lastIdx, [lastIdx], new Set([lastIdx]));
 
+  if (gk) for (let i=cycles.length-1; i>=0; i--) if (cycHasGap(cycles[i], gk)) cycles.splice(i, 1);
   if (!cycles.length) return;
   const cycle = cycles.sort((a,b)=>a.length-b.length)[0];
   const key = [...cycle].sort((a,b)=>a-b).join(',');
@@ -7559,8 +7577,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.26';
-const APP_NOTE = ["Import di JPG e PDF: resta una sola lettura dei tratti, \"Foto di un foglio di carta\"; le altre due, che davano risultati scarsi, sono tolte e il menu a tendina non compare più", "Tramezze disegnate a mano (Stato di fatto e Progetto): l'app le riconosce come muri. Un estremo che cade su una parete la spezza in quel punto e si collega; uno sbordo oltre la parete (fino a 65 cm) si taglia sul muro; una linea già coperta da una esistente non si duplica; il tratto di parete tra le due facce della tramezza (fino a 65 cm, con la faccia che arriva alla parete di fronte) sparisce, come nel disegno reale; l'ambiente attraversato si divide e il locale nuovo si registra. Un solo passaggio di Annulla. Nel Progetto l'ambiente esistente risulta superato e i locali nuovi nascono come costruzioni; il tratto di parete esistente resta", "Porte: nuovo comando \"Porta a vetro\" nel menu della porta (e \"Porta a pannello opaco\" per tornare indietro). L'anta a vetro ha la linea di vetro in mezzeria, a video, in PDF/JPG e nel DXF", "Serramenti: quando tocchi una finestra sulla pianta, l'elenco dei serramenti scorre da solo fino a lei; lo stesso nella Tabella serramenti, dove la riga è evidenziata", "Porte: escluse dai dati energetici dei serramenti (nessuna specchiatura, vetro, telaio, cassonetto). Il comando della porta diventa \"Trasmittanza e note\": la trasmittanza e gli altri dati nel campo note. Nella tabella e nel CSV la porta ha una colonna Trasmittanza e le note", "Ricalco da immagine: ora propone anche le finestre e le porte, come già faceva l'import da DXF. Le finestre si riconoscono dalla linea di vetro nello spessore del muro tra le due spalle (anche con spalle sbiadite); le porte dai varchi chiusi nel muro, larghi da 50 a 130 cm. Compaiono nell'anteprima (azzurro le finestre, arancione le porte), si contano nella riga di stato e vengono create con \"Applica al disegno\", da controllare. Su una catastale di prova propone, per esempio, 16 finestre e 2 porte sul piano terra e 16 finestre e 9 porte sul piano primo.", "Ricalco da immagine: corretto lo spessore dei muri esterni letto dal disegno, che con la 2.25 poteva scendere a pochi centimetri perché contava anche le linee singole (vetro, monconi)."];
+const APP_VERSION = '2.27';
+const APP_NOTE = ["Tramezze disegnate a mano: corretto il caso in cui il punto di partenza non si collegava alla parete (restava staccato e l'ambiente non si divideva); ora partenza e arrivo si innestano sempre, anche nel Progetto", "Tramezze: funzionano anche con linee non parallele e inclinate fino a 20 gradi, e con pareti non perpendicolari (anche inclinate di 20 gradi). La linea che si ferma a meno di 12 cm dal muro viene prolungata fino al muro, lo sbordo oltre il muro (fino a 65 cm) viene tagliato, il tratto di parete tra le due facce sparisce. Il collegamento è diretto: stesso risultato a video, in PDF/JPG e nel DXF, senza sbavature da ripulire a mano", "Progetto: l'area tra le due facce di una tramezza non viene più proposta come ambiente"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
