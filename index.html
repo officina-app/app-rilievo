@@ -282,7 +282,8 @@
   <div class="menu-item" onclick="openingMenuAction('multi')">➕ Selezione multipla<small class="md">Poi tocca altri elementi per agire su tutti</small></div>
   <div class="menu-item" data-lock onclick="openingMenuAction('setdist')">📏 Imposta distanza<small class="md">Posizionalo a una distanza misurata dallo spigolo</small></div>
   <div class="menu-item" data-lock onclick="openingMenuAction('edit')">✎ Modifica misure<small class="md">Larghezza, altezza, davanzale e nome</small></div>
-  <div class="menu-item" onclick="openingMenuAction('energy')">📋 Dati energetici<small class="md">Vetro, telaio, cassonetto e specchiature, per l'APE</small></div>
+  <div class="menu-item" data-lock id="om-glass" onclick="openingMenuAction('glass')">🪟 Porta a vetro<small class="md">Anta in vetro invece che a pannello opaco</small></div>
+  <div class="menu-item" id="om-energy" onclick="openingMenuAction('energy')">📋 Dati energetici<small class="md">Vetro, telaio, cassonetto e specchiature, per l'APE</small></div>
   <div class="menu-item" data-lock onclick="openingMenuAction('delete')">🗑 Elimina<small class="md">Il muro si richiude</small></div>
   <div class="menu-item" onclick="openingMenuAction('copy')">⎘ Copia<small class="md">Solo il serramento, senza muro: poi tocca i muri dove incollarlo, uno dopo l'altro</small></div>
   <div class="menu-item" onclick="openingMenuAction('table')">▦ Tabella serramenti<small class="md">Tutte le bucature in una schermata, misure modificabili</small></div>
@@ -359,11 +360,7 @@
   </div>
   <div id="imp-text"><span id="imp-info"></span> <span id="imp-hint"></span>
     <div id="imp-ctl">
-      <select id="imp-ink" onchange="impInkChange(this.value)">
-        <option value="dark">Tratti scuri su fondo chiaro</option>
-        <option value="light">Tratti chiari su fondo scuro</option>
-        <option value="photo">Foto di un foglio di carta</option>
-      </select>
+      <select id="imp-ink" style="display:none"><option value="photo">Foto di un foglio di carta</option></select>
       <label><input type="checkbox" id="imp-prev" checked onchange="impPrevSchedule()"> Mostra tratti</label>
       <span id="imp-thr-wrap">Soglia <input type="range" id="imp-thr" min="10" max="250" value="140" oninput="impThrChange(+this.value)"></span>
     </div>
@@ -2034,11 +2031,12 @@ function ambHighlightTip(k) {
 // Porta: anta spessa 5 cm aperta a 90 gradi con la cerniera all'inizio del varco e quarto di circonferenza tratteggiato.
 const OP_PR = 0.05;
 function openingNv(op) { return Math.max(0, Math.round(+(op.energy && op.energy.nv) || 0)); }
-function openingGeom(type, w, nv, hinge, side) {
+function openingGeom(type, w, nv, hinge, side, glass) {
   const h = OP_PR/2, segs = [], polys = [], arcs = [];
   if (type==='P') {                                   // hinge 'a' = cerniera all'inizio del varco, 'b' = alla fine; side +1 = anta a sinistra del verso del muro, -1 a destra
     const mx = hinge==='b', my = side<0, A = Math.atan2(w, OP_PR)*180/Math.PI, X = x => mx ? w-x : x, Yv = y => my ? -y : y;
     polys.push([{x:0,y:0},{x:OP_PR,y:0},{x:OP_PR,y:w},{x:0,y:w}].map(q => ({x:X(q.x), y:Yv(q.y)})));
+    if (glass) segs.push([X(OP_PR/2), Yv(0), X(OP_PR/2), Yv(w)]);      // anta a vetro: linea di vetro in mezzeria, come nelle finestre
     arcs.push({cx: mx ? w : 0, cy:0, r:Math.hypot(OP_PR, w), a0: mx ? (my ? 180 : 180-A) : (my ? 360-A : 0), a1: mx ? (my ? 180+A : 180) : (my ? 360 : A), dash:true});
     return {segs, polys, arcs};
   }
@@ -2059,7 +2057,7 @@ function drawOpenings() {
     const col     = faseCol(op) || (PRINT ? (op.type==='P' ? C.door : C.win) : (op.type==='F' ? C.win : op.type==='P' ? C.door : C.pf));
 
     ctx.save(); ctx.translate(p.sx,p.sy); ctx.rotate(ang);
-    const kpx = segLen>0 ? segLenPx/segLen : state.zoom, G = openingGeom(op.type, op.width, openingNv(op), op.hinge, op.side);      // px per metro reale
+    const kpx = segLen>0 ? segLenPx/segLen : state.zoom, G = openingGeom(op.type, op.width, openingNv(op), op.hinge, op.side, op.glass);      // px per metro reale
     const X = x => (x - op.width/2)*kpx, Y = y => -y*kpx;                                                    // p e' gia' nella posizione disegnata (in mezzeria della bucatura)
     ctx.strokeStyle = on ? '#fff' : col; ctx.lineWidth = on ? 2.5 : prLw(1.5, 0.18);
     G.segs.forEach(([x1,y1,x2,y2]) => { ctx.beginPath(); ctx.moveTo(X(x1),Y(y1)); ctx.lineTo(X(x2),Y(y2)); ctx.stroke(); });
@@ -2503,11 +2501,119 @@ function finishWall() {
   if (target===null && Math.hypot(P.x-O.x, P.y-O.y) < 0.02) return;
   saveHistory(); state.history[state.history.length-1].wo = state.wallOrigin;   // Annulla riparte da questo vertice
   if (target===null) target = newPoint(P.x, P.y);
+  const wn = weldWall(state.wallOrigin, target);                                 // innesto nelle pareti toccate e taglio degli sbordi
   if (!segExists(state.wallOrigin, target)) state.segments.push({a:state.wallOrigin, b:target});
+  const T = new Set([state.wallOrigin, target]);
+  wn.push(...weldGaps(T));                                                       // tratto di parete sotto la tramezza
+  const asked = weldRooms(T);                                                    // ambienti divisi, locale nuovo
   state.wallOrigin = target; state.wallPreview=null; state.wallSnapPoint=null; state.wallSnapAngle=null;
   clearAssist();
-  checkClosedPolygon(target);
-  commit('Clicca il vertice successivo. Per finire: clic sull\'ultimo punto, doppio clic o ESC.');
+  if (!asked) checkClosedPolygon(target);
+  commit((wn.length ? wn.join(' ')+' ' : '')+'Clicca il vertice successivo. Per finire: clic sull\'ultimo punto, doppio clic o ESC.');
+}
+// ── Muri disegnati a mano che si innestano nel disegno (tramezze) ──────────────────────────────────────────────
+// Una linea nuova non resta sovrapposta alle altre: (1) un estremo che cade sulla linea di un muro la spezza in quel punto e si
+// collega; (2) uno sbordo (estremo oltre un muro, fino a 65 cm) si taglia sul muro; (3) la linea gia' coperta da una esistente non
+// si duplica; (4) il tratto di parete tra le due facce di una tramezza (l'attacco) sparisce, come nel disegno reale; (5) gli ambienti
+// attraversati si dividono e il locale nuovo si registra. Un solo passo di Annulla (la storia e' gia' salvata da finishWall).
+const WELD_OVERSHOOT = 0.65;
+function weldTol() { return Math.min(0.06, Math.max(0.01, 6/state.zoom)); }
+function weldWall(a, b) {
+  const msgs = [], tol = weldTol();
+  const free = p => { const Q = state.points[p]; return Q && Q.fase!=='es' && !state.segments.some(g => g.a===p || g.b===p); };    // punto appena nato, senza altre linee
+  const one = (p, o) => {
+    if (!free(p)) return;
+    const P = state.points[p], O = state.points[o];
+    let best = null;
+    state.segments.forEach((S, si) => {                                          // (1) l'estremo cade sulla linea di un muro
+      if (!live(S) || hid(S) || S.a===S.b || S.a===p || S.b===p) return;
+      const A = state.points[S.a], B = state.points[S.b], dx = B.x-A.x, dy = B.y-A.y, L2 = dx*dx+dy*dy; if (L2<1e-12) return;
+      const t = ((P.x-A.x)*dx+(P.y-A.y)*dy)/L2, eps = tol/Math.sqrt(L2);
+      if (t<=eps || t>=1-eps) return;
+      const d = Math.hypot(P.x-(A.x+t*dx), P.y-(A.y+t*dy));
+      if (d<=tol && (!best || d<best.d)) best = {si, t, d};
+    });
+    if (!best) {                                                                 // (2) sbordo: la linea attraversa un muro e lo supera di poco
+      const nx = P.x-O.x, ny = P.y-O.y, NL = Math.hypot(nx, ny);
+      if (NL>=0.1) state.segments.forEach((S, si) => {
+        if (!live(S) || hid(S) || S.a===S.b || S.a===o || S.b===o) return;
+        const A = state.points[S.a], B = state.points[S.b], dx = B.x-A.x, dy = B.y-A.y, den = nx*dy-ny*dx, SL = Math.hypot(dx, dy);
+        if (SL<1e-9 || Math.abs(den) < 1e-9*NL*SL) return;
+        const sN = ((A.x-O.x)*dy-(A.y-O.y)*dx)/den, u = ((A.x-O.x)*ny-(A.y-O.y)*nx)/den, rest = (1-sN)*NL;
+        if (u<=tol/SL || u>=1-tol/SL || sN*NL<0.1 || rest<=tol || rest>WELD_OVERSHOOT) return;
+        if (!best || sN<best.sN) best = {si, t:u, sN, cut:rest};
+      });
+    }
+    if (!best) return;
+    splitSegCore(best.si, best.t, p);
+    msgs.push(best.cut ? 'Sbordo di '+Math.round(best.cut*100)+' cm tagliato sul muro.' : 'Linea innestata nel muro.');
+  };
+  one(b, a); one(a, b);
+  return msgs.filter((m, i) => msgs.indexOf(m)===i);
+}
+// il tratto di parete tra le due facce di una tramezza: lungo al massimo 65 cm, con ai due capi la parete che prosegue e una faccia
+// che attraversa il locale fino alla parete di fronte. Si toglie dove si puo' (non sul rilievo esistente nel Progetto).
+function weldGaps(T) {
+  const adj = new Map(), P = i => state.points[i];
+  const add = (p, w, si) => { if (!adj.has(p)) adj.set(p, []); adj.get(p).push({w, si}); };
+  state.segments.forEach((g, si) => { if (live(g) && !hid(g) && g.a!==g.b) { add(g.a, g.b, si); add(g.b, g.a, si); } });
+  const vec = (a, c) => ({x:P(c).x-P(a).x, y:P(c).y-P(a).y}), len = v => Math.hypot(v.x, v.y), del = new Set();
+  state.segments.forEach((X, xi) => {
+    if (!live(X) || hid(X) || locked(X) || !(T.has(X.a) || T.has(X.b)) || state.openings.some(o => o.segIdx===xi)) return;
+    const e = vec(X.a, X.b), L = len(e); if (L<0.02 || L>WELD_OVERSHOOT) return;
+    const side = (u, v) => {
+      const o = adj.get(u) || []; if (o.length!==3) return null;
+      const dir = vec(u, v); let cont = 0, stub = null, many = false;
+      o.forEach(r => {
+        if (r.si===xi) return;
+        const f = vec(u, r.w), lf = len(f); if (lf<1e-9) { many = true; return; }
+        const c = (f.x*dir.x+f.y*dir.y)/(lf*L);
+        if (c < -0.98) cont++; else if (Math.abs(c) < 0.15) { if (stub) many = true; stub = {w:r.w, f, lf}; } else many = true;
+      });
+      return !many && cont===1 && stub ? stub : null;
+    };
+    const su = side(X.a, X.b), sv = side(X.b, X.a);
+    if (!su || !sv || su.lf<0.5 || sv.lf<0.5 || su.f.x*sv.f.x+su.f.y*sv.f.y < 0.95*su.lf*sv.lf) return;
+    if ((adj.get(su.w)||[]).length<3 || (adj.get(sv.w)||[]).length<3) return;             // la tramezza arriva alla parete di fronte
+    del.add(xi);
+  });
+  if (!del.size) return [];
+  removeItems(new Set(), del, new Set());
+  return [del.size===1 ? 'Tolto il tratto di parete sotto la tramezza.' : 'Tolti '+del.size+' tratti di parete sotto la tramezza.'];
+}
+// ambienti attraversati dai muri nuovi: dentro il vecchio contorno cerco i locali chiusi (come "Ambiente da muri") e li separo.
+// Stato di fatto: il vecchio ambiente prende il locale piu' grande, gli altri nascono nuovi. Progetto: l'ambiente esistente e' superato
+// (demolito) e i locali nascono nuovi. Ritorna true se ha aperto la finestra di un ambiente nuovo.
+function weldRooms(T) {
+  const pip = (x, y, poly) => { let ins = false; for (let i=0, j=poly.length-1; i<poly.length; j=i++) { const A = poly[i], B = poly[j]; if ((A.y>y)!==(B.y>y) && x < (B.x-A.x)*(y-A.y)/(B.y-A.y)+A.x) ins = !ins; } return ins; };
+  const key = c => [...c].sort((p, q) => p-q).join(',');
+  let asked = false;
+  [...state.ambienti].forEach(A => {
+    if (!live(A) || !A.indices.some(i => T.has(i)) || A.indices.length<3) return;
+    const poly = A.indices.map(i => state.points[i]), areaA = Math.abs(shoelace(poly)), own = new Set(A.indices);
+    const xs = poly.map(q => q.x), ys = poly.map(q => q.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), N = 14;
+    const found = [];
+    for (let i=0; i<N; i++) for (let j=0; j<N; j++) {
+      const x = x0+(x1-x0)*(i+0.5)/N, y = y0+(y1-y0)*(j+0.5)/N;
+      if (!pip(x, y, poly) || found.some(f => pip(x, y, f.poly))) continue;
+      const cyc = boundaryAt({x, y}); if (typeof cyc==='string') continue;
+      const pl = cyc.map(k => state.points[k]), ar = Math.abs(shoelace(pl));
+      if (!cyc.every(k => own.has(k)) || ar < Math.max(0.3, 0.06*areaA) || ar > areaA+0.02) continue;
+      found.push({cyc, poly:pl, ar});
+    }
+    if (!found.length) return;
+    found.sort((p, q) => q.ar-p.ar);
+    if (found.reduce((s2, f) => s2+f.ar, 0) < 0.7*areaA) return;
+    if (found.length===1 && key(found[0].cyc)===key(A.indices)) return;               // l'ambiente non e' cambiato
+    const mk = (f, name) => { const c = JSON.parse(JSON.stringify(A)); delete c.fase; delete c.ok; c.indices = f.cyc; c.name = name; c.color = AMB_COLORS[state.ambienti.length % AMB_COLORS.length]; return c; };
+    if (prog() && A.fase!=='nuovo') { A.fase = 'demo'; state.ambienti.push(mk(found[0], A.name)); }     // l'ambiente esistente e' superato nel Progetto
+    else A.indices = found[0].cyc;
+    found.slice(1).forEach((f, k) => {
+      if (!asked) { asked = true; askRoom(f.cyc); return; }
+      state.ambienti.push(mk(f, A.name+' ('+(k+2)+')'));
+    });
+  });
+  return asked;
 }
 function resetWall() {
   state.wallOrigin=null; state.wallPreview=null; state.wallSnapAngle=null; state.wallSnapPoint=null;
@@ -2640,7 +2746,7 @@ function glassGrid(L, H, e) {
 }
 // dimensioni di UNA specchiatura e quante sono di vetro; null senza scheda energetica o con troppi divisori
 function openingGlass(op) {
-  const e = op.energy; if (!e) return null;
+  const e = op.energy; if (!e || op.type==='P') return null;       // la porta non ha specchiature
   const g = glassGrid(op.width, opHb(op), e); if (!g) return null;
   return {n:g.n - (op.type==='PF' ? 0 : Math.min(Math.max(0, e.pannelli||0), g.n)), nTot:g.n, L:g.w, H:g.h};
 }
@@ -2699,6 +2805,7 @@ function opPanelUpdate(force) {
   const sig = JSON.stringify([idx.map(i => { const o = state.openings[i], e = o.energy; return [o.label, o.type, o.width, opHb(o), e && [e.nv, e.no, e.pannelli, e.spTelaio]]; }), cur]);
   if (!force && sig===OPPANEL_SIG && pn.style.display!=='none') return;
   OPPANEL_SIG = sig; pn.style.display = 'block';
+  const top0 = pn.scrollTop;
   const m2 = v => v.toFixed(2).replace('.', ',');
   pn.innerHTML = '<div style="color:#aaa;margin-bottom:6px">Serramenti: specchiature dai dati energetici. Tocca una scheda per selezionarlo.</div>'+(idx.length ? '' : '<div>Nessuna finestra o porta-finestra.</div>')+
     idx.map(i => {
@@ -2707,6 +2814,9 @@ function opPanelUpdate(force) {
         '<b style="color:#fff">'+o.label+'</b> <span>'+m2(o.width)+' x '+m2(opHb(o))+' m</span><div style="margin:4px 0">'+r.svg+'</div><div style="color:'+r.msg[0]+'">'+r.msg[1]+'</div></div>';
     }).join('');
   pn.querySelectorAll('[data-pi]').forEach(el => el.addEventListener('click', () => { state.sel = {kind:'opening', idx:+el.dataset.pi}; draw(); }));
+  pn.scrollTop = top0;                                       // il ridisegno non riporta l'elenco in cima
+  const card = cur>=0 ? pn.querySelector('[data-pi="'+cur+'"]') : null;     // serramento scelto sulla pianta: l'elenco ci scorre sopra da solo, se non e' gia' tutto in vista
+  if (card && (card.offsetTop < pn.scrollTop || card.offsetTop+card.offsetHeight > pn.scrollTop+pn.clientHeight)) pn.scrollTop = Math.max(0, card.offsetTop - (pn.clientHeight-card.offsetHeight)/2);
 }
 // superficie di bucatura, vetrata e telaio per differenza
 function openingAreas(op) {
@@ -2814,6 +2924,7 @@ function openingMenuAction(action) {
   if (action==='inherit') { inheritStart('opening', i); return; }
   if (action==='copy')   { clipCopyOpening(i); return; }
   if (action==='table')  { opTableOpen(); return; }
+  if (action==='glass')  { if (op.type!=='P') return; saveHistory(); op.glass = !op.glass; if (!op.glass) delete op.glass; commit(op.label+(op.glass ? ': porta a vetro.' : ': porta a pannello opaco.')); return; }
   if (action==='demo')   { setDemo([], [i], [], op.fase!=='demo'); return; }
   if (action==='delete') { saveHistory(); state.openings.splice(i,1); state.sel=null; commit('Serramento eliminato.'); return; }
   if (action==='editall') {
@@ -2852,6 +2963,20 @@ function openingMenuAction(action) {
       const tt = clampOpeningT(op, d/len), cl = Math.abs(tt - d/len) > 1e-6;
       saveHistory(); op.t = tt;
       commit(cl ? 'Serramento riposizionato al limite: deve restare dentro la parete.' : 'Serramento riposizionato.');
+    });
+    return;
+  }
+  if (action==='energy' && op.type==='P') {         // porta: solo trasmittanza e note (gli altri dati vanno nelle note)
+    const e0 = op.energy || {};
+    askDialog('Porta - '+op.label, [
+      {label:'Trasmittanza (W/m²K)', id:'u', type:'number', value:e0.u!=null ? String(e0.u) : ''},
+      {label:'Note (altri dati: materiale, vetro, spessori...)', id:'note', type:'textarea', value:e0.note||''},
+    ], 'Facoltativo. La porta non entra nei dati energetici dei serramenti.', v => {
+      saveHistory();
+      const u = parseFloat(String(v.u).replace(',', '.'));
+      op.energy = {u:isFinite(u) && u>0 ? u : undefined, note:v.note||undefined, t:Date.now()};
+      if (op.energy.u===undefined && !op.energy.note) delete op.energy;
+      commit('Dati di '+op.label+' salvati.');
     });
     return;
   }
@@ -3182,6 +3307,13 @@ function showMenu(id, x, y, above, avoid) {
       '<small class="md">'+(back ? 'Resta com\'è nel progetto' : amb ? 'Cambia nel progetto: disegna il nuovo ambiente' : 'Giallo nel progetto, entra nelle quantità')+'</small>';
   });
   mn.querySelectorAll('[data-demotract]').forEach(it => { it.style.display = can && el.fase==='es' ? '' : 'none'; });
+  if (id==='opening-context' && el && state.sel.kind==='opening') {          // la porta e' un'entita' a parte: pannello opaco o vetro, e per l'energia solo trasmittanza e note
+    const door = el.type==='P', g = document.getElementById('om-glass'), en = document.getElementById('om-energy');
+    g.style.display = door && !lk ? '' : 'none';
+    if (door) g.innerHTML = (el.glass ? '▮ Porta a pannello opaco' : '🪟 Porta a vetro')+'<small class="md">'+(el.glass ? 'Anta piena, non vetrata' : 'Anta in vetro invece che a pannello opaco')+'</small>';
+    en.innerHTML = door ? '📋 Trasmittanza e note<small class="md">Trasmittanza della porta; gli altri dati nel campo note</small>'
+                        : ("📋 Dati energetici<small class=\"md\">Vetro, telaio, cassonetto e specchiature, per l'APE</small>");
+  }
   if (id==='entity-context' && state.sel && state.sel.kind==='pencil') document.getElementById('ent-edit').style.display = 'none';
   if (id==='seg-context') {                    // muro esterno col tipo proposto dall'app: conferma con un tocco
     const g = state.sel && state.sel.kind==='segment' && state.segments[state.sel.idx], it = document.getElementById('sm-conf');
@@ -3347,9 +3479,10 @@ function splitSegment(si, t) {
   commit('Linea spezzata nel punto '+state.points[n].label+': trascinalo per correggere.');
 }
 // la parte che spezza, senza storia ne' commit: ritorna il nuovo punto e il nuovo segmento (la parte dopo il punto)
-function splitSegCore(si, t) {
+function splitSegCore(si, t, usePt) {          // usePt: un punto gia' esistente (spostato sulla linea) che fa da nodo, invece di crearne uno
   const g = state.segments[si], A = state.points[g.a], B = state.points[g.b];
-  const n = newPoint(A.x+(B.x-A.x)*t, A.y+(B.y-A.y)*t), oldB = g.b;
+  const n = usePt!=null ? usePt : newPoint(A.x+(B.x-A.x)*t, A.y+(B.y-A.y)*t), oldB = g.b;
+  if (usePt!=null) { state.points[n].x = A.x+(B.x-A.x)*t; state.points[n].y = A.y+(B.y-A.y)*t; }
   if (g.fase && g.fase!=='nuovo') state.points[n].fase = 'es';
   g.b = n; g.ok = false; delete g.qo;
   state.segments.push({...g, a:n, b:oldB});
@@ -4843,9 +4976,9 @@ function exportDXF() {
     const door = op.type==='P', SL = lay(op, door ? 'PORTE' : 'SERRAMENTI');
     const mx=A.x+(B.x-A.x)*op.t, my=A.y+(B.y-A.y)*op.t;
     const ux=(B.x-A.x)/len, uy=(B.y-A.y)/len, hw=op.width/2, rot = Math.atan2(uy, ux)*180/Math.PI;
-    const nv = door ? 0 : openingNv(op), nm = door ? 'PORTA_'+mm(op.width)+'_'+(op.hinge==='b' ? 'b' : 'a')+(op.side<0 ? 'm' : 'p') : 'SERR_'+op.type+'_'+mm(op.width)+'_V'+nv;
+    const nv = door ? 0 : openingNv(op), nm = door ? 'PORTA_'+mm(op.width)+'_'+(op.hinge==='b' ? 'b' : 'a')+(op.side<0 ? 'm' : 'p')+(op.glass ? '_V' : '') : 'SERR_'+op.type+'_'+mm(op.width)+'_V'+nv;
     const yo = cuts.off[state.openings.indexOf(op)] || 0;                                                   // stesso scostamento che si vede a video
-    defOp(nm, openingGeom(op.type, op.width, nv, op.hinge, op.side)); D.insert(SL, nm, mx-ux*hw-uy*yo, my-uy*hw+ux*yo, rot, 1, 1);
+    defOp(nm, openingGeom(op.type, op.width, nv, op.hinge, op.side, op.glass)); D.insert(SL, nm, mx-ux*hw-uy*yo, my-uy*hw+ux*yo, rot, 1, 1);
     const H = opHb(op), st = op.h0 ?? OPENING_DEF[op.type].h0, d = readable(ux, uy), hS = 0.08;
     let info = op.label+' '+(+op.width).toFixed(2)+'x'+(+H).toFixed(2);
     if (op.type==='F') info += ' dav. '+(+st).toFixed(2);
@@ -5013,17 +5146,17 @@ function openingsTable() {
   const cuts = wallCuts(), inAmb = new Map();                  // ambienti che toccano ogni serramento (una porta tra due stanze ne ha due)
   state.ambienti.filter(live).forEach(a => ambOpenings(a, cuts).forEach(i => inAmb.set(i, (inAmb.get(i) || []).concat(a.name))));
   const rows = ops.map(op => {
-    const e = op.energy || {}, ar = openingAreas(op), gl = openingGlass(op);
+    const door = op.type==='P', e = door ? {note:op.energy && op.energy.note} : (op.energy || {}), ar = openingAreas(op), gl = openingGlass(op);       // la porta non porta dati energetici di serramento: solo trasmittanza e note
     T.buc += ar.bucatura; T.vetr += ar.vetrata || 0; T.tel += ar.telaio || 0;
     return [op.label, (inAmb.get(state.openings.indexOf(op)) || []).join(' / '), X.tipo[op.type]||op.type, f(op.width), f(opHb(op)), op.type==='F' && op.h0 ? f(op.h0) : '', op.spessore ? f(op.spessore) : '',
             X.vetro[e.vetro]||'', e.spVetro ?? '', e.distanz || '', X.si[e.cass]||'', X.si[e.cassIso]||'', e.cassH ?? '', e.cassP ?? '',
             X.telaio[e.telaio]||'', e.spTelaio ?? '', X.osc[e.oscurante]||'', gl ? gl.n : '', e.pannelli || '',
-            gl ? f(gl.L, 3) : '', gl ? f(gl.H, 3) : '', f(ar.bucatura), ar.vetrata!=null ? f(ar.vetrata) : '', ar.telaio!=null ? f(ar.telaio) : '', e.note || ''];
+            gl ? f(gl.L, 3) : '', gl ? f(gl.H, 3) : '', f(ar.bucatura), ar.vetrata!=null ? f(ar.vetrata) : '', ar.telaio!=null ? f(ar.telaio) : '', door && op.energy && op.energy.u ? f(op.energy.u) : '', e.note || ''];
   });
-  rows.push(['Totale', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', f(T.buc), T.vetr ? f(T.vetr) : '', T.tel ? f(T.tel) : '', '']);
+  rows.push(['Totale', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', f(T.buc), T.vetr ? f(T.vetr) : '', T.tel ? f(T.tel) : '', '', '']);
   return {head:['Serramento','Ambiente','Tipo','Larghezza (m)','Altezza (m)','Davanzale (m)','Profondità nicchia (m)','Vetro','Spessore vetro (mm)','Distanziatore',
                 'Cassonetto','Cassonetto isolato','Cassonetto H (cm)','Cassonetto prof. (cm)','Telaio','Spessore profilo (mm)','Oscurante','Vetri','Pannelli',
-                'Larghezza specchiatura (m)','Altezza specchiatura (m)','Bucatura (m²)','Vetrata (m²)','Telaio (m²)','Note'],
+                'Larghezza specchiatura (m)','Altezza specchiatura (m)','Bucatura (m²)','Vetrata (m²)','Telaio (m²)','Trasmittanza porta (W/m²K)','Note'],
           rows, detail:[6,8,9,11,12,13,15,19,20]};
 }
 // CSV per Excel italiano: separatore ';', BOM per gli accenti, virgolette solo dove servono
@@ -5587,19 +5720,89 @@ function rxDistInk(ink, w, h) {
 // chiude i varchi tra tratti di muro allineati (moncone e muro di fronte, porte, passaggi): dove due tratti lunghi stanno sulla stessa riga o colonna
 // con meno di gapMax tra l'uno e l'altro, il vuoto si riempie. Si usano solo tratti lunghi (>= minLen): due muri paralleli ravvicinati, come
 // quelli di un corridoio, hanno tratti corti nella direzione trasversale e non si toccano.
-function rxBridge(ink, w, h, minLen, gapMax) {
-  const out = ink.slice();
-  const run = (n, at, put) => {                           // n elementi lungo la linea, at(i) = ink, put(i) = riempi
+function rxBridge(ink, w, h, minLen, gapMax, maxT) {
+  const out = ink.slice(); out.gaps = [];                  // out.gaps: i vuoti chiusi (dir, riga, da, a), da cui si ricavano le porte
+  const run = (n, at, put, dir, line, M, atL) => {         // n elementi lungo la linea, at(i) = ink, put(i) = riempi; atL(jj, k) = ink sulla linea jj
+    const covered = (a, b) => {                            // una linea parallela entro maxT copre tutto il vuoto: e' la linea di vetro di una finestra, non una porta
+      for (let d=3; d<=maxT; d++) for (const jj of [line-d, line+d]) { if (jj < 0 || jj >= M) continue; let ok = 0; for (let k=a; k<=b; k++) if (atL(jj, k)) ok++; if (ok >= 0.95*(b-a+1)) return true; }
+      return false;
+    };
     let i = 0, prevEnd = -1;
     while (i < n) {
       if (!at(i)) { i++; continue; }
       let j = i; while (j < n && at(j)) j++;
-      if (j - i >= minLen) { if (prevEnd >= 0 && i - prevEnd > 1 && i - prevEnd <= gapMax) for (let k=prevEnd; k<i; k++) put(k); prevEnd = j; }
+      if (j - i >= minLen) { if (prevEnd >= 0 && i - prevEnd > 1 && i - prevEnd <= gapMax) { for (let k=prevEnd; k<i; k++) put(k); out.gaps.push({dir, line, a:prevEnd, b:i-1, cov:covered(prevEnd, i-1)}); } prevEnd = j; }
       i = j;
     }
   };
-  for (let y=0;y<h;y++) run(w, x => ink[y*w+x], x => { out[y*w+x] = 1; });
-  for (let x=0;x<w;x++) run(h, y => ink[y*w+x], y => { out[y*w+x] = 1; });
+  for (let y=0;y<h;y++) run(w, x => ink[y*w+x], x => { out[y*w+x] = 1; }, 'h', y, h, (jj, k) => ink[jj*w+k]);
+  for (let x=0;x<w;x++) run(h, y => ink[y*w+x], y => { out[y*w+x] = 1; }, 'v', x, w, (jj, k) => ink[k*w+jj]);
+  return out;
+}
+// finestre da immagine: nello spessore del muro, tra due spalle (tratti trasversali), una o due linee di vetro parallele al muro; le facce del muro
+// proseguono oltre le spalle (cosi i gradini di una scala, che finiscono sui loro montanti, non si scambiano per finestre)
+function rxWindows(ink, w, h, mpp) {
+  const px = m => m/mpp, cand = [];
+  [['h', w, h], ['v', h, w]].forEach(([dir, N, M]) => {
+    const at = dir==='h' ? (i, j) => ink[j*w+i] : (i, j) => ink[i*w+j], runs = [];
+    for (let j=0;j<M;j++) { const rr = []; let i = 0; while (i < N) { if (!at(i, j)) { i++; continue; } let k = i; while (k < N && at(k, j)) k++; if (k-i >= 3) rr.push([i, k-1]); i = k; } runs.push(rr); }
+    const minG = Math.max(3, Math.round(px(0.05))), tMin = px(0.12), tMax = px(0.7), ext = Math.max(2, Math.round(px(0.06))), lMin = px(0.35), lMax = px(3.2);
+    const vrun = (c, j) => {                         // tratto trasversale (spalla) che passa per la riga j vicino alla colonna c
+      let best = null;
+      for (let q=-2;q<=2;q++) { const col = c+q; if (col < 0 || col >= N || !at(col, j)) continue;
+        let u = j; while (u > 0 && at(col, u-1)) u--; let d = j; while (d < M-1 && at(col, d+1)) d++;
+        if (!best || d-u > best.d-best.u) best = {u, d}; }
+      return best;
+    };
+    const jcov = (c, up, dn) => { let n = 0; for (let jj=up; jj<=dn; jj++) for (let q=-2;q<=2;q++) if (c+q >= 0 && c+q < N && at(c+q, jj)) { n++; break; } return n/(dn-up+1); };
+    for (let j=0;j<M;j++) runs[j].forEach(([a, b]) => {
+      const L = b-a+1; if (L < lMin || L > lMax) return;
+      const covers = jj => jj >= 0 && jj < M && runs[jj].some(([ra, rb]) => ra <= a-ext && rb >= b+ext);
+      let up = -1, dn = -1;
+      // (1) spalle piene a entrambi i capi, di uguale lunghezza: lo spessore e' la loro lunghezza, basta una faccia del muro che prosegue
+      const s1 = vrun(a, j), s2 = vrun(b, j);
+      if (s1 && s2) {
+        const T1 = s1.d-s1.u+1, T2 = s2.d-s2.u+1;
+        if (T1 >= tMin && T1 <= tMax && T2 >= tMin && T2 <= tMax && Math.abs(s1.u-s2.u) <= 3 && Math.abs(s1.d-s2.d) <= 3) {
+          const u0 = Math.round((s1.u+s2.u)/2), d0 = Math.round((s1.d+s2.d)/2);
+          if (j > u0+1 && j < d0-1 && (covers(u0) || covers(u0-1) || covers(u0+1) || covers(d0) || covers(d0-1) || covers(d0+1))) { up = u0; dn = d0; }
+        }
+      }
+      // (2) spalle sbiadite o mancanti (linee chiare perse dalla soglia): servono entrambe le facce del muro, e almeno una spalla quasi intera
+      if (up < 0) {
+        let u = -1, d = -1;
+        for (let dd=minG; dd<=tMax && u<0; dd++) if (covers(j-dd)) u = j-dd;
+        for (let dd=minG; dd<=tMax && d<0; dd++) if (covers(j+dd)) d = j+dd;
+        if (u < 0 || d < 0 || d-u < tMin || d-u > tMax) return;
+        const ca = jcov(a, u, d), cb = jcov(b, u, d);
+        if (Math.max(ca, cb) < 0.6 || Math.min(ca, cb) < 0.2) return;
+        up = u; dn = d;
+      }
+      if (cand.some(c => c.dir===dir && Math.abs(c.up-up) <= 2 && Math.abs(c.dn-dn) <= 2 && Math.abs(c.a-a) <= 4 && Math.abs(c.b-b) <= 4)) return;
+      cand.push({dir, a, b, up, dn});
+    });
+  });
+  return cand.map(c => c.dir==='h' ? {type:'F', cx:(c.a+c.b)/2, cy:(c.up+c.dn)/2, ux:1, uy:0, width:(c.b-c.a+1)*mpp, thick:(c.dn-c.up)*mpp}
+                                   : {type:'F', cx:(c.up+c.dn)/2, cy:(c.a+c.b)/2, ux:0, uy:1, width:(c.b-c.a+1)*mpp, thick:(c.dn-c.up)*mpp});
+}
+// porte da immagine: un varco chiuso in entrambe le facce del muro (stessa posizione, facce a distanza da muro) o in una sola linea, largo 50-130 cm
+function rxDoorsFromGaps(gaps, mpp) {
+  const px = m => m/mpp, out = [], wMin = px(0.5), wMax = px(1.3), tMin = px(0.1), tMax = px(0.7);
+  ['h', 'v'].forEach(dir => {
+    const g = gaps.filter(q => q.dir===dir && !q.cov && q.b-q.a+1 >= wMin && q.b-q.a+1 <= wMax).sort((p, q) => p.line-q.line || p.a-q.a), lines = [];
+    g.forEach(q => { const l = lines.find(m => Math.abs(m.line-q.line) <= 3 && Math.min(m.b, q.b)-Math.max(m.a, q.a) >= 0.8*Math.min(m.b-m.a, q.b-q.a)); if (l) { l.line = (l.line+q.line)/2; } else lines.push({line:q.line, a:q.a, b:q.b}); });
+    const used = new Set();
+    lines.forEach((p, i) => lines.forEach((q, k) => {
+      if (k <= i || used.has(i) || used.has(k)) return;
+      const d = Math.abs(q.line-p.line); if (d < tMin || d > tMax) return;
+      if (Math.min(p.b, q.b)-Math.max(p.a, q.a) < 0.6*Math.min(p.b-p.a, q.b-q.a)) return;
+      used.add(i); used.add(k);
+      const a = (p.a+q.a)/2, b = (p.b+q.b)/2, c = (p.line+q.line)/2;
+      out.push(dir==='h' ? {type:'P', cx:(a+b)/2, cy:c, ux:1, uy:0, width:(b-a+1)*mpp, thick:d*mpp} : {type:'P', cx:c, cy:(a+b)/2, ux:0, uy:1, width:(b-a+1)*mpp, thick:d*mpp});
+    }));
+    lines.forEach((p, i) => { if (used.has(i)) return;
+      out.push(dir==='h' ? {type:'P', cx:(p.a+p.b)/2, cy:p.line, ux:1, uy:0, width:(p.b-p.a+1)*mpp, thick:0} : {type:'P', cx:p.line, cy:(p.a+p.b)/2, ux:0, uy:1, width:(p.b-p.a+1)*mpp, thick:0}); });
+  });
   return out;
 }
 function roomsExtract(mask, w, h, mpp, opt) {
@@ -5607,7 +5810,8 @@ function roomsExtract(mask, w, h, mpp, opt) {
   const clean=wxRemoveSmall(mask, w, h, Math.max(2, Math.round(px(o.minDimM))));   // scritte e simboli piccoli
   const rc=px(o.closeM);
   const ink0 = rc>0 ? wxErode(wxDilate(clean,w,h,rc),w,h,rc) : clean;
-  const ink = rxBridge(ink0, w, h, px(0.8), px(2.5));          // muri allineati con un varco: si chiudono
+  const ink = rxBridge(ink0, w, h, px(0.8), px(2.5), Math.round(px(0.7)));          // muri allineati con un varco: si chiudono
+  const opsPx = rxWindows(ink0, w, h, mpp).concat(rxDoorsFromGaps(ink.gaps, mpp));       // finestre e porte proposte (in pixel)
   const R=px(o.doorM/2), near=wxDilate(ink, w, h, R);
   // semi: lo spazio libero che dista dai muri piu' di mezza porta (le porte non passano)
   const lab=new Int32Array(w*h), stack=new Int32Array(w*h);
@@ -5705,7 +5909,7 @@ function roomsExtract(mask, w, h, mpp, opt) {
       const X=Math.round(x+nx*k), Y=Math.round(y+ny*k);
       if (X<0||Y<0||X>=w||Y>=h) return {thick:last, beyond:1};
       const i=Y*w+X;
-      if (ink[i]) { last=k; continue; }
+      if (ink0[i]) { last=k; continue; }       // spessore dal tratto vero, non dai varchi chiusi (ink)
       if (lab[i]>=2 && lab[i]!==own) return {thick:last, beyond:lab[i]};
       if (last>=0 && k-last>gapMax) return {thick:last, beyond:lab[i]===1?1:0};
       if (last<0 && k>px(0.2)) return {thick:-1, beyond:lab[i]===1?1:0};
@@ -5734,7 +5938,7 @@ function roomsExtract(mask, w, h, mpp, opt) {
     for (const e of E) {
       const S=e.smp; if (!S.length) continue;
       if (S.filter(q=>q.beyond>=2).length > 0.5*S.length) continue;           // lato interno: dietro c'e' un altro ambiente
-      const tk=S.map(q=>q.thick).filter(t=>t>0);
+      const tk=S.map(q=>q.thick).filter(t=>t>=px(0.10));       // sotto i 10 cm e' una linea sola (linea di vetro, moncone), non un muro
       e.t=tk.length ? median(tk) : 0; if (e.t>0) allT.push(e.t);
       extEdges.push(e);
     }
@@ -5770,7 +5974,7 @@ function roomsExtract(mask, w, h, mpp, opt) {
   });
   const extStart=segs.length;
   if (ext.length>=3) { const ids=ext.map(p=>{ nodes.push({x:p.x, y:p.y}); return nodes.length-1; }); ids.forEach((id,i)=>segs.push([id, ids[(i+1)%ids.length]])); }
-  return {nodes, segs, rooms, extStart, wallTcm: Math.round(tDef*mpp*100)};
+  return {nodes, segs, rooms, extStart, wallTcm: Math.round(tDef*mpp*100), ops:opsPx};
 }
 
 
@@ -6073,15 +6277,8 @@ async function impLoadPdf(f) {
 
 // ── finestra di selezione ───────────────────────────────────
 // imp.ink = come leggere i tratti: 'dark' tratti scuri su fondo chiaro (catasto), 'light' tratti chiari su fondo scuro, 'photo' foto di carta
-function impAutoInk() {
-  if (!imp.src) return 'dark';
-  const k = Math.min(1, 160/Math.max(imp.src.width, imp.src.height)), w = Math.max(1,Math.round(imp.src.width*k)), h = Math.max(1,Math.round(imp.src.height*k));
-  const c = document.createElement('canvas'); c.width=w; c.height=h;
-  const cx = c.getContext('2d', {willReadFrequently:true}); cx.drawImage(imp.src,0,0,w,h);
-  const d = cx.getImageData(0,0,w,h).data, L = []; for (let i=0;i<w*h;i++) L.push(lumOf(d,i*4));
-  L.sort((a,b) => a-b);
-  return L[L.length>>1] < 110 ? 'light' : (imp.photo ? 'photo' : 'dark');
-}
+// 261106: unica lettura dei tratti, 'Foto di un foglio di carta' (dark/light davano risultati scarsi)
+function impAutoInk() { return 'photo'; }
 function impOpen() {
   $id('imp-overlay').classList.add('show');
   if (!imp.ink) imp.ink = impAutoInk();
@@ -6841,14 +7038,29 @@ function wallsRun() {
   ['door','lev'].forEach(k => $id('w-'+k+'-v').textContent = $id('w-'+k).value);
   const t = performance.now();
   const r = roomsExtract(u.mask, u.w, u.h, u.mpp, o);
+  const nodes = r.nodes.map(n => ({x:u.x + n.x*u.mpp, y:u.y - n.y*u.mpp}));
+  // finestre e porte: sul lato (ambiente o contorno) piu vicino e parallelo, come per il DXF
+  const geo = r.segs.map(([a, b]) => [nodes[a], nodes[b]]), ops = [];
+  (r.ops||[]).forEach(op => {
+    const cx = u.x + op.cx*u.mpp, cy = u.y - op.cy*u.mpp, ux = op.ux, uy = -op.uy, tol = Math.max(0.35, (op.thick||0)/2 + 0.2); let best = null;
+    geo.forEach(([A, B], k) => {
+      const dx = B.x-A.x, dy = B.y-A.y, L = Math.hypot(dx, dy); if (L < 0.2 || Math.abs((dx*uy - dy*ux)/L) > 0.05) return;
+      const tt = ((cx-A.x)*dx + (cy-A.y)*dy)/(L*L), dist = Math.abs(((cx-A.x)*dy - (cy-A.y)*dx)/L);
+      if (tt < 0 || tt > 1 || dist > tol || (best && dist >= best.dist - 1e-6)) return;
+      best = {k, t:tt, dist, L};
+    });
+    if (best) ops.push({type:op.type, k:best.k, t:best.t, width:Math.min(op.width, best.L*0.95), cx, cy, ux, uy});
+  });
   state.wallsPrev = {
-    nodes: r.nodes.map(n => ({x:u.x + n.x*u.mpp, y:u.y - n.y*u.mpp})),
+    nodes,
     segs:  r.segs,
     rooms: r.rooms,
     extStart: r.extStart,
+    ops,
     wallT: r.wallTcm ? Math.max(0.10, Math.round(r.wallTcm/5)*5/100) : null,    // spessore dei muri esterni letto dal disegno, a 5 cm
   };
-  $id('walls-count').textContent = r.rooms.length+' ambienti, '+r.segs.length+' linee, muri esterni ~'+(r.wallTcm||0)+' cm ('+Math.round(performance.now()-t)+' ms)';
+  const nP = ops.filter(o => o.type==='P').length;
+  $id('walls-count').textContent = r.rooms.length+' ambienti, '+nP+' porte, '+(ops.length-nP)+' finestre, '+r.segs.length+' linee, muri esterni ~'+(r.wallTcm||0)+' cm ('+Math.round(performance.now()-t)+' ms)';
   wallsList(); draw();
 }
 function wallsApply() {
@@ -7066,6 +7278,8 @@ function opTableOpen() {
   }
   ov.style.display = 'flex';
   opTableRender();
+  const row = $id('optab-body').querySelector('tr[data-row="'+(state.sel && state.sel.kind==='opening' ? state.sel.idx : -1)+'"]');
+  if (row) row.scrollIntoView({block:'center'});
 }
 function opTableClose() { const ov = $id('optab-overlay'); if (ov) ov.style.display = 'none'; draw(); }
 function opTableRender() {
@@ -7080,9 +7294,10 @@ function opTableRender() {
   const num = (i,k,v,dis) => '<input data-i="'+i+'" data-k="'+k+'" inputmode="decimal" autocomplete="off" value="'+(v==null || v==='' ? '' : (+v).toFixed(2))+'"'+(dis ? ' disabled' : '')+' style="'+cs+'width:70px">';
   const esc = v => String(v==null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
   let h = '<table style="border-collapse:collapse"><tr>'+['Nome','Tipo','Larghezza','Altezza','Davanzale','Nicchia','Ambiente','Dati energetici'].map(th).join('')+'</tr>';
+  const selI = state.sel && state.sel.kind==='opening' ? state.sel.idx : -1;             // il serramento scelto sulla pianta: riga evidenziata e portata in vista all'apertura
   idx.forEach((i,r) => {
     const o = state.openings[i], L = locked(o), dis = L ? ' disabled' : '';
-    h += '<tr style="background:'+(r%2 ? 'rgba(187,112,40,.12)' : 'transparent')+'">'+
+    h += '<tr data-row="'+i+'" style="background:'+(i===selI ? 'rgba(255,224,102,.28)' : r%2 ? 'rgba(187,112,40,.12)' : 'transparent')+(i===selI ? ';outline:2px solid #ffe066' : '')+'">'+
       '<td style="padding:3px 6px"><input data-i="'+i+'" data-k="label" value="'+esc(o.label)+'"'+dis+' style="'+cs+'width:70px"></td>'+
       '<td style="padding:3px 6px"><select data-i="'+i+'" data-k="type"'+dis+' style="'+cs+'">'+['F','PF','P'].map(t => '<option value="'+t+'"'+(o.type===t ? ' selected' : '')+'>'+OP_TXT.tipo[t]+'</option>').join('')+'</select></td>'+
       '<td style="padding:3px 6px">'+num(i,'width',o.width,L)+'</td>'+
@@ -7090,7 +7305,7 @@ function opTableRender() {
       '<td style="padding:3px 6px">'+(o.type==='F' ? num(i,'h0',o.h0 ?? OPENING_DEF.F.h0,L) : '<span style="color:#666">-</span>')+'</td>'+
       '<td style="padding:3px 6px">'+num(i,'spessore',o.spessore || '',L)+'</td>'+
       '<td style="padding:3px 6px;color:#ccc;font-size:13px;white-space:nowrap">'+esc((inAmb.get(i) || []).join(' / ') || '-')+'</td>'+
-      '<td style="padding:3px 6px"><button data-en="'+i+'" style="'+cs+'cursor:pointer">'+(o.energy ? '📋 Compilati' : '📋 Da compilare')+'</button></td></tr>';
+      '<td style="padding:3px 6px"><button data-en="'+i+'" style="'+cs+'cursor:pointer">'+(o.type==='P' ? (o.energy ? '📋 Trasm./note: compilati' : '📋 Trasm./note') : (o.energy ? '📋 Compilati' : '📋 Da compilare'))+'</button></td></tr>';
   });
   body.innerHTML = h+'</table>';
   body.querySelectorAll('[data-k]').forEach(el => el.addEventListener('change', () => opTableSet(+el.dataset.i, el.dataset.k, el.value)));
@@ -7146,7 +7361,7 @@ function opTableRender() {
     });
     hd.addEventListener('pointerup', () => {
       if (!on) return;
-      const src = state.openings[+el.dataset.en], list = enBtns.filter((c, j) => j>=Math.min(a,b) && j<=Math.max(a,b) && c!==el).map(c => +c.dataset.en).filter(i => state.openings[i] && !locked(state.openings[i]));
+      const src = state.openings[+el.dataset.en], list = enBtns.filter((c, j) => j>=Math.min(a,b) && j<=Math.max(a,b) && c!==el).map(c => +c.dataset.en).filter(i => state.openings[i] && !locked(state.openings[i]) && src && (state.openings[i].type==='P')===(src.type==='P'));       // le porte si copiano solo tra porte
       on = false; mark();
       if (!src || !src.energy) { setTip('Compila prima i dati energetici di '+(src ? src.label : 'questo serramento')+': poi li trascini sulle altre righe.'); return; }
       if (!list.length) return;
@@ -7344,8 +7559,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.25';
-const APP_NOTE = ["Ricalco ambienti da immagine: ora trova anche gli ambienti che prima sparivano. I muri allineati con un varco in mezzo (un moncone di muro e il muro di fronte, porte, passaggi fino a 2,5 m) si chiudono, come farebbe l'occhio; uno spazio aperto che racchiude più locali si divide dove la larghezza si strozza (senza tagliare i locali a L); e un ambiente con almeno un terzo di muro intorno si propone sempre (prima serviva il 60%), con la spunta per toglierlo. Su una catastale di prova a piani multipli: da 2 a 7 ambienti sul piano terra, da 0 a 6 sul primo sottostrada, da 2 a 4 sul secondo; il risultato non cambia più di molto spostando il cursore delle porte."];
+const APP_VERSION = '2.26';
+const APP_NOTE = ["Import di JPG e PDF: resta una sola lettura dei tratti, \"Foto di un foglio di carta\"; le altre due, che davano risultati scarsi, sono tolte e il menu a tendina non compare più", "Tramezze disegnate a mano (Stato di fatto e Progetto): l'app le riconosce come muri. Un estremo che cade su una parete la spezza in quel punto e si collega; uno sbordo oltre la parete (fino a 65 cm) si taglia sul muro; una linea già coperta da una esistente non si duplica; il tratto di parete tra le due facce della tramezza (fino a 65 cm, con la faccia che arriva alla parete di fronte) sparisce, come nel disegno reale; l'ambiente attraversato si divide e il locale nuovo si registra. Un solo passaggio di Annulla. Nel Progetto l'ambiente esistente risulta superato e i locali nuovi nascono come costruzioni; il tratto di parete esistente resta", "Porte: nuovo comando \"Porta a vetro\" nel menu della porta (e \"Porta a pannello opaco\" per tornare indietro). L'anta a vetro ha la linea di vetro in mezzeria, a video, in PDF/JPG e nel DXF", "Serramenti: quando tocchi una finestra sulla pianta, l'elenco dei serramenti scorre da solo fino a lei; lo stesso nella Tabella serramenti, dove la riga è evidenziata", "Porte: escluse dai dati energetici dei serramenti (nessuna specchiatura, vetro, telaio, cassonetto). Il comando della porta diventa \"Trasmittanza e note\": la trasmittanza e gli altri dati nel campo note. Nella tabella e nel CSV la porta ha una colonna Trasmittanza e le note", "Ricalco da immagine: ora propone anche le finestre e le porte, come già faceva l'import da DXF. Le finestre si riconoscono dalla linea di vetro nello spessore del muro tra le due spalle (anche con spalle sbiadite); le porte dai varchi chiusi nel muro, larghi da 50 a 130 cm. Compaiono nell'anteprima (azzurro le finestre, arancione le porte), si contano nella riga di stato e vengono create con \"Applica al disegno\", da controllare. Su una catastale di prova propone, per esempio, 16 finestre e 2 porte sul piano terra e 16 finestre e 9 porte sul piano primo.", "Ricalco da immagine: corretto lo spessore dei muri esterni letto dal disegno, che con la 2.25 poteva scendere a pochi centimetri perché contava anche le linee singole (vetro, monconi)."];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
