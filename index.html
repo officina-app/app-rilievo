@@ -1241,6 +1241,9 @@ function confirmProposals() {
 //  e due spalle chiudono lo spessore. Vale a video, in PDF/JPG e nel DXF.
 // ═══════════════════════════════════════════════════════════
 const WALL_FACE_MAX = 0.65;
+const FACE_SIN = Math.sin(20*Math.PI/180);   // la faccia opposta di un muro puo' essere inclinata fino a 20 gradi (muri non paralleli)
+// primo "Ambiente N" libero: mai due ambienti con lo stesso nome
+function freeAmbName() { const used = new Set(state.ambienti.map(a => a.name)); let n = 1; while (used.has('Ambiente '+n)) n++; return 'Ambiente '+n; }
 let CUTS = null;                              // varchi e spalle, ricalcolati a ogni disegno
 function ringHasEdge(a, p, q) { const r = a.indices, n = r.length; for (let k=0;k<n;k++) { const u = r[k], v = r[(k+1)%n]; if ((u===p && v===q) || (u===q && v===p)) return true; } return false; }
 // quota dello spessore generato in automatico (spegnibile per tutto il disegno col pulsante ↔): serve a vedere se l'app ha capito lo spessore
@@ -1299,18 +1302,20 @@ function oppositeFace(si, P0, P1) {
     const C = state.points[h.a], D = state.points[h.b]; if (!C || !D) return;
     const Lc = Math.hypot(D.x-C.x, D.y-C.y); if (Lc < 1e-6) return;
     const vx = (D.x-C.x)/Lc, vy = (D.y-C.y)/Lc;
-    if (Math.abs(ux*vy - uy*vx) > 0.05) return;                     // non parallela (oltre ~3 gradi)
+    if (Math.abs(ux*vy - uy*vx) > FACE_SIN) return;                 // non parallela oltre 20 gradi: non e' l'altra faccia del muro
     let cx = -vy, cy = vx; if (cx*nx + cy*ny < 0) { cx = -cx; cy = -cy; }
     const cs = cx*nx + cy*ny, sd = ((C.x-M.x)*cx + (C.y-M.y)*cy)/cs, d = Math.abs(sd);     // distanza dalla RETTA della linea candidata (non dal suo estremo), misurata lungo la normale del muro
     if (d < 0.02 || d > WALL_FACE_MAX) return;
     const sm = ((M.x-C.x)*vx + (M.y-C.y)*vy)/Lc; if (sm < 0 || sm > 1) return;
     const side = Math.sign(sd), T = {x:M.x+nx*side*0.01, y:M.y+ny*side*0.01};
     if (own.some(p => p.length>=3 && inPoly(p, T.x, T.y))) return;  // dal lato dell'ambiente non c'e' il muro
-    if (!best || d < best.d) best = {d, side};
+    if (!best || d < best.d) best = {d, side, C, vx, vy, cx, cy, cs};
   });
   if (!best) return null;
-  const off = {x:nx*best.side*best.d, y:ny*best.side*best.d};
-  return { Q0:{x:P0.x+off.x, y:P0.y+off.y}, Q1:{x:P1.x+off.x, y:P1.y+off.y}, d:best.d };
+  // ogni spalla parte perpendicolare al muro e si ferma esattamente sulla retta della faccia opposta: con facce non parallele le due spalle
+  // hanno lunghezze diverse ma si chiudono entrambe sulla linea (nessun moncone, nessuno sbordo)
+  const onFace = P => { const s2 = ((best.C.x-P.x)*best.cx + (best.C.y-P.y)*best.cy)/best.cs; return {x:P.x+nx*s2, y:P.y+ny*s2}; };
+  return { Q0:onFace(P0), Q1:onFace(P1), d:best.d, C:best.C, v:{x:best.vx, y:best.vy} };
 }
 function wallCuts() {
   const gaps = new Map(), jambs = [], opp = [], off = [];
@@ -1326,20 +1331,19 @@ function wallCuts() {
     // posizione del serramento nello spessore (y locale = normale a sinistra del verso del muro): con la faccia opposta in mezzeria della bucatura;
     // senza, a filo interno ma tutto dentro il muro, cioe' spostato di mezzo telaio dal lato opposto all'ambiente
     const nxL = -(B.y-A.y)/L, nyL = (B.x-A.x)/L;
-    if (f) off[i] = ((f.Q0.x-P0.x)*nxL + (f.Q0.y-P0.y)*nyL)/2;
+    if (f) off[i] = ((f.Q0.x-P0.x)*nxL + (f.Q0.y-P0.y)*nyL + (f.Q1.x-P1.x)*nxL + (f.Q1.y-P1.y)*nyL)/4;     // a meta' spessore (media delle due spalle)
     else {
       const own = state.ambienti.filter(a => live(a) && ringHasEdge(a, g.a, g.b)).map(a => a.indices.map(k => state.points[k]).filter(Boolean)).filter(q => q.length>=3);
       if (own.length) { const M = {x:(P0.x+P1.x)/2+nxL*0.05, y:(P0.y+P1.y)/2+nyL*0.05}; off[i] = own.some(q => inPoly(q, M.x, M.y)) ? -OP_PR/2 : OP_PR/2; }
     }
     if (!f) return;
     // la faccia opposta puo' essere spezzata in piu' linee: si interrompono tutte quelle che stanno su quella retta
-    const ux = (B.x-A.x)/L, uy = (B.y-A.y)/L;
     state.segments.forEach((h,k) => {
       if (k===op.segIdx || hid(h)) return;
       const C = state.points[h.a], D = state.points[h.b]; if (!C || !D) return;
       const Lc = Math.hypot(D.x-C.x, D.y-C.y); if (Lc < 1e-6) return;
       const vx = (D.x-C.x)/Lc, vy = (D.y-C.y)/Lc;
-      if (Math.abs(ux*vy - uy*vx) > 0.05) return;
+      if (Math.abs(f.v.x*vy - f.v.y*vx) > 0.035) return;                          // non e' parallela alla faccia opposta trovata
       if (Math.abs((C.x-f.Q0.x)*vy - (C.y-f.Q0.y)*vx) > 0.02) return;             // non sta sulla retta della faccia opposta
       const s0 = ((f.Q0.x-C.x)*vx + (f.Q0.y-C.y)*vy)/Lc, s1 = ((f.Q1.x-C.x)*vx + (f.Q1.y-C.y)*vy)/Lc;
       if (Math.max(s0,s1) <= 0 || Math.min(s0,s1) >= 1) return;
@@ -2623,11 +2627,11 @@ function weldRooms(T, gk) {
     if (found.reduce((s2, f) => s2+f.ar, 0) < 0.7*areaA) return;
     if (found.length===1 && key(found[0].cyc)===key(A.indices)) return;               // l'ambiente non e' cambiato
     const mk = (f, name) => { const c = JSON.parse(JSON.stringify(A)); delete c.fase; delete c.ok; c.indices = f.cyc; c.name = name; c.color = AMB_COLORS[state.ambienti.length % AMB_COLORS.length]; return c; };
-    if (prog() && A.fase!=='nuovo') { A.fase = 'demo'; state.ambienti.push(mk(found[0], A.name)); }     // l'ambiente esistente e' superato nel Progetto
+    if (prog() && A.fase!=='nuovo') { A.fase = 'demo'; const base = roomBase(A.name); state.ambienti.push(mk(found[0], base ? roomName(base, null) : freeAmbName())); }     // l'ambiente esistente e' superato nel Progetto: il locale nuovo ha un nome suo, mai uguale
     else A.indices = found[0].cyc;
     found.slice(1).forEach((f, k) => {
       if (!asked) { asked = true; askRoom(f.cyc); return; }
-      state.ambienti.push(mk(f, A.name+' ('+(k+2)+')'));
+      state.ambienti.push(mk(f, freeAmbName()));
     });
   });
   return asked;
@@ -2684,7 +2688,7 @@ function finishRoom() {
   const w0 = Math.abs(r.x1-r.x0), h0 = Math.abs(r.y1-r.y0);
   if (w0 < 0.3 || h0 < 0.3) { draw(); setTip('Stanza non creata: trascina un rettangolo di almeno 30 x 30 cm.'); return; }
   const sx = r.x1 >= r.x0 ? 1 : -1, sy = r.y1 >= r.y0 ? 1 : -1;
-  const nm0 = 'Ambiente '+(state.ambienti.length+1);
+  const nm0 = freeAmbName();
   askDialog('Stanza rettangolare', roomNameFields(nm0).concat([
     {label:'Larghezza (m)', id:'w', value:w0.toFixed(2), type:'number'},
     {label:'Profondità (m)', id:'d', value:h0.toFixed(2), type:'number'},
@@ -3244,7 +3248,7 @@ function boundaryAt(P) {
 function askRoom(cycle) {
   const area = Math.abs(shoelace(cycle.map(i=>state.points[i])));
   if (area < 0.05) { setTip('Ambiente troppo piccolo: controlla i vertici.'); return; }
-  const nm0 = 'Ambiente '+(state.ambienti.length+1);
+  const nm0 = freeAmbName();
   askDialog('Ambiente rilevato', roomNameFields(nm0).concat([
     {label:'Altezza netta (m)',id:'h',    value:lastAmbH().toFixed(2), type:'number'},
   ]), 'Superficie calcolata: '+area.toFixed(2)+' m²', v => {
@@ -7098,7 +7102,7 @@ function wallsApply() {
   (P.rooms||[]).filter(r => !r.off).forEach(r => {
     const idx = r.ring.map(np);
     const n = state.ambienti.length;
-    state.ambienti.push({ indices:idx, name:'Ambiente '+(n+1), h, color:AMB_COLORS[n%AMB_COLORS.length], category:'utile' });   // il ricalco scarta gia' i balconi
+    state.ambienti.push({ indices:idx, name:freeAmbName(), h, color:AMB_COLORS[n%AMB_COLORS.length], category:'utile' });   // il ricalco scarta gia' i balconi
   });
   // muri esterni: spessore letto dal disegno muro per muro, tipo proposto (WALL_TYPES) da validare
   classifyExtWalls(state.segments.map((_,k) => k).filter(k => k >= s0), P.wallT);
@@ -7577,8 +7581,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.27';
-const APP_NOTE = ["Tramezze disegnate a mano: corretto il caso in cui il punto di partenza non si collegava alla parete (restava staccato e l'ambiente non si divideva); ora partenza e arrivo si innestano sempre, anche nel Progetto", "Tramezze: funzionano anche con linee non parallele e inclinate fino a 20 gradi, e con pareti non perpendicolari (anche inclinate di 20 gradi). La linea che si ferma a meno di 12 cm dal muro viene prolungata fino al muro, lo sbordo oltre il muro (fino a 65 cm) viene tagliato, il tratto di parete tra le due facce sparisce. Il collegamento è diretto: stesso risultato a video, in PDF/JPG e nel DXF, senza sbavature da ripulire a mano", "Progetto: l'area tra le due facce di una tramezza non viene più proposta come ambiente"];
+const APP_VERSION = '2.28';
+const APP_NOTE = ["Serramenti e porte su muri con le due facce non parallele (fino a 20 gradi): le spalle del varco ora arrivano esattamente sulla faccia opposta, ognuna con la sua lunghezza, e la faccia opposta si interrompe proprio lì. Prima una spalla restava corta e l'altra sbordava (muro \"spezzato\"). Vale a video, in PDF/JPG e nel DXF; anche lo spessore automatico si legge su facce non parallele", "Ambienti: il nome proposto per un ambiente nuovo è sempre il primo \"Ambiente N\" libero, mai uguale a uno esistente (prima due ambienti potevano chiamarsi entrambi \"Ambiente 11\"). Nel Progetto il locale che sostituisce un ambiente superato prende un nome suo"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
