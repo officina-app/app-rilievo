@@ -830,7 +830,7 @@ function stairLink(plan) {
   state.scale.forEach(q => { if (q.grp===gid) q.label = L.label; });
   stairSolve(P);
   state.sel = {kind:'scala', idx:state.scale.length-1};
-  commit('Pianerottolo creato: le rampe sono ora una scala sola ('+L.label+'), H '+stairHeight(L).toFixed(2)+' m. Si sposta tutta insieme e segue le maniglie delle rampe.');
+  commit('Pianerottolo creato: le rampe sono ora una scala sola ('+L.label+'). Si sposta tutta insieme e segue le maniglie delle rampe.');
 }
 function stairHandles(s) {                   // centri (mondo) dei 4 lati
   const b = stairB(s), am = (b.a0+b.a1)/2, cm = (b.c0+b.c1)/2;
@@ -872,14 +872,21 @@ function stairResize(s, side, w) {           // w = punto mondo del puntatore
   }
 }
 // righe di verifica della scala: alzate, pedate, altezza superata e regola di Blondel (2a+p tra 62 e 64 cm). "(!)" = da controllare
+// pianerottoli sovrapposti (una scala a due ali salva lo stesso pianerottolo una volta per ala) contano come uno solo
+function stairUniqLands(G) {
+  const out = [];
+  G.filter(q => q.tipo==='P').forEach(P => { if (!out.some(Q => Math.abs(Q.x-P.x)<0.03 && Math.abs(Q.y-P.y)<0.03 && Math.abs(Q.w-P.w)<0.03 && Math.abs(Q.h-P.h)<0.03)) out.push(P); });
+  return out;
+}
 function stairInfo(s) {
-  const T = stairTotals(s), R = T.R.length ? T.R : [s], a = R[0].alzata, p = R[0].pedata, nAlz = T.steps + T.lands + 1;
-  const cm = v => String(Math.round(v*1000)/10).replace('.', ','), land = T.G.find(q => q.tipo==='P');
+  // l'altezza superata non si mostra piu' (261106): in pianta la scala si taglia per convenzione, il calcolo resta in stairHeight (non usato)
+  const T = stairTotals(s), R = T.R.length ? T.R : [s], a = R[0].alzata, p = R[0].pedata, UL = stairUniqLands(T.G);
+  const nAlz = R.reduce((k, q) => k + q.n + 1, 0);                  // ogni rampa: n pedate e n+1 alzate (l'ultima porta al pianerottolo o al piano)
+  const cm = v => String(Math.round(v*1000)/10).replace('.', ','), land = UL[0];
   const aDiv = [...new Set(T.G.map(q => cm(q.alzata)))], pDiv = [...new Set(R.map(q => cm(q.pedata)))], bl = 200*a + 100*p;
   const rows = ['Alzate: '+nAlz+' x '+cm(a)+' cm'+(aDiv.length>1 ? ' (!) diverse: '+aDiv.join(' / ') : a>0.18 ? ' (!) oltre 18 cm' : ''),
                 'Pedate: '+R.map(q => q.n).join(' + ')+' x '+cm(p)+' cm'+(pDiv.length>1 ? ' (!) diverse: '+pDiv.join(' / ') : p<0.25 ? ' (!) sotto 25 cm' : '')];
-  if (land) rows.push(T.lands===1 ? 'Pianerottolo: '+Math.round(land.w*100)+' x '+Math.round(land.h*100)+' cm' : T.lands+' pianerottoli');
-  rows.push('H superata: '+stairHeight(s).toFixed(2).replace('.', ',')+' m');
+  if (land) rows.push(UL.length===1 ? 'Pianerottolo: '+Math.round(land.w*100)+' x '+Math.round(land.h*100)+' cm' : UL.length+' pianerottoli');
   if (bl<62 || bl>64) rows.push('(!) Blondel: 2a+p = '+Math.round(bl)+' cm, fuori da 62-64');          // solo avviso, se non e' rispettato
   return rows;
 }
@@ -889,39 +896,102 @@ function rampPath(q) {
   const b = stairB(q), st = q.sgn>0 ? b.a0 : b.a1, cm = (b.c0+b.c1)/2, L = q.n*q.pedata, f0 = st+q.sgn*L*0.12, f1 = st+q.sgn*L*0.88;
   return q.ax==='x' ? [{x:f0,y:cm},{x:f1,y:cm}] : [{x:cm,y:f0},{x:cm,y:f1}];
 }
+// la scala puo' dividersi: da un pianerottolo partono piu' rampe (scala a due ali). La freccia segue l'albero: un tratto comune col pallino
+// alla partenza fino al pianerottolo, poi una linea con la punta per ogni ala. Ogni elemento: {pts, head, dot}
 function stairArrows() {
   const out = [], done = new Set();
   state.scale.forEach(s => {
     if (hid(s) || s.tipo==='P') return;
-    if (!s.grp) { out.push(rampPath(s)); return; }
+    if (!s.grp) { out.push({pts:rampPath(s), head:true, dot:true}); return; }
     if (done.has(s.grp)) return; done.add(s.grp);
     const G = state.scale.filter(q => q.grp===s.grp && !hid(q)), R = G.filter(q => q.tipo!=='P'), Ls = G.filter(q => q.tipo==='P'), bySid = id => G.find(q => q.sid===id);
     if (Ls.length && Ls.every(P => P.from && bySid(P.from) && bySid(P.to))) {
-      const toSet = new Set(Ls.map(P => P.to)); let cur = R.find(q => !toSet.has(q.sid)), guard = 0;
-      if (cur) {
-        const pts = [rampPath(cur)[0]];
-        while (cur && guard++ < 12) {
-          const P = Ls.find(q => q.from===cur.sid);
-          if (!P) { pts.push(rampPath(cur)[1]); break; }
-          pts.push(stairCenter(P)); cur = bySid(P.to);
-        }
-        if (pts.length>1) { out.push(pts); return; }
+      const toSet = new Set(Ls.map(P => P.to)), root = R.find(q => !toSet.has(q.sid));
+      if (root) {
+        const seen = new Set(), res = [];
+        const walk = (pts, cur, dot, depth) => {
+          for (let guard = 0; cur && guard < 12; guard++) {
+            if (seen.has(cur.sid) || depth > 12) break; seen.add(cur.sid);
+            const kids = Ls.filter(q => q.from===cur.sid && bySid(q.to) && !seen.has(q.to));
+            if (!kids.length) { pts.push(rampPath(cur)[1]); res.push({pts, head:true, dot}); return; }
+            const c = stairCenter(kids[0]); pts.push(c);
+            if (kids.length===1) { cur = bySid(kids[0].to); continue; }
+            res.push({pts, head:false, dot});                                       // tratto comune, poi un ramo per ogni ala
+            kids.forEach(P => walk([c], bySid(P.to), false, depth+1));
+            return;
+          }
+          if (pts.length>1) res.push({pts, head:true, dot});
+        };
+        walk([rampPath(root)[0]], root, true, 0);
+        if (res.length && R.every(q => seen.has(q.sid))) { out.push(...res); return; }
       }
     }
-    R.forEach(q => out.push(rampPath(q)));
+    R.forEach(q => out.push({pts:rampPath(q), head:true, dot:true}));
   });
   return out;
 }
-function drawStairArrow(pts) {              // freccia di salita lungo la spezzata pts (punti mondo), con il pallino alla partenza
+// ── TAGLIO CONVENZIONALE DELLE SCALE IN PIANTA (261106): piano di sezione a 1,50 m. Ogni rampa parte da una quota: la prima da 0,
+// le altre dalla quota del pianerottolo da cui partono (quota di partenza della rampa che arriva + (n+1) alzate). Sopra il taglio la scala
+// e' tratteggiata; la rampa che attraversa il taglio ha la doppia linea obliqua. Una sola geometria per video, PDF/JPG e DXF.
+const STAIR_CUT = 1.50;
+function stairLevels() {                    // Map: rampa -> quota di partenza, pianerottolo agganciato -> sua quota
+  const lv = new Map(), groups = new Map();
+  state.scale.forEach(q => { if (hid(q)) return; if (!q.grp) { if (q.tipo!=='P') lv.set(q, 0); return; } if (!groups.has(q.grp)) groups.set(q.grp, []); groups.get(q.grp).push(q); });
+  groups.forEach(G => {
+    const R = G.filter(q => q.tipo!=='P'), Ls = G.filter(q => q.tipo==='P' && q.from), bySid = id => G.find(q => q.sid===id), toSet = new Set(Ls.map(P => P.to));
+    R.forEach(q => { if (!toSet.has(q.sid)) lv.set(q, 0); });
+    for (let pass = 0; pass < 12; pass++) Ls.forEach(P => {
+      const L = bySid(P.from), U = bySid(P.to); if (!L || !lv.has(L) || lv.has(P)) return;
+      const h = lv.get(L) + (L.n+1)*L.alzata; lv.set(P, h); if (U && !lv.has(U)) lv.set(U, h);
+    });
+  });
+  return lv;
+}
+// segmenti in coordinate mondo [x1,y1,x2,y2,spesso]: sotto il taglio (solid), sopra (dashed), doppia linea obliqua (cut)
+function stairGeom(s, lvl) {
+  const b = stairB(s), out = {solid:[], dashed:[], cut:[]}, P = (a, c) => s.ax==='x' ? [a, c] : [c, a];
+  const seg = (arr, a1, c1, a2, c2, w) => arr.push([...P(a1, c1), ...P(a2, c2), w]);
+  if (s.tipo==='P') {
+    const arr = lvl!=null && lvl > STAIR_CUT ? out.dashed : out.solid;
+    seg(arr, b.a0,b.c0, b.a1,b.c0, 1); seg(arr, b.a1,b.c0, b.a1,b.c1, 1); seg(arr, b.a1,b.c1, b.a0,b.c1, 1); seg(arr, b.a0,b.c1, b.a0,b.c0, 1);
+    return out;
+  }
+  const p = s.pedata, L = s.n*p, W = b.c1-b.c0, st = s.sgn>0 ? b.a0 : b.a1, en = s.sgn>0 ? b.a1 : b.a0, A = d => st + s.sgn*d;
+  const k = Math.min(0.2*W, L/4), g = Math.min(0.06, L/10);                   // inclinazione e distanza delle due linee oblique
+  let dc = s.alzata > 0 ? ((STAIR_CUT - (lvl || 0))/s.alzata - 0.5)*p : Infinity;  // dalla partenza: dove la scala passa la quota di taglio
+  if (dc - k >= L) dc = Infinity; else if (dc + k + g <= 0) dc = -Infinity; else dc = Math.max(k, Math.min(L-k-g, dc));
+  if (dc===Infinity || dc===-Infinity) {
+    const arr = dc===Infinity ? out.solid : out.dashed;
+    seg(arr, st,b.c0, en,b.c0, 1); seg(arr, st,b.c1, en,b.c1, 1); seg(arr, st,b.c0, st,b.c1, 1); seg(arr, en,b.c0, en,b.c1, 1);
+    for (let j = 1; j < s.n; j++) seg(arr, A(j*p),b.c0, A(j*p),b.c1, 0);
+    return out;
+  }
+  // rampa attraversata dal taglio: prima linea obliqua da (dc-k, c0) a (dc+k, c1), la seconda spostata di g verso l'arrivo
+  seg(out.solid, st,b.c0, st,b.c1, 1); seg(out.dashed, en,b.c0, en,b.c1, 1);
+  seg(out.solid, st,b.c0, A(dc-k),b.c0, 1); seg(out.solid, st,b.c1, A(dc+k),b.c1, 1);
+  seg(out.dashed, A(dc-k+g),b.c0, en,b.c0, 1); seg(out.dashed, A(dc+k+g),b.c1, en,b.c1, 1);
+  seg(out.cut, A(dc-k),b.c0, A(dc+k),b.c1, 1); seg(out.cut, A(dc-k+g),b.c0, A(dc+k+g),b.c1, 1);
+  const cl = v => Math.max(b.c0, Math.min(b.c1, v));
+  for (let j = 1; j < s.n; j++) {
+    const d = j*p, cA = cl(b.c0 + (d-(dc-k))*W/(2*k)), cB = cl(b.c0 + (d-(dc-k+g))*W/(2*k));       // dove il gradino incontra le due oblique
+    if (b.c1 - cA > 1e-6) seg(out.solid, A(d),cA, A(d),b.c1, 0);              // dal lato c1 la scala e' ancora sotto il taglio
+    if (cB - b.c0 > 1e-6) seg(out.dashed, A(d),b.c0, A(d),cB, 0);
+  }
+  return out;
+}
+function drawStairArrow(a) {                // freccia di salita lungo la spezzata (punti mondo): punta in fondo e pallino alla partenza, se previsti
+  const pts = Array.isArray(a) ? a : a.pts, head = Array.isArray(a) || a.head, dot = Array.isArray(a) || a.dot;
   const P = pts.map(q => w2s(q.x,q.y)), A0 = P[0], A1 = P[P.length-1];
   ctx.strokeStyle = C.stairArrow; ctx.fillStyle = C.stairArrow; ctx.lineWidth = prLw(1.5, 0.18);
   ctx.beginPath(); ctx.moveTo(A0.x,A0.y); P.slice(1).forEach(q => ctx.lineTo(q.x,q.y)); ctx.stroke();
-  const B = P[P.length-2], ang = Math.atan2(A1.y-B.y, A1.x-B.x), hs = prU(9);
-  ctx.beginPath(); ctx.moveTo(A1.x,A1.y);
-  ctx.lineTo(A1.x-hs*Math.cos(ang-0.45), A1.y-hs*Math.sin(ang-0.45));
-  ctx.lineTo(A1.x-hs*Math.cos(ang+0.45), A1.y-hs*Math.sin(ang+0.45));
-  ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.arc(A0.x,A0.y,prU(3),0,Math.PI*2); ctx.fill();
+  if (head) {
+    const B = P[P.length-2], ang = Math.atan2(A1.y-B.y, A1.x-B.x), hs = prU(9);
+    ctx.beginPath(); ctx.moveTo(A1.x,A1.y);
+    ctx.lineTo(A1.x-hs*Math.cos(ang-0.45), A1.y-hs*Math.sin(ang-0.45));
+    ctx.lineTo(A1.x-hs*Math.cos(ang+0.45), A1.y-hs*Math.sin(ang+0.45));
+    ctx.closePath(); ctx.fill();
+  }
+  if (dot) { ctx.beginPath(); ctx.arc(A0.x,A0.y,prU(3),0,Math.PI*2); ctx.fill(); }
 }
 function drawStairText(s, cw) {             // etichetta sempre visibile, come quella dei locali: nome e righe di verifica; in rosso quello da controllare
   const rows = [s.label].concat(stairInfo(s)), c = w2s(cw.x, cw.y), dy = prU(13), y0 = c.y - dy*(rows.length-1)/2;
@@ -933,18 +1003,15 @@ function drawStairText(s, cw) {             // etichetta sempre visibile, come q
   });
   ctx.restore();
 }
-function drawStair(s, mode, lab) {          // lab=false: la scala e' composta e l'etichetta unica sta su un altro pezzo
-  const b = stairB(s), p = s.pedata, st = s.sgn>0 ? b.a0 : b.a1;
+function drawStair(s, mode, lvl) {          // lvl = quota di partenza (rampa) o del pianerottolo, da stairLevels: decide il taglio a 1,50 m
   rectPath(s);
   if (!PRINT) { ctx.fillStyle = 'rgba(120,160,200,.14)'; ctx.fill(); }
-  ctx.strokeStyle = mode==='sel' ? '#ffe066' : C.stair; ctx.lineWidth = prLw(2, 0.25); ctx.stroke();
-  if (s.tipo==='P') return;
-  ctx.strokeStyle = C.stair; ctx.lineWidth = prLw(1, 0.13);
-  for (let k=1; k<s.n; k++) {
-    const a = st + s.sgn*k*p;
-    const u = s.ax==='x' ? w2s(a,b.c0) : w2s(b.c0,a), v = s.ax==='x' ? w2s(a,b.c1) : w2s(b.c1,a);
-    ctx.beginPath(); ctx.moveTo(u.x,u.y); ctx.lineTo(v.x,v.y); ctx.stroke();
-  }
+  const G = stairGeom(s, lvl), ln = q => { const a = w2s(q[0],q[1]), b = w2s(q[2],q[3]); ctx.lineWidth = q[4] ? prLw(2, 0.25) : prLw(1, 0.13); ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); };
+  ctx.save(); ctx.strokeStyle = C.stair;
+  G.solid.forEach(ln); G.cut.forEach(ln);
+  ctx.setLineDash([prU(5), prU(4)]); G.dashed.forEach(ln); ctx.setLineDash([]);
+  if (mode==='sel') { rectPath(s); ctx.strokeStyle = '#ffe066'; ctx.lineWidth = prLw(2, 0.25); ctx.stroke(); }
+  ctx.restore();
 }
 
 // colonna dei comandi: righe quante ne entrano nell'altezza, il canvas parte dopo la colonna
@@ -1508,7 +1575,8 @@ function drawPilastri() {
 function drawScale() {
   const sel = state.sel && state.sel.kind==='scala' ? state.scale[state.sel.idx] : null, hv = state.hoverScala!=null ? state.scale[state.hoverScala] : null;
   const same = (a, q) => a && (a===q || (a.grp && a.grp===q.grp));                  // i pezzi della stessa scala si evidenziano insieme
-  state.scale.forEach(s => !hid(s) && drawStair(s, PRINT ? '' : same(sel,s) ? 'sel' : (same(hv,s) ? 'hover' : '')));
+  const LV = stairLevels();
+  state.scale.forEach(s => !hid(s) && drawStair(s, PRINT ? '' : same(sel,s) ? 'sel' : (same(hv,s) ? 'hover' : ''), LV.get(s)));
   stairArrows().forEach(drawStairArrow);
   const done = new Set();                                                               // una sola etichetta per scala, sul pianerottolo se c'e'
   state.scale.forEach(s => {
@@ -3485,7 +3553,7 @@ function entityMenuAction(action) {
       const ped = land ? 0.3 : parseFloat(v.ped)/100, alz = parseFloat(v.alz)/100;
       if (!isFinite(ped) || ped<=0.05 || !isFinite(alz) || alz<=0.05) return;
       saveHistory(); if (!land) stairSetPedata(c, ped); stairGroup(c).forEach(q => { q.alzata = alz; }); stairSolve(c);
-      commit('Scala aggiornata: H '+stairHeight(c).toFixed(2)+' m.');
+      commit('Scala aggiornata.');
     });
   }
 }
@@ -3971,7 +4039,7 @@ canvas.addEventListener('pointermove', e => {
   if (state.stairResize) {                   // maniglie della scala: la lunghezza va a gradini interi
     const r = state.stairResize, sc = state.scale[r.idx];
     dragSnap();
-    if (sc) { stairResize(sc, r.side, s2w(sx,sy)); stairSolve(sc); showTooltip(sc.tipo==='P' ? 'Pianerottolo '+sc.w.toFixed(2)+' x '+sc.h.toFixed(2)+' m' : sc.n+' gradini - H '+stairHeight(sc).toFixed(2)+' m', e.clientX, e.clientY); }
+    if (sc) { stairResize(sc, r.side, s2w(sx,sy)); stairSolve(sc); showTooltip(sc.tipo==='P' ? 'Pianerottolo '+sc.w.toFixed(2)+' x '+sc.h.toFixed(2)+' m' : sc.n+' gradini', e.clientX, e.clientY); }
     draw(); return;
   }
   if (state.openingResize) {                 // maniglia: un estremo resta fermo, l'altro segue il puntatore
@@ -4790,8 +4858,8 @@ function dxfWriter(layers) {
   const BLK = new Map();                            // blocchi: nome -> {br, hb, he, lines}
   const ent = (type, layer, lt) => { g(0,type); g(5,hd()); g(330,owner); g(100,'AcDbEntity'); g(8,layer); if (lt) g(6,lt); };
   const W = {
-    line(layer, x1,y1, x2,y2) {
-      ent('LINE', layer); g(100,'AcDbLine');
+    line(layer, x1,y1, x2,y2, lt) {
+      ent('LINE', layer, lt); g(100,'AcDbLine');
       g(10,n(x1)); g(20,n(y1)); g(30,'0.0'); g(11,n(x2)); g(21,n(y2)); g(31,'0.0');
       grow(x1,y1); grow(x2,y2);
     },
@@ -5015,22 +5083,18 @@ function exportDXF() {
   });
 
   // scale: ingombro, gradini, freccia di salita; il testo sta in un layer a parte (SCALE_TESTO)
-  const arrow = pts => {                            // spezzata con la punta sull'ultimo tratto
-    poly('SCALE', pts, false);
+  const arrow = A => {                              // spezzata con la punta sull'ultimo tratto (i tratti comuni di una scala a due ali senza punta)
+    const pts = A.pts; poly('SCALE', pts, false);
+    if (!A.head) return;
     const a = pts[pts.length-2], b = pts[pts.length-1], l = Math.hypot(b.x-a.x, b.y-a.y) || 1, ux = (b.x-a.x)/l, uy = (b.y-a.y)/l, hs = 0.12;
     line('SCALE', b.x, b.y, b.x-ux*hs-uy*hs/2, b.y-uy*hs+ux*hs/2); line('SCALE', b.x, b.y, b.x-ux*hs+uy*hs/2, b.y-uy*hs-ux*hs/2);
   };
-  const doneG = new Set();
+  const doneG = new Set(), SLV = stairLevels();
   state.scale.forEach(c => {
     if (hid(c)) return;
-    rect('SCALE', c.x, c.y-c.h, c.x+c.w, c.y);
-    if (c.tipo!=='P') {
-      const b = stairB(c), st = c.sgn>0 ? b.a0 : b.a1;
-      for (let k=1; k<c.n; k++) {
-        const a = st + c.sgn*k*c.pedata;
-        if (c.ax==='x') line('SCALE', a,b.c0, a,b.c1); else line('SCALE', b.c0,a, b.c1,a);
-      }
-    }
+    const SG = stairGeom(c, SLV.get(c));                     // taglio a 1,50 m come a video: sopra il taglio tratteggiato, doppia linea obliqua
+    SG.solid.concat(SG.cut).forEach(q => line('SCALE', q[0], q[1], q[2], q[3]));
+    SG.dashed.forEach(q => line('SCALE', q[0], q[1], q[2], q[3], 'TRATTEGGIATA'));
     if (c.grp) { if (doneG.has(c.grp)) return; doneG.add(c.grp); }          // scala composta: un solo testo
     const ct = stairCenter(c);
     txt(0, 'SCALE_TESTO', ct.x, ct.y, 0.08, [c.label].concat(stairInfo(c).map(t => t.replace(/ {2,}/g,'  '))));
@@ -7581,8 +7645,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.28';
-const APP_NOTE = ["Serramenti e porte su muri con le due facce non parallele (fino a 20 gradi): le spalle del varco ora arrivano esattamente sulla faccia opposta, ognuna con la sua lunghezza, e la faccia opposta si interrompe proprio lì. Prima una spalla restava corta e l'altra sbordava (muro \"spezzato\"). Vale a video, in PDF/JPG e nel DXF; anche lo spessore automatico si legge su facce non parallele", "Ambienti: il nome proposto per un ambiente nuovo è sempre il primo \"Ambiente N\" libero, mai uguale a uno esistente (prima due ambienti potevano chiamarsi entrambi \"Ambiente 11\"). Nel Progetto il locale che sostituisce un ambiente superato prende un nome suo"];
+const APP_VERSION = '2.29';
+const APP_NOTE = ["Scale: taglio convenzionale della pianta a 1,50 m. La scala è disegnata piena fino alla quota di taglio; la rampa che la attraversa ha la doppia linea obliqua e quello che sta sopra (gradini, rampe, pianerottoli) è tratteggiato. Le quote si contano lungo la scala: la prima rampa parte da terra, ogni pianerottolo è alla quota raggiunta dalla rampa che ci arriva. Uguale a video, in PDF/JPG e nel DXF (linee tratteggiate)", "Scale a due ali: quando da un pianerottolo partono due rampe, la freccia di salita si divide: un tratto comune dalla partenza al pianerottolo e una freccia con la punta per ogni ala (anche nel DXF)", "Etichetta della scala: tolta l'altezza superata (con il taglio in pianta non serve). Restano le verifiche su alzata e pedata (alzate uguali, oltre 18 cm, pedata sotto 25 cm, regola di Blondel). Le alzate si contano per rampa (pedate + 1); il pianerottolo comune a due ali conta una volta sola"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
