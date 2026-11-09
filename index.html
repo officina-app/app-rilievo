@@ -290,6 +290,7 @@
   <div class="menu-item" id="vw-qint" onclick="toggleVista('qint')"><span class="ck">☑</span> Quote interne dei muri<small class="md">Le lunghezze dei muri, da convalidare in loco</small></div>
   <div class="menu-item" id="vw-pts" onclick="toggleVista('pts')"><span class="ck">☑</span> Punti<small class="md">Restano visibili quelli selezionati o in uso</small></div>
   <div class="menu-item" id="vw-mis" onclick="toggleVista('mis')"><span class="ck">☑</span> Quote temporanee<small class="md">Le misure fatte con Misura</small></div>
+  <div class="menu-item" id="vw-rai" onclick="toggleVista('rai')"><span class="ck">☑</span> Avvisi RAI<small class="md">Segnala le stanze con finestre sotto 1/8 della superficie</small></div>
   <div class="menu-item" id="vw-op" onclick="toggleOpPanel(); updateViewMenu()"><span class="ck">☐</span> Pannello serramenti<small class="md">Specchiature di tutti i serramenti, accanto alla pianta</small></div>
   <div class="menu-item" id="vw-leg" onclick="toggleLegend(); updateViewMenu()"><span class="ck">☐</span> Legenda dei colori</div>
   <div class="menu-item" id="vw-base" onclick="toggleBasePanel()"><span class="ck">☐</span> Pannello base<small class="md">Trasparenza della base e Ricalca ambienti</small></div>
@@ -929,6 +930,22 @@ function ambOpenings(am, cuts) {                             // indici dei serra
   });
   return out;
 }
+// RAPPORTO AEROILLUMINANTE (RAI): superficie finestrata (foro di finestre e porte-finestre sul bordo dell'ambiente) / superficie calpestabile.
+// Solo avviso: il minimo e' un parametro (RAI_MIN, 1/8 come nella maggior parte dei regolamenti edilizi); i casi particolari (Monza, Lombardia) si adatteranno qui.
+// Non si controllano i locali di servizio (RAI_ESENTI), i locali fuori dalla superficie utile (balconi, sottotetti...) e quelli senza altezza.
+const RAI_MIN = 1/8;
+const RAI_ESENTI = /^(bagno|antibagno|disimpegno|corridoio|ripostiglio|scala|garage|cantina|magazzino)(?: [0-9]+)?$/i;
+let SHOWRAI = true;
+try { SHOWRAI = localStorage.getItem('app_rilievo_rai')!=='0'; } catch (err) {}
+function raiInfo(am, cuts) {
+  if (!live(am) || (am.category && am.category!=='utile') || !(+am.h > 0) || ambNoVol(am) || RAI_ESENTI.test(am.name || '')) return null;
+  const sup = ambNet(am); if (!(sup > 0)) return null;
+  let fin = 0;
+  ambOpenings(am, cuts).forEach(i => { const op = state.openings[i]; if (op.type==='F' || op.type==='PF') fin += openingAreas(op).bucatura; });
+  const ratio = fin / sup, ok = ratio >= RAI_MIN - 1e-9;
+  return {sup, fin, ratio, ok, need: sup*RAI_MIN, txt: fin > 0 ? '1/'+(sup/fin).toFixed(1).replace('.', ',') : 'nessuna finestra'};
+}
+function raiWarn(am, cuts) { const r = raiInfo(am, cuts); return r && !r.ok ? r : null; }
 function ambWalls(am, cuts) {
   const pts = am.indices.map(i => state.points[i]).filter(Boolean);
   if (pts.length < 3 || ambNoVol(am)) return null;
@@ -2342,7 +2359,10 @@ function drawAmbienti() {
     ctx.fillStyle=C.ambName; ctx.font=prFont(14, 2.5, true); ctx.fillText(amb.name, c.x, c.y-dy);
     ctx.fillStyle=C.ambArea; ctx.font=prFont(13, 2, true);   ctx.fillText(area.toFixed(2)+' m²', c.x, c.y);
     if (+amb.h > 0) { ctx.fillStyle=C.ambH;    ctx.font=prFont(13, 2, true);   ctx.fillText('H. '+ambHtxt(amb)+' m'+(amb.volta && !(voltaInfo(amb)||{}).ok ? ' (!)' : ''), c.x, c.y+dy); }      // altezza 0 (terrazzo): la riga sparisce; (!) = volta incompleta
-    if (+amb.h > 0 && !ambNoVol(amb)) { ctx.fillStyle=C.ambVol; ctx.font=prFont(11, 1.8); ctx.fillText((area*ambHe(amb)).toFixed(2)+' m³', c.x, c.y+2*dy); }
+    const volRow = +amb.h > 0 && !ambNoVol(amb);
+    if (volRow) { ctx.fillStyle=C.ambVol; ctx.font=prFont(11, 1.8); ctx.fillText((area*ambHe(amb)).toFixed(2)+' m³', c.x, c.y+2*dy); }
+    const rw = !PRINT && SHOWRAI ? raiWarn(amb, CUTS) : null;                     // avviso di lavoro: a video, non in uscita
+    if (rw) { ctx.fillStyle='#ffb347'; ctx.font='bold 11px Segoe UI'; ctx.fillText('⚠ RAI '+rw.txt+' (min 1/8)', c.x, c.y+(volRow ? 3 : 2)*dy); }
   });
 }
 
@@ -2429,7 +2449,9 @@ function drawAmbHighlight() {
 }
 function ambHighlightTip(k) {
   const H = ambHighlight(k); if (!H) return '';
-  return state.ambienti[k].name+': celeste = pareti del contorno'+(H.conf.size ? ', bianco tratteggiato = lato in comune con un altro ambiente' : '')+(H.cont.size ? ', viola = muri dentro l’ambiente' : '')+'.';
+  const rw = SHOWRAI ? raiWarn(state.ambienti[k], CUTS || wallCuts()) : null;
+  return state.ambienti[k].name+': celeste = pareti del contorno'+(H.conf.size ? ', bianco tratteggiato = lato in comune con un altro ambiente' : '')+(H.cont.size ? ', viola = muri dentro l’ambiente' : '')+'.'
+    +(rw ? ' ⚠ RAI: finestrato '+rw.fin.toFixed(2)+' m² su '+rw.sup.toFixed(2)+' m², ne servirebbero almeno '+rw.need.toFixed(2)+' m² (1/8).' : '');
 }
 
 // DISEGNO DEL SERRAMENTO: una sola definizione per video, PDF/JPG e DXF, cosi' cio' che si esporta e' sempre cio' che si vede.
@@ -4259,15 +4281,15 @@ function smartZone(m, id) {
 let QINT = true, SHOWPTS = true, SHOWMIS = true;
 try { QINT = localStorage.getItem('app_rilievo_qint')!=='0'; SHOWPTS = localStorage.getItem('app_rilievo_pts')!=='0'; SHOWMIS = localStorage.getItem('app_rilievo_mis')!=='0'; } catch (err) {}
 function toggleVista(k) {
-  const T = {qint:['Quote interne dei muri', 'app_rilievo_qint'], pts:['Punti', 'app_rilievo_pts'], mis:['Quote temporanee', 'app_rilievo_mis']}[k];
-  if (k==='qint') QINT = !QINT; else if (k==='pts') SHOWPTS = !SHOWPTS; else SHOWMIS = !SHOWMIS;
-  const on = k==='qint' ? QINT : k==='pts' ? SHOWPTS : SHOWMIS;
+  const T = {qint:['Quote interne dei muri', 'app_rilievo_qint'], pts:['Punti', 'app_rilievo_pts'], mis:['Quote temporanee', 'app_rilievo_mis'], rai:['Avvisi RAI', 'app_rilievo_rai']}[k];
+  if (k==='qint') QINT = !QINT; else if (k==='pts') SHOWPTS = !SHOWPTS; else if (k==='rai') SHOWRAI = !SHOWRAI; else SHOWMIS = !SHOWMIS;
+  const on = k==='qint' ? QINT : k==='pts' ? SHOWPTS : k==='rai' ? SHOWRAI : SHOWMIS;
   try { localStorage.setItem(T[1], on ? '1' : '0'); } catch (err) {}
   setTip(T[0]+(on ? ': visibili.' : ': nascoste.')); updateViewMenu(); draw();
 }
 function updateViewMenu() {
   const bp = document.getElementById('base-panel'), lb = document.getElementById('leg-box');
-  const on = {'vw-thk':THKQ, 'vw-qint':QINT, 'vw-pts':SHOWPTS, 'vw-mis':SHOWMIS, 'vw-op':OPPANEL, 'vw-leg':!!lb && lb.style.display==='block', 'vw-base':!!bp && bp.classList.contains('show')};
+  const on = {'vw-thk':THKQ, 'vw-qint':QINT, 'vw-pts':SHOWPTS, 'vw-mis':SHOWMIS, 'vw-rai':SHOWRAI, 'vw-op':OPPANEL, 'vw-leg':!!lb && lb.style.display==='block', 'vw-base':!!bp && bp.classList.contains('show')};
   Object.keys(on).forEach(id => { const it = document.getElementById(id), c = it && it.querySelector('.ck'); if (c) c.textContent = on[id] ? '☑' : '☐'; });
 }
 // Seleziona per tipo (menu Modifica)
@@ -6188,10 +6210,11 @@ function ambTable() {
     T.area += net; T.ing += ing; if (vol!=null) T.vol += vol;
     if (pw) { T.lorde += pw.lorde; T.ap += pw.ap; T.nette += pw.nette; }
     return [a.name, a.category ? COMM_CAT[a.category].label : '', f(net), ing > 0.0005 ? f(ing) : '', ambHtxt(a, ','), vol!=null ? f(vol) : '-',
-            pw ? f(pw.per) : '-', pw ? f(pw.lorde) : '-', pw ? f(pw.ap)+(pw.n ? ' ('+pw.n+')' : '') : '-', pw ? f(pw.nette) : '-'];
+            pw ? f(pw.per) : '-', pw ? f(pw.lorde) : '-', pw ? f(pw.ap)+(pw.n ? ' ('+pw.n+')' : '') : '-', pw ? f(pw.nette) : '-',
+            (() => { const r = raiInfo(a, cuts); return r ? r.txt+(r.ok ? '' : ' (!)') : ''; })()];
   });
-  rows.push(['Totale', '', f(T.area), T.ing > 0.0005 ? f(T.ing) : '', '', f(T.vol), '', f(T.lorde), f(T.ap), f(T.nette)]);
-  return {head:['Ambiente','Categoria','Superficie netta (m²)','Ingombri tolti (m²)','Altezza (m)','Volume (m³)','Perimetro (m)','Pareti lorde (m²)','Aperture (m²)','Pareti nette (m²)'], rows};
+  rows.push(['Totale', '', f(T.area), T.ing > 0.0005 ? f(T.ing) : '', '', f(T.vol), '', f(T.lorde), f(T.ap), f(T.nette), '']);
+  return {head:['Ambiente','Categoria','Superficie netta (m²)','Ingombri tolti (m²)','Altezza (m)','Volume (m³)','Perimetro (m)','Pareti lorde (m²)','Aperture (m²)','Pareti nette (m²)','Rapporto aeroilluminante (min 1/8)'], rows};
 }
 // serramenti: dimensioni sempre, dati energetici dove compilati; specchiatura scritta a mano o calcolata dalla bucatura
 function openingsTable() {
@@ -8613,8 +8636,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.37';
-const APP_NOTE = ["Stanza rettangolare: i muri attorno alle stanze diventano una rete continua. Le misure restano nette, interne; l'app aggiunge il muro verso l'esterno (spessore del campo, 15 cm di partenza) e lo raccorda da sola con le stanze vicine. Tra due stanze affacciate a meno di 1 m il muro è lo spazio che le separa (con spessore diverso dal resto), senza linee in più; angoli, T e sfalsamenti si chiudono senza interruzioni. Ogni nuova stanza ricalcola le linee generate dall'app; le linee disegnate a mano non si toccano", "Toccando la quota verde dello spessore di un muro generato da una stanza si scrive il nuovo spessore (cm) per quel lato, e i raccordi si ricalcolano. Se il muro è lo spazio tra due stanze, l'app indica di spostare una delle due", "Corretto il difetto della 2.36 con stanze che condividono un lato: non resta più la linea esterna dentro la seconda stanza"];
+const APP_VERSION = '2.38';
+const APP_NOTE = ["Controllo del rapporto aeroilluminante (RAI): solo un avviso. Se la superficie delle finestre e porte-finestre di una stanza (il foro) è sotto 1/8 della superficie calpestabile, nella stanza compare \"⚠ RAI 1/x (min 1/8)\", oppure \"nessuna finestra\"; toccando la stanza il messaggio in basso dice quanti m² servirebbero. L'avviso è solo a video, non esce in PDF/JPG/DXF. Si spegne da Vista, \"Avvisi RAI\"", "Il controllo salta bagni, antibagni, disimpegni, corridoi, ripostigli, scale, garage, cantine, magazzini, le stanze con categoria diversa da superficie utile (balconi, sottotetti...) e quelle senza altezza", "La tabella degli ambienti ha una colonna \"Rapporto aeroilluminante (min 1/8)\", con (!) quando non è rispettato"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
