@@ -938,7 +938,7 @@ const RAI_ESENTI = /^(bagno|antibagno|disimpegno|corridoio|ripostiglio|scala|gar
 let SHOWRAI = true;
 try { SHOWRAI = localStorage.getItem('app_rilievo_rai')!=='0'; } catch (err) {}
 function raiInfo(am, cuts) {
-  if (!live(am) || (am.category && am.category!=='utile') || !(+am.h > 0) || ambNoVol(am) || RAI_ESENTI.test(am.name || '')) return null;
+  if (!live(am) || isBalcone(am) || (am.category && am.category!=='utile') || !(+am.h > 0) || ambNoVol(am) || RAI_ESENTI.test(am.name || '')) return null;
   const sup = ambNet(am); if (!(sup > 0)) return null;
   let fin = 0;
   ambOpenings(am, cuts).forEach(i => { const op = state.openings[i]; if (op.type==='F' || op.type==='PF') fin += openingAreas(op).bucatura; });
@@ -2062,6 +2062,7 @@ const COMM_UI = {                                  // gruppo e nome breve per il
 };
 const COMM_APERTO = new Set(['balconi','terrazziLogge','terrazzoTasca','portici','corti','giardinoApp','giardinoVilla','postoScoperto']);
 function ambNoVol(a) { return COMM_APERTO.has(a.category); }
+function isBalcone(a) { return COMM_APERTO.has(a.category) || /^balcon/i.test(a.name || ''); }       // balcone (e ogni spazio all'aperto): mai nell'indicazione dell'ambiente dei serramenti ne' nel controllo RAI
 const OUT_NAME = {balconi:'Balcone', terrazziLogge:'Terrazzo', terrazzoTasca:'Terrazzo', portici:'Portico', corti:'Corte', giardinoApp:'Giardino', giardinoVilla:'Giardino', postoScoperto:'Posto scoperto'};
 // classi dei muri: colore a video, peso nella superficie commerciale e (con lo stato di progetto) cosa si puo' demolire.
 // Solo l'Interno e' demolibile; sugli altri si fanno tracce, tinteggiature e finiture. "Non assegnato" = tipo proposto
@@ -2314,11 +2315,20 @@ function ambMenuAction(action) {
     ]), 'Superficie '+ambNet(amb).toFixed(2)+' m²'+(pw ? ', pareti '+pw.lorde.toFixed(2)+' m² lorde, '+pw.nette.toFixed(2)+' m² nette' : ''), v => {
       const hh = parseFloat(v.h); saveHistory();
       const out = COMM_APERTO.has(v.cat);                                  // balcone, terrazzo...: prende il nome della categoria, senza numerazione, e puo' avere altezza 0
-      amb.name = out && v.rn!=='altro' ? OUT_NAME[v.cat] : roomNameRead(v, amb, amb.name); if (isFinite(hh) && (hh>0 || (hh===0 && out))) amb.h = hh;
+      amb.name = out && v.rn!=='altro' ? OUT_NAME[v.cat] : roomNameRead(v, amb, amb.name);
+      if (out) { const base = amb.name.replace(/ [0-9]+$/, ''), taken = new Set(state.ambienti.filter(a => a!==amb).map(a => a.name)); let nm = amb.name, n = 2; while (taken.has(nm)) nm = base+' '+(n++); amb.name = nm; }       // mai due ambienti con lo stesso nome: Balcone, Balcone 2...
+      if (isFinite(hh) && (hh>0 || (hh===0 && out))) amb.h = hh;
       amb.category = v.cat || undefined;
       commit('Ambiente aggiornato.');
     });
     roomNameUI();
+    const cs = $id('dlg_cat');                                           // scegliendo balcone, terrazzo...: il nome diventa quello della categoria (resta modificabile)
+    if (cs) cs.addEventListener('change', () => {
+      if (!COMM_APERTO.has(cs.value)) return;
+      const rn = $id('dlg_rn'), nm = $id('dlg_name'), b = rn.parentElement.querySelector('.pick-btn');
+      rn.value = 'altro'; if (b && b.firstChild) b.firstChild.nodeValue = 'Altro (scrivi il nome)';
+      nm.value = OUT_NAME[cs.value]; rn.dispatchEvent(new Event('change')); $id('dlg_name').focus();
+    });
   }
 }
 
@@ -6221,7 +6231,7 @@ function openingsTable() {
   const ops = state.openings.filter(live); if (!ops.length) return null;
   const f = (v, d) => (+v).toFixed(d||2), T = {buc:0, vetr:0, tel:0}, X = OP_TXT;
   const cuts = wallCuts(), inAmb = new Map();                  // ambienti che toccano ogni serramento (una porta tra due stanze ne ha due)
-  state.ambienti.filter(live).forEach(a => ambOpenings(a, cuts).forEach(i => inAmb.set(i, (inAmb.get(i) || []).concat(a.name))));
+  state.ambienti.filter(a => live(a) && !isBalcone(a)).forEach(a => ambOpenings(a, cuts).forEach(i => inAmb.set(i, (inAmb.get(i) || []).concat(a.name))));
   const rows = ops.map(op => {
     const door = op.type==='P', e = door ? {note:op.energy && op.energy.note} : (op.energy || {}), ar = openingAreas(op), gl = openingGlass(op);       // la porta non porta dati energetici di serramento: solo trasmittanza e note
     T.buc += ar.bucatura; T.vetr += ar.vetrata || 0; T.tel += ar.telaio || 0;
@@ -6371,14 +6381,19 @@ function ambSchemaPages(day) {
 // pagine (canvas) delle tabelle scelte, numerate in fondo
 function tablePages(ids, titleFn) {
   const mm = 300/25.4, M = Math.round(12*mm), pad = Math.round(1.5*mm);
-  const rowH = Math.round(6.5*mm), headH = Math.round(11*mm), top = M + Math.round(12*mm);
+  let rowH = Math.round(6.5*mm), headH = Math.round(11*mm);
+  const top = M + Math.round(12*mm);
   const font = (pt, b) => (b ? 'bold ' : '')+Math.round(pt*300/72)+'px Segoe UI';
+  // intestazioni compatte ma leggibili: parole abbreviate (le tabelle usano corpo grande, fino a 11 pt)
+  const HSHORT = [[/Rapporto aeroilluminante/, 'RAI'], [/Trasmittanza/, 'U'], [/Ingombri tolti/, 'Ingombri'], [/Larghezza/, 'Largh.'], [/Altezza/, 'Alt.'], [/Davanzale/, 'Dav.'], [/Superficie/, 'Sup.'], [/Spessore/, 'Sp.'],
+                  [/Profondità/, 'Prof.'], [/Cassonetto/, 'Cass.'], [/specchiatura/, 'spec.'], [/isolato/, 'isol.'], [/Distanziatore/, 'Distanz.']];
+  const shortH = h => HSHORT.reduce((t, [re, w]) => t.replace(re, w), h);
   const isNum = s => /^-?[\d.,]+( \(\d+\))?$/.test(s);
   const fit = (c, s, w) => { if (c.measureText(s).width <= w) return s; while (s && c.measureText(s+'…').width > w) s = s.slice(0,-1); return s+'…'; };
   const day = new Date().toLocaleDateString('it-IT'), pages = [];
   TABLES.filter(t => ids.includes(t.id)).forEach(t => {
     const d = t.data(); if (!d) return;
-    const {head, rows} = tableView(d, true);
+    const tv = tableView(d, true), head = tv.head.map(shortH), rows = tv.rows;
     const meas = document.createElement('canvas').getContext('2d');
     // larghezze: il testo piu' lungo della colonna (intestazione a parole, va su due righe); se non entrano si accorciano le piu' larghe
     // intestazione al massimo su due righe: la divisione tra parole piu' equilibrata dice la larghezza minima della colonna
@@ -6404,11 +6419,19 @@ function tablePages(ids, titleFn) {
       const slack = ws.map((w,j) => w - mins[j]), sl = slack.reduce((a,b) => a+b, 0);
       return sl >= over ? ws.map((w,j) => w - over*slack[j]/sl) : null;
     };
-    let fs = 9, W = layoutCols(fs, true);
+    let fs = 11, W = layoutCols(fs, true);
     while (!W && fs > 8) { fs -= 0.5; W = layoutCols(fs, true); }
-    for (fs = 9; !W && fs >= 6; fs -= 0.5) W = layoutCols(fs);          // poi le celle di piu' parole vanno su due righe, e solo in ultimo si scende di corpo
+    for (fs = 9; !W && fs >= 6; fs -= 0.5) { W = layoutCols(fs); if (W) break; }          // poi le celle di piu' parole vanno su due righe, e solo in ultimo si scende di corpo
     if (!W) fs = 6;
     if (!W) { meas.font = font(fs, false); const ws = head.map((h,j) => Math.max(meas.measureText(h).width/2, ...rows.map(r => meas.measureText(r[j]).width)) + 2*pad), t = ws.reduce((a,b) => a+b, 0); W = ws.map(w => w*availP/t); }
+    // controllo finale: nessuna intestazione o cifra tagliata. Se una colonna e' piu' stretta della sua parola piu' lunga si scende di mezzo punto e si rifa il calcolo
+    const needW = f => head.map((h,j) => { meas.font = font(f, true); let m = split2(h, meas)[2]; meas.font = font(f, false);
+      rows.forEach(r => { const q = String(r[j]); m = Math.max(m, isNum(q) ? meas.measureText(q).width : Math.max(0, ...q.split(' ').map(wd => meas.measureText(wd).width))); }); return m + 2*pad; });
+    for (let g = 0; g < 12 && fs > 6; g++) {
+      const nd = needW(fs); if (W.every((w,j) => w >= nd[j] - 1)) break;
+      fs -= 0.5; const W2 = layoutCols(fs); W = W2 || (() => { const n2 = needW(fs), t2 = n2.reduce((a,b) => a+b, 0); return n2.map(w => w*availP/t2); })();
+    }
+    rowH = Math.round(Math.max(6.5, fs*0.78)*mm); headH = Math.round(Math.max(11, fs*1.3)*mm);       // righe e intestazione crescono col corpo
     const pw = Math.round(210*mm), ph = Math.round(297*mm), avail = pw - 2*M;
     const per = Math.max(1, Math.floor((ph - top - headH - M) / rowH));
     for (let r0 = 0; r0 < rows.length; r0 += per) {
@@ -8362,7 +8385,7 @@ function opTableClose() { const ov = $id('optab-overlay'); if (ov) ov.style.disp
 function opTableRender() {
   const body = $id('optab-body'); if (!body) return;
   const cuts = wallCuts(), inAmb = new Map();
-  state.ambienti.filter(live).forEach(a => ambOpenings(a, cuts).forEach(i => inAmb.set(i, (inAmb.get(i) || []).concat(a.name))));
+  state.ambienti.filter(a => live(a) && !isBalcone(a)).forEach(a => ambOpenings(a, cuts).forEach(i => inAmb.set(i, (inAmb.get(i) || []).concat(a.name))));
   const idx = state.openings.map((o,i) => i).filter(i => !hid(state.openings[i]))
     .sort((a,b) => String(state.openings[a].label).localeCompare(String(state.openings[b].label), 'it', {numeric:true}));
   if (!idx.length) { body.innerHTML = '<p style="color:#ccc;padding:12px">Nessun serramento: inseriscili dal menu Inserisci, poi torna qui per le misure.</p>'; return; }
@@ -8636,8 +8659,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.38';
-const APP_NOTE = ["Controllo del rapporto aeroilluminante (RAI): solo un avviso. Se la superficie delle finestre e porte-finestre di una stanza (il foro) è sotto 1/8 della superficie calpestabile, nella stanza compare \"⚠ RAI 1/x (min 1/8)\", oppure \"nessuna finestra\"; toccando la stanza il messaggio in basso dice quanti m² servirebbero. L'avviso è solo a video, non esce in PDF/JPG/DXF. Si spegne da Vista, \"Avvisi RAI\"", "Il controllo salta bagni, antibagni, disimpegni, corridoi, ripostigli, scale, garage, cantine, magazzini, le stanze con categoria diversa da superficie utile (balconi, sottotetti...) e quelle senza altezza", "La tabella degli ambienti ha una colonna \"Rapporto aeroilluminante (min 1/8)\", con (!) quando non è rispettato"];
+const APP_VERSION = '2.39';
+const APP_NOTE = ["Il balcone (e ogni spazio all'aperto: terrazzo, loggia, portico, giardino) non compare più nella colonna \"Ambiente\" dei serramenti, né nella tabella né nell'elenco a video: una porta-finestra tra soggiorno e balcone indica solo \"Soggiorno\". Resta sempre fuori anche dal controllo RAI, anche se il nome è \"Balcone\" e la categoria è rimasta quella di default", "Scegliendo la categoria Balcone (o Terrazzo, Portico...) nella finestra dell'ambiente, il nome diventa subito quello della categoria e il campo resta modificabile. Se ce n'è più di uno: \"Balcone\", \"Balcone 2\", \"Balcone 3\"", "Tabelle in PDF e JPG più leggibili: corpo del testo più grande (fino a 11 punti), righe più alte, intestazioni abbreviate (Largh., Alt., Dav., Sup., Sp., RAI...) e mai tagliate: se una colonna non basta, il corpo scende di mezzo punto alla volta finché tutto entra"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
