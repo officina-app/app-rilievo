@@ -3401,7 +3401,7 @@ function finishRoom() {
     {label:'Profondità (m)', id:'d', value:h0.toFixed(2), type:'number'},
     {label:'Altezza netta (m)', id:'h', value:lastAmbH().toFixed(2), type:'number'},
     {label:'Spessore del muro attorno (cm) - 0 = solo il perimetro interno', id:'t', value:'15', type:'number'},
-  ]), 'Misure lette dal trascinamento: correggile con quelle rilevate (sono le misure nette, interne). L\'angolo da cui sei partito resta fermo. Il muro si disegna come seconda linea verso l\'esterno, tranne dove c\'è già un muro vicino.', v => {
+  ]), 'Misure lette dal trascinamento: correggile con quelle rilevate (sono le misure nette, interne). L\'angolo da cui sei partito resta fermo. Il muro attorno si disegna da solo e si raccorda con le stanze vicine (entro 1 m, il muro tra due stanze è lo spazio che le separa). Lo spessore si cambia poi toccando la sua quota verde.', v => {
     const w = parseFloat(v.w), d = parseFloat(v.d), hh = parseFloat(v.h), tcm = parseFloat(v.t);
     if (!(w>0) || !(d>0) || !(hh>0)) { draw(); return; }
     const tw = tcm > 0 ? Math.min(tcm, 100)/100 : 0;
@@ -3415,30 +3415,120 @@ function finishRoom() {
       return near>=0 ? near : newPoint(p.x, p.y);
     });
     ids.forEach((id,k) => { const nx = ids[(k+1)%4]; if (!segExists(id, nx)) state.segments.push({a:id, b:nx}); });
-    let nOut = 0;
-    if (tw > 0) {                                                  // seconda linea del muro, verso l'esterno: l'app ne legge lo spessore dalle due facce
-      const O = C.map((p,k) => ({x:p.x + (k===0||k===3 ? -sx : sx)*tw, y:p.y + (k<2 ? -sy : sy)*tw})), oid = [];
-      const outPt = k => { if (oid[k]===undefined) { const near = state.points.findIndex(P => Math.hypot(P.x-O[k].x, P.y-O[k].y) < 0.01); oid[k] = near>=0 ? near : newPoint(O[k].x, O[k].y); } return oid[k]; };
-      for (let k = 0; k < 4; k++) {
-        const k2 = (k+1)%4, A = C[k], B = C[k2], L = Math.hypot(B.x-A.x, B.y-A.y), ux = (B.x-A.x)/L, uy = (B.y-A.y)/L;
-        const nx = (k===0 ? 0 : k===1 ? sx : k===2 ? 0 : -sx), ny = (k===0 ? -sy : k===1 ? 0 : k===2 ? sy : 0);          // verso l'esterno di questo lato
-        const taken = state.segments.some((h, hi) => {             // c'e' gia' un muro parallelo a meno di 1 m, dalla parte esterna, che lo copre per meta' almeno
-          if (ids.includes(h.a) && ids.includes(h.b)) return false;
-          const P = state.points[h.a], Q = state.points[h.b]; if (!P || !Q || hid(h)) return false;
-          const dP = (P.x-A.x)*nx + (P.y-A.y)*ny, dQ = (Q.x-A.x)*nx + (Q.y-A.y)*ny;
-          if (Math.abs(dP-dQ) > 0.1 || dP < 0.03 || dP > WALL_FACE_MAX) return false;
-          const sP = (P.x-A.x)*ux + (P.y-A.y)*uy, sQ = (Q.x-A.x)*ux + (Q.y-A.y)*uy;
-          return Math.min(L, Math.max(sP,sQ)) - Math.max(0, Math.min(sP,sQ)) >= 0.5*L;
-        });
-        if (taken) continue;
-        const a = outPt(k), b = outPt(k2); if (!segExists(a, b)) { state.segments.push({a, b}); nOut++; }
-      }
-    }
     const n = state.ambienti.length;
-    state.ambienti.push({ indices:ids, name:roomNameRead(v, null, nm0), h:hh, color:AMB_COLORS[n%AMB_COLORS.length], category:'utile' });
-    commit('Stanza creata: '+(w*d).toFixed(2)+' m²'+(nOut ? ', con muro di '+Math.round(tw*100)+' cm su '+nOut+(nOut===1 ? ' lato' : ' lati') : '')+'. Trascina per la prossima, oppure Seleziona per finire.', true);
+    state.ambienti.push({ indices:ids, name:roomNameRead(v, null, nm0), h:hh, color:AMB_COLORS[n%AMB_COLORS.length], category:'utile', fase:prog() ? 'nuovo' : 'es', sp: tw>0 ? [tw,tw,tw,tw] : undefined });
+    const nw = tw>0 ? rebuildWalls(prog() ? 'nuovo' : 'es') : 0;
+    commit('Stanza creata: '+(w*d).toFixed(2)+' m²'+(tw>0 ? ', muri di '+Math.round(tw*100)+' cm raccordati con le stanze vicine' : '')+'. Trascina per la prossima, oppure Seleziona per finire.', true);
   }, () => draw());
   roomNameUI();
+}
+
+// ── RETE DI MURI DELLE STANZE RETTANGOLARI ──
+// Ogni stanza col suo `sp` = [spessore lato y-min, x-max, y-max, x-min] ha attorno una fascia di muro. Tra due stanze affacciate (stesso asse, a meno di 1 m,
+// sovrapposte per meta' almeno) il muro e' lo spazio che le separa. Le linee esterne sono il contorno dell'unione di stanze, fasce e spazi: angoli e T
+// restano chiusi da soli. Le linee generate portano `mo` e vengono ricalcolate (le altre linee non si toccano).
+function roomRectOf(a) {
+  if (!a.sp || a.indices.length!==4) return null;
+  const P = a.indices.map(i => state.points[i]); if (P.some(p => !p)) return null;
+  const xs = P.map(p => p.x), ys = P.map(p => p.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  if (!P.every(p => (Math.abs(p.x-x0)<0.005 || Math.abs(p.x-x1)<0.005) && (Math.abs(p.y-y0)<0.005 || Math.abs(p.y-y1)<0.005))) return null;
+  return {x0, x1, y0, y1};
+}
+function rebuildWalls(fase) {
+  const rooms = [];
+  state.ambienti.forEach(a => { if ((a.fase || 'es')!==fase) return; const R = roomRectOf(a); if (R) rooms.push(Object.assign(R, {sp:a.sp})); });
+  const rects = [];                                                        // zone di muro o di stanza, tutte rettangoli con gli assi
+  rooms.forEach((R, i) => {
+    rects.push({x0:R.x0, x1:R.x1, y0:R.y0, y1:R.y1});
+    rects.push({x0:R.x0-R.sp[3], x1:R.x1+R.sp[1], y0:R.y0-R.sp[0], y1:R.y1+R.sp[2]});
+    rooms.forEach((S, j) => {
+      if (j<=i) return;
+      const gx = S.x0-R.x1, gx2 = R.x0-S.x1, gy = S.y0-R.y1, gy2 = R.y0-S.y1;
+      const ovY0 = Math.max(R.y0, S.y0), ovY1 = Math.min(R.y1, S.y1), ovX0 = Math.max(R.x0, S.x0), ovX1 = Math.min(R.x1, S.x1);
+      const okY = ovY1-ovY0 >= 0.5*Math.min(R.y1-R.y0, S.y1-S.y0), okX = ovX1-ovX0 >= 0.5*Math.min(R.x1-R.x0, S.x1-S.x0);
+      const eq = (p, q) => Math.abs(p-q) < 1e-6;           // alle estremita' della sovrapposizione il muro arriva fino al filo esterno della stanza che li' finisce
+      const yLo = ovY0 - Math.max(eq(R.y0, ovY0) ? R.sp[0] : 0, eq(S.y0, ovY0) ? S.sp[0] : 0), yHi = ovY1 + Math.max(eq(R.y1, ovY1) ? R.sp[2] : 0, eq(S.y1, ovY1) ? S.sp[2] : 0);
+      const xLo = ovX0 - Math.max(eq(R.x0, ovX0) ? R.sp[3] : 0, eq(S.x0, ovX0) ? S.sp[3] : 0), xHi = ovX1 + Math.max(eq(R.x1, ovX1) ? R.sp[1] : 0, eq(S.x1, ovX1) ? S.sp[1] : 0);
+      if (okY && gx > 0.03 && gx <= WALL_FACE_MAX) rects.push({x0:R.x1, x1:S.x0, y0:yLo, y1:yHi});
+      if (okY && gx2 > 0.03 && gx2 <= WALL_FACE_MAX) rects.push({x0:S.x1, x1:R.x0, y0:yLo, y1:yHi});
+      if (okX && gy > 0.03 && gy <= WALL_FACE_MAX) rects.push({x0:xLo, x1:xHi, y0:R.y1, y1:S.y0});
+      if (okX && gy2 > 0.03 && gy2 <= WALL_FACE_MAX) rects.push({x0:xLo, x1:xHi, y0:S.y1, y1:R.y0});
+    });
+  });
+  const rd = v => Math.round(v*1e4)/1e4, want = new Map();
+  if (rects.length) {
+    const xs = [...new Set(rects.flatMap(r => [rd(r.x0), rd(r.x1)]))].sort((p, q) => p-q), ys = [...new Set(rects.flatMap(r => [rd(r.y0), rd(r.y1)]))].sort((p, q) => p-q);
+    const NX = xs.length-1, NY = ys.length-1;
+    const g0 = Array.from({length:NX}, (_, i) => Array.from({length:NY}, (_, j) => rects.some(r => rd(r.x0)<=xs[i] && rd(r.x1)>=xs[i+1] && rd(r.y0)<=ys[j] && rd(r.y1)>=ys[j+1])));
+    const reach = (i, j, di, dj) => { let len = 0; for (let a = i+di, b = j+dj; a>=0 && b>=0 && a<NX && b<NY; a += di, b += dj) { if (g0[a][b]) return len; len += di ? xs[a+1]-xs[a] : ys[b+1]-ys[b]; if (len > WALL_FACE_MAX) return Infinity; } return Infinity; };
+    const g1 = g0.map((col, i) => col.map((c, j) => c || ([[1,0],[-1,0],[0,1],[0,-1]].every(([di, dj]) => reach(i, j, di, dj) <= WALL_FACE_MAX))));   // sacche chiuse da muro su tutti i lati a meno di 1 m: sono muro
+    const cov = (i, j) => i<0 || j<0 || i>=NX || j>=NY ? false : g1[i][j];
+    const onSide = (vert, c, m) => rooms.some(R => vert ? ((Math.abs(c-R.x0)<1e-3 || Math.abs(c-R.x1)<1e-3) && m>R.y0 && m<R.y1) : ((Math.abs(c-R.y0)<1e-3 || Math.abs(c-R.y1)<1e-3) && m>R.x0 && m<R.x1));
+    const add = (x0, y0, x1, y1) => want.set([x0, y0, x1, y1].join('|'), {x0, y0, x1, y1});
+    for (let ix = 0; ix < xs.length; ix++) {                              // bordi verticali: tra la cella a sinistra e quella a destra
+      let st = null;
+      for (let j = 0; j < ys.length-1; j++) {
+        const edge = cov(ix-1, j)!==cov(ix, j) && !onSide(true, xs[ix], (ys[j]+ys[j+1])/2);
+        if (edge && st===null) st = ys[j];
+        if ((!edge || j===ys.length-2) && st!==null) { add(xs[ix], st, xs[ix], edge ? ys[j+1] : ys[j]); st = null; }
+      }
+    }
+    for (let iy = 0; iy < ys.length; iy++) {
+      let st = null;
+      for (let i = 0; i < xs.length-1; i++) {
+        const edge = cov(i, iy-1)!==cov(i, iy) && !onSide(false, ys[iy], (xs[i]+xs[i+1])/2);
+        if (edge && st===null) st = xs[i];
+        if ((!edge || i===xs.length-2) && st!==null) { add(st, ys[iy], edge ? xs[i+1] : xs[i], ys[iy]); st = null; }
+      }
+    }
+  }
+  const key = (A, B) => { const p = [rd(A.x), rd(A.y)], q = [rd(B.x), rd(B.y)], f = (p[0]<q[0] || (p[0]===q[0] && p[1]<=q[1])) ? [p, q] : [q, p]; return f[0].concat(f[1]).join('|'); };
+  const have = new Map(), segDel = new Set();                              // le linee generate gia' uguali restano (con i loro serramenti)
+  state.segments.forEach((g, i) => {
+    if (!g.mo || (g.fase || 'es')!==fase) return;
+    const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) { segDel.add(i); return; }
+    const k = key(A, B); if (want.has(k) && !have.has(k)) have.set(k, i); else segDel.add(i);
+  });
+  const used = new Set(); state.segments.forEach((g, i) => { if (!segDel.has(i)) { used.add(g.a); used.add(g.b); } });
+  state.ambienti.forEach(a => a.indices.forEach(i => used.add(i)));
+  const pts = new Set(); state.points.forEach((p, i) => { if (p.mo && !used.has(i)) pts.add(i); });
+  if (segDel.size || pts.size) removeItems(pts, segDel, new Set());
+  let added = 0;
+  const ptAt = (x, y) => { const near = state.points.findIndex(P => Math.hypot(P.x-x, P.y-y) < 0.01); if (near>=0) return near; const n = newPoint(x, y); state.points[n].mo = 1; return n; };
+  want.forEach((e, k) => {
+    const A = {x:e.x0, y:e.y0}, B = {x:e.x1, y:e.y1};
+    if (state.segments.some(g => g.mo && (g.fase || 'es')===fase && state.points[g.a] && state.points[g.b] && key(state.points[g.a], state.points[g.b])===k)) return;
+    const a = ptAt(A.x, A.y), b = ptAt(B.x, B.y); if (a===b || segExists(a, b)) return;
+    state.segments.push({a, b, mo:1, fase}); added++;
+  });
+  return added;
+}
+// spessore del muro generato dalla stanza: toccando la sua quota verde si cambia (per quel lato)
+function hitThickQuote(sx, sy) {
+  if (!THKQ) return null;
+  for (let i = state.segments.length-1; i >= 0; i--) {
+    const g = state.segments[i]; if (!g.thAuto || !g.thick || !g.thN || hid(g)) continue;
+    const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) continue;
+    const f = g.thF ?? 0.5, M = {x:A.x+(B.x-A.x)*f, y:A.y+(B.y-A.y)*f}, p0 = w2s(M.x, M.y), p1 = w2s(M.x+g.thN.x*g.thick, M.y+g.thN.y*g.thick);
+    const dx = p1.x-p0.x, dy = p1.y-p0.y, l = Math.hypot(dx, dy) || 1, cx = p1.x+dx/l*16, cy = p1.y+dy/l*16;
+    if (Math.abs(sx-cx) <= 28 && Math.abs(sy-cy) <= 12) return i;
+  }
+  return null;
+}
+function thickQuoteDialog(si) {
+  const g = state.segments[si]; if (!g) return;
+  const a = state.ambienti.find(x => x.sp && ringHasEdge(x, g.a, g.b)), R = a && roomRectOf(a), A = state.points[g.a], B = state.points[g.b];
+  if (!R || !A || !B) { setTip('Questo spessore è dato dalla distanza tra le due linee: per cambiarlo sposta una delle due, oppure usa "Spessore e tipo muro" dal menu del muro.'); return; }
+  const vert = Math.abs(A.x-B.x) < 0.005, side = vert ? (Math.abs(A.x-R.x0) < 0.005 ? 3 : 1) : (Math.abs(A.y-R.y0) < 0.005 ? 0 : 2);
+  if (Math.abs(g.thick - a.sp[side]) > 0.006) { setTip('Questo muro è lo spazio tra due stanze ('+Math.round(g.thick*100)+' cm): per cambiarlo sposta una delle due stanze.'); return; }
+  if (locked(a)) { lockTip(); return; }
+  const fase = a.fase || 'es';
+  askDialog('Spessore del muro', [{label:'Spessore (cm) - 0 = nessun muro su questo lato', id:'t', value:String(Math.round(a.sp[side]*100)), type:'number'}],
+    'Vale per questo lato di '+a.name+'. Le linee dei muri vicini si raccordano da sole.', v => {
+      const t = parseFloat(v.t); if (!(t >= 0) || t > 100) { draw(); return; }
+      saveHistory(); a.sp[side] = t/100; rebuildWalls(fase);
+      commit('Spessore del muro: '+Math.round(t)+' cm.');
+    }, () => draw());
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4578,6 +4668,8 @@ function handleClick(sx, sy, clientX, clientY, shift) {
     state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null; state.moveSel=false;
     const vq = hitVoltaQuota(sx, sy);                          // con l'ambiente selezionato, toccando una quota della volta si cambia solo quella
     if (vq) { voltaQuotaDialog(vq); return; }
+    const tq = hitThickQuote(sx, sy);                          // la quota verde dello spessore: toccandola si scrive lo spessore
+    if (tq!==null) { thickQuoteDialog(tq); return; }
     const pick = [
       ['opening',  pi===null ? hitOpening(sx,sy) : null, 'opening-context'],
       ['point',    pi,                    'context-menu'],
@@ -8521,8 +8613,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.36';
-const APP_NOTE = ["Stanza rettangolare: nella finestra c'è il nuovo campo \"Spessore del muro attorno\" (15 cm di partenza, 0 = solo il perimetro interno). Le misure restano quelle nette, interne; l'app aggiunge verso l'esterno la seconda linea del muro e ne legge lo spessore. Sui lati dove c'è già un muro parallelo entro 1 m la seconda linea non viene aggiunta", "Strumenti a punti (Ambiente da punti, Collega, Linea tratteggiata, Trilatera): i punti toccati si vedono con un cerchio giallo ben visibile e il numero d'ordine, non solo nel messaggio in basso"];
+const APP_VERSION = '2.37';
+const APP_NOTE = ["Stanza rettangolare: i muri attorno alle stanze diventano una rete continua. Le misure restano nette, interne; l'app aggiunge il muro verso l'esterno (spessore del campo, 15 cm di partenza) e lo raccorda da sola con le stanze vicine. Tra due stanze affacciate a meno di 1 m il muro è lo spazio che le separa (con spessore diverso dal resto), senza linee in più; angoli, T e sfalsamenti si chiudono senza interruzioni. Ogni nuova stanza ricalcola le linee generate dall'app; le linee disegnate a mano non si toccano", "Toccando la quota verde dello spessore di un muro generato da una stanza si scrive il nuovo spessore (cm) per quel lato, e i raccordi si ricalcolano. Se il muro è lo spazio tra due stanze, l'app indica di spostare una delle due", "Corretto il difetto della 2.36 con stanze che condividono un lato: non resta più la linea esterna dentro la seconda stanza"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
