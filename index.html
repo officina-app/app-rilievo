@@ -73,6 +73,10 @@
     .menu-item:hover, .menu-item.alt:hover { background:#0f3460; }
     /* menu contestuali: azioni in vista + gruppi a fisarmonica; su touch diventano un pannello in basso a due colonne, senza descrizioni */
     .menu-item.danger { color:#ff8a8a; }
+    .dup { display:none !important; }
+    .smart-zone { display:contents; }
+    .smart-clone { box-shadow:inset 3px 0 0 #ffd166; }
+    .menu-item .ck { display:inline-block; width:20px; }
     .menu-grp > .grp-h { font-weight:600; color:#9fd0ff; }
     .menu-grp > .grp-h::after { content:'▸'; float:right; }
     .menu-grp.open > .grp-h::after { content:'▾'; }
@@ -232,8 +236,9 @@
   <button class="tool-btn active" id="btn-select" title="Seleziona" onclick="setTool('select')"><span class="ic">↖</span><span class="cap">Seleziona</span></button>
   <button class="tool-btn" id="btn-g-draw" title="Disegna" onclick="toggleMenu('group-draw',this)"><span class="ic">📐</span><span class="cap">Disegna</span></button>
   <button class="tool-btn" id="btn-g-ins" title="Inserisci" onclick="toggleMenu('group-ins',this)"><span class="ic">🧱</span><span class="cap">Inserisci</span></button>
+  <button class="tool-btn" id="btn-g-edit" title="Modifica" onclick="toggleMenu('group-edit',this)"><span class="ic">🛠</span><span class="cap">Modifica</span></button>
+  <button class="tool-btn" id="btn-vista" title="Vista: cosa mostrare sul disegno" onclick="toggleMenu('group-view',this)"><span class="ic">👁</span><span class="cap">Vista</span></button>
   <button class="tool-btn green" title="Annulla" onclick="undo()"><span class="ic">↩</span><span class="cap">Annulla</span></button>
-  <button class="tool-btn green" title="Centra vista" onclick="centerView()"><span class="ic">⌂</span><span class="cap">Centra</span></button>
   <button class="tool-btn green" id="btn-file" title="File" onclick="toggleMenu('file-submenu',this)"><span class="ic">💾</span><span class="cap">File</span></button>
   <button class="tool-btn" id="btn-view" title="Stato di fatto / Progetto: tocca per cambiare" onclick="toggleView()"><span class="ic">SdF</span><span class="cap">Stato di fatto</span></button>
 </div>
@@ -244,44 +249,70 @@
 <div id="group-draw" class="floating-menu">
   <div class="menu-item tool-item" id="ti-wall" onclick="pickTool('wall')"><span class="ti">▭</span><span class="tt"><b>Muro</b><small>Traccia i muri, un vertice dopo l'altro</small></span></div>
   <div class="menu-item tool-item" id="ti-room" onclick="pickTool('room')"><span class="ti">⬚</span><span class="tt"><b>Stanza rettangolare</b><small>Trascina un rettangolo: 4 muri e l'ambiente in un colpo</small></span></div>
-  <div class="menu-item tool-item" id="ti-roompts" onclick="pickTool('roompts')"><span class="ti">⬠</span><span class="tt"><b>Ambiente da punti</b><small>Tocca i vertici in ordine: nel Progetto, per le stanze unite</small></span></div>
-  <div class="menu-item tool-item" id="ti-boundary" onclick="pickTool('boundary')"><span class="ti">⬚</span><span class="tt"><b>Ambiente da area</b><small>Tocca dentro un'area chiusa da muri: il contorno lo trova l'app</small></span></div>
-  <div class="menu-item tool-item" id="ti-split" onclick="pickTool('split')"><span class="ti">✂</span><span class="tt"><b>Spezza</b><small>Divide un muro con un nuovo punto</small></span></div>
-  <div class="menu-item tool-item" id="ti-connect" onclick="pickTool('connect')"><span class="ti">/</span><span class="tt"><b>Collega</b><small>Unisce due punti con una linea</small></span></div>
-  <div class="menu-item tool-item" id="ti-point" onclick="pickTool('point')"><span class="ti">+</span><span class="tt"><b>Punto</b><small>Aggiunge un punto libero</small></span></div>
-  <div class="menu-item tool-item" id="ti-trilatere" onclick="pickTool('trilatere')"><span class="ti">◎</span><span class="tt"><b>Trilatera</b><small>Trova un punto da due distanze misurate</small></span></div>
-  <div class="menu-item tool-item" id="ti-measure" onclick="pickTool('measure')"><span class="ti">📏</span><span class="tt"><b>Misura</b><small>Legge la distanza tra due punti</small></span></div>
-  <div class="menu-item tool-item" id="ti-paste" onclick="pickTool('paste')"><span class="ti">⎗</span><span class="tt"><b>Incolla</b><small>Posa quello che hai copiato: tocca dove metterlo (si aggancia a un punto)</small></span></div>
-  <div class="menu-item tool-item" id="ti-pastehere" onclick="pasteInPlace()"><span class="ti">⎗</span><span class="tt"><b>Incolla sul posto</b><small>Sopra l'originale, per fare una variante e poi spostarla</small></span></div>
-  <div class="menu-item tool-item" id="ti-inherit" onclick="pickTool('inherit')"><span class="ti">⇉</span><span class="tt"><b>Eredita proprietà</b><small>Tocca un elemento da copiare, poi quelli che ne ricevono le proprietà</small></span></div>
+  <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Ambiente</div><div class="grp-b">
+    <div class="menu-item tool-item" id="ti-roompts" onclick="pickTool('roompts')"><span class="ti">⬠</span><span class="tt"><b>Ambiente da punti</b><small>Tocca i vertici in ordine: nel Progetto, per le stanze unite</small></span></div>
+    <div class="menu-item tool-item" id="ti-boundary" onclick="pickTool('boundary')"><span class="ti">⬚</span><span class="tt"><b>Ambiente da area</b><small>Tocca dentro un'area chiusa da muri: il contorno lo trova l'app</small></span></div>
+  </div></div>
+  <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Punti e linee</div><div class="grp-b">
+    <div class="menu-item tool-item" id="ti-point" onclick="pickTool('point')"><span class="ti">+</span><span class="tt"><b>Punto</b><small>Aggiunge un punto libero</small></span></div>
+    <div class="menu-item tool-item" id="ti-connect" onclick="pickTool('connect')"><span class="ti">/</span><span class="tt"><b>Collega</b><small>Unisce due punti con una linea</small></span></div>
+    <div class="menu-item tool-item" id="ti-trilatere" onclick="pickTool('trilatere')"><span class="ti">◎</span><span class="tt"><b>Trilatera</b><small>Trova un punto da due distanze misurate</small></span></div>
+  </div></div>
+  <div class="menu-item tool-item" id="ti-measure" onclick="pickTool('measure')"><span class="ti">📏</span><span class="tt"><b>Misura</b><small>Quota temporanea tra due punti qualsiasi, con Ortho e angoli guidati; si nasconde o si cancella da Vista e Modifica</small></span></div>
+  <div class="menu-item tool-item" id="ti-pencil" onclick="pickTool('pencil')"><span class="ti">✏</span><span class="tt"><b>Matita</b><small>Disegno a mano libera</small></span></div>
 </div>
 <div id="group-ins" class="floating-menu">
   <div class="menu-item tool-item" id="ti-opening-F" onclick="selectOpeningType('F')"><span class="ti">🪟</span><span class="tt"><b>Finestra (F)</b><small>Poi tocca il muro dove va</small></span></div>
   <div class="menu-item tool-item" id="ti-opening-PF" onclick="selectOpeningType('PF')"><span class="ti">🚪</span><span class="tt"><b>Porta-finestra (PF)</b><small>Poi tocca il muro dove va</small></span></div>
   <div class="menu-item tool-item" id="ti-opening-P" onclick="selectOpeningType('P')"><span class="ti">🚪</span><span class="tt"><b>Porta (P)</b><small>Poi tocca il muro dove va</small></span></div>
-  <div class="menu-item tool-item" id="ti-optable" onclick="hideAllMenus(); opTableOpen()"><span class="ti">▦</span><span class="tt"><b>Tabella serramenti</b><small>Tutte le bucature in una schermata: misure, tipo e nome modificabili</small></span></div>
   <div class="menu-item tool-item" id="ti-stair" onclick="pickTool('stair')"><span class="ti">🪜</span><span class="tt"><b>Scala</b><small>Trascina: un gradino ogni 30 cm. Due rampe a 90° che si toccano diventano una scala col pianerottolo</small></span></div>
   <div class="menu-item tool-item" id="ti-pilastro" onclick="pickTool('pilastro')"><span class="ti">▪</span><span class="tt"><b>Pilastro o ingombro</b><small>Pilastro, camino, canna: su un punto; si toglie dalla superficie dell'ambiente</small></span></div>
   <div class="menu-item tool-item" id="ti-label" onclick="pickTool('label')"><span class="ti">🏷</span><span class="tt"><b>Etichetta</b><small>Testo libero sul disegno</small></span></div>
-  <div class="menu-item tool-item" id="ti-pencil" onclick="pickTool('pencil')"><span class="ti">✏</span><span class="tt"><b>Matita</b><small>Disegno a mano libera</small></span></div>
+</div>
+<div id="group-edit" class="floating-menu">
+  <div class="menu-item tool-item" id="ti-paste" onclick="pickTool('paste')"><span class="ti">⎗</span><span class="tt"><b>Incolla</b><small>Posa quello che hai copiato: tocca dove metterlo (si aggancia a un punto)</small></span></div>
+  <div class="menu-item tool-item" id="ti-pastehere" onclick="pasteInPlace()"><span class="ti">⎗</span><span class="tt"><b>Incolla sul posto</b><small>Sopra l'originale, per fare una variante e poi spostarla</small></span></div>
+  <div class="menu-item tool-item" id="ti-inherit" onclick="pickTool('inherit')"><span class="ti">⇉</span><span class="tt"><b>Eredita proprietà</b><small>Tocca un elemento da copiare, poi quelli che ne ricevono le proprietà</small></span></div>
+  <div class="menu-item tool-item" id="ti-split" onclick="pickTool('split')"><span class="ti">✂</span><span class="tt"><b>Spezza</b><small>Divide un muro con un nuovo punto</small></span></div>
+  <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Seleziona per tipo</div><div class="grp-b">
+    <div class="menu-item" onclick="selectByType('dubbi')">⚠ Muri non assegnati<small class="md">Quelli fucsia tratteggiati: poi li confermi insieme</small></div>
+    <div class="menu-item" onclick="selectByType('P')">🚪 Tutte le porte<small class="md">Poi le azioni sono nella barra della selezione</small></div>
+    <div class="menu-item" onclick="selectByType('F')">🪟 Tutte le finestre e porte-finestre<small class="md">Poi le azioni sono nella barra della selezione</small></div>
+  </div></div>
+  <div class="menu-item" onclick="hideAllMenus(); toggleMulti()">➕ Selezione multipla<small class="md">Ogni tocco aggiunge o toglie un elemento</small></div>
+  <div class="menu-item danger" id="ed-delmis" onclick="deleteAllMisure()">🗑 Cancella le quote temporanee<small class="md">Tutte le misure fatte con Misura</small></div>
+</div>
+<div id="group-view" class="floating-menu">
+  <div class="menu-item" id="vw-thk" onclick="toggleThkQ(); updateViewMenu()"><span class="ck">☑</span> Quote dello spessore dei muri<small class="md">Spessore generato in automatico</small></div>
+  <div class="menu-item" id="vw-qint" onclick="toggleVista('qint')"><span class="ck">☑</span> Quote interne dei muri<small class="md">Le lunghezze dei muri, da convalidare in loco</small></div>
+  <div class="menu-item" id="vw-pts" onclick="toggleVista('pts')"><span class="ck">☑</span> Punti<small class="md">Restano visibili quelli selezionati o in uso</small></div>
+  <div class="menu-item" id="vw-mis" onclick="toggleVista('mis')"><span class="ck">☑</span> Quote temporanee<small class="md">Le misure fatte con Misura</small></div>
+  <div class="menu-item" id="vw-op" onclick="toggleOpPanel(); updateViewMenu()"><span class="ck">☐</span> Pannello serramenti<small class="md">Specchiature di tutti i serramenti, accanto alla pianta</small></div>
+  <div class="menu-item" id="vw-leg" onclick="toggleLegend(); updateViewMenu()"><span class="ck">☐</span> Legenda dei colori</div>
+  <div class="menu-item" id="vw-base" onclick="toggleBasePanel()"><span class="ck">☐</span> Pannello base<small class="md">Trasparenza della base e Ricalca ambienti</small></div>
+  <div class="menu-item" onclick="hideAllMenus(); centerView()">⌂ Centra vista</div>
+  <div class="menu-item" onclick="hideAllMenus(); opTableOpen()">▦ Tabella serramenti<small class="md">Tutte le bucature in una schermata: misure, tipo e nome modificabili</small></div>
 </div>
 <div id="file-submenu" class="floating-menu">
-  <div class="menu-item" id="fm-import-dxf" onclick="importDxf()">📐 Importa DXF<small class="md">Planimetria da CAD: scegli l'unità, ambienti, porte, finestre e pilastri li trova l'app</small></div>
-  <div class="menu-item" id="fm-import" onclick="importPlan()">🗺 Importa planimetria (PDF/JPG)<small class="md">La catastale come base su cui ricalcare</small></div>
-  <div class="menu-item" id="fm-photo" onclick="photoPlan()">📷 Fotografa planimetria<small class="md">Il foglio di carta: lo raddrizzi e lo metti in scala</small></div>
-  <div class="menu-item" onclick="toggleBasePanel()">🗺 Mostra/nascondi pannello base<small class="md">Trasparenza della base e Ricalca ambienti</small></div>
-  <div class="menu-item" id="fm-full" onclick="exportTablesMenu('full')">📑 Esporta rilievo completo (PDF)<small class="md">Un solo PDF: disegno in scala e tabelle</small></div>
-  <div class="menu-item" id="fm-tables" onclick="exportTablesMenu('tab')">📊 Esporta tabelle (PDF/JPG/CSV)<small class="md">Ambienti, serramenti, superficie commerciale</small></div>
-  <div class="menu-item" onclick="startExport('pdf')">📄 Esporta PDF<small class="md">Il disegno su A4 in scala, da stampare</small></div>
-  <div class="menu-item" onclick="startExport('jpg')">🖼 Esporta JPG<small class="md">Il disegno su A4 in scala, come immagine</small></div>
-  <div class="menu-item" id="fm-dxf" onclick="exportDXF()">📐 Esporta DXF<small class="md">Per AutoCAD e gli altri CAD, in metri</small></div>
+  <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Importa</div><div class="grp-b">
+    <div class="menu-item" id="fm-import-dxf" onclick="importDxf()">📐 Importa DXF<small class="md">Planimetria da CAD: scegli l'unità, ambienti, porte, finestre e pilastri li trova l'app</small></div>
+    <div class="menu-item" id="fm-import" onclick="importPlan()">🗺 Importa planimetria (PDF/JPG)<small class="md">La catastale come base su cui ricalcare</small></div>
+    <div class="menu-item" id="fm-photo" onclick="photoPlan()">📷 Fotografa planimetria<small class="md">Il foglio di carta: lo raddrizzi e lo metti in scala</small></div>
+  </div></div>
+  <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Esporta</div><div class="grp-b">
+    <div class="menu-item" id="fm-full" onclick="exportTablesMenu('full')">📑 Esporta rilievo completo (PDF)<small class="md">Un solo PDF: disegno in scala e tabelle</small></div>
+    <div class="menu-item" id="fm-tables" onclick="exportTablesMenu('tab')">📊 Esporta tabelle (PDF/JPG/CSV)<small class="md">Ambienti, serramenti, superficie commerciale</small></div>
+    <div class="menu-item" onclick="startExport('pdf')">📄 Esporta PDF<small class="md">Il disegno su A4 in scala, da stampare</small></div>
+    <div class="menu-item" onclick="startExport('jpg')">🖼 Esporta JPG<small class="md">Il disegno su A4 in scala, come immagine</small></div>
+    <div class="menu-item" id="fm-dxf" onclick="exportDXF()">📐 Esporta DXF<small class="md">Per AutoCAD e gli altri CAD, in metri</small></div>
+  </div></div>
   <div class="menu-item" id="fm-save" onclick="saveProject()">💾 Salva progetto (.json)<small class="md">Archivia il rilievo o passalo a un collega</small></div>
   <div class="menu-item" id="fm-open" onclick="loadProject()">📂 Apri progetto (.json)<small class="md">Riprendi un rilievo salvato</small></div>
-  <div class="menu-item" onclick="clearAll()">🗑 Cancella tutto<small class="md">Riparti da un foglio bianco</small></div>
   <div class="menu-item" id="menu-install" style="display:none" onclick="installApp()">📲 Installa app<small class="md">Icona sul telefono, funziona anche senza rete</small></div>
+  <div class="menu-item danger" onclick="clearAll()">🗑 Cancella tutto<small class="md">Riparti da un foglio bianco</small></div>
   <div class="menu-item" id="menu-version" style="font-size:12px;color:#aaa" onclick="showNews()"></div>
 </div>
-<div id="context-menu" class="floating-menu ctx"><div class="ctx-in">
+<div id="context-menu" class="floating-menu ctx smart"><div class="ctx-in">
   <div class="menu-item" onclick="menuAction('wall')">▭ Muro da qui<small class="md">Continua a tracciare muri partendo da qui</small></div>
   <div class="menu-item" onclick="menuAction('connect')">/ Collega a…<small class="md">Linea da questo punto a un altro</small></div>
   <div class="menu-item" onclick="menuAction('measure')">📏 Misura da qui<small class="md">Distanza da questo punto a un altro</small></div>
@@ -296,7 +327,7 @@
   <div class="menu-item" onclick="menuAction('multi')">➕ Selezione multipla<small class="md">Poi tocca altri elementi per agire su tutti</small></div>
   <div class="menu-item danger full" data-lock onclick="menuAction('delete')">🗑 Elimina punto<small class="md">Cancella il punto e le sue linee</small></div>
 </div></div>
-<div id="opening-context" class="floating-menu ctx"><div class="ctx-in">
+<div id="opening-context" class="floating-menu ctx smart"><div class="ctx-in">
   <div class="menu-item" data-demo onclick="openingMenuAction('demo')"></div>
   <div class="menu-item" data-lock onclick="openingMenuAction('edit')">✎ Modifica misure<small class="md">Larghezza, altezza, davanzale e nome</small></div>
   <div class="menu-item" data-lock onclick="openingMenuAction('setdist')">📏 Imposta distanza<small class="md">Posizionalo a una distanza misurata dallo spigolo</small></div>
@@ -315,7 +346,7 @@
   </div></div>
   <div class="menu-item danger full" data-lock onclick="openingMenuAction('delete')">🗑 Elimina<small class="md">Il muro si richiude</small></div>
 </div></div>
-<div id="seg-context" class="floating-menu ctx"><div class="ctx-in">
+<div id="seg-context" class="floating-menu ctx smart"><div class="ctx-in">
   <div class="menu-item" id="sm-conf" onclick="segMenuAction('confirm')"></div>
   <div class="menu-item" data-demo onclick="segMenuAction('demo')"></div>
   <div class="menu-item" onclick="segMenuAction('thick')">📏 Spessore e tipo<small class="md">Classe (colore) e spessore: servono a superficie commerciale e demolizioni</small></div>
@@ -344,7 +375,7 @@
   <div class="menu-item"    id="qm-unval" onclick="quotaMenuAction('unvalidate')">↺ Togli convalida<small class="md">Torna da verificare</small></div>
   <div class="menu-item"    id="qm-reset" onclick="quotaMenuAction('reset')">⌖ Riporta la quota al suo posto<small class="md">Il numero torna accanto al muro</small></div>
 </div></div>
-<div id="amb-context" class="floating-menu ctx"><div class="ctx-in">
+<div id="amb-context" class="floating-menu ctx smart"><div class="ctx-in">
   <div class="menu-item" data-demo onclick="ambMenuAction('demo')"></div>
   <div class="menu-item" data-lock onclick="ambMenuAction('edit')">✎ Modifica ambiente<small class="md">Nome, altezza e categoria; mostra superficie e pareti</small></div>
   <div class="menu-item" data-lock onclick="ambMenuAction('volta')">⌒ Volta<small class="md">A botte o a crociera: quote d'imposta e in chiave, tratteggio in pianta, H min e H max</small></div>
@@ -442,9 +473,6 @@
 <button id="hand-btn" title="Mano: sposta la vista con un dito" onclick="toggleHand()">✋</button>
 <button id="mag-btn" title="Calamita: angoli, ortogonali e allineamenti" onclick="toggleMagnet()">🧲</button>
 <button id="help-btn" title="Guida: cosa devi fare oggi?" onclick="guideMenu()">?</button>
-<button id="leg-btn" title="Legenda dei colori" onclick="toggleLegend()">🎨</button>
-<button id="thk-btn" title="Quote dello spessore dei muri generato in automatico: accese/spente" onclick="toggleThkQ()">↔</button>
-<button id="oppanel-btn" title="Disegno dei serramenti: specchiature di tutti i serramenti, accanto alla pianta" onclick="toggleOpPanel()">🪟</button>
 <button id="paste-btn" title="Incolla (compare dopo una copia)" onclick="pasteBtnTap()" style="display:none">⎗</button>
 </div>
 <div id="leg-box"></div>
@@ -523,6 +551,7 @@ const state = {
   scale:       [],   // {x,y,w,h,ax,sgn,n,pedata,alzata,label}  ax = asse di salita, sgn = verso, n gradini
   labels:      [],   // {x,y,text}
   pencilLines: [],   // {pts:[{x,y}]}
+  misure:      [],   // {ax,ay,bx,by,tmp}  quote temporanee di lavoro (Misura): non escono in PDF/JPG/DXF
   history:     [],
 
   // --- vista
@@ -539,8 +568,8 @@ const state = {
   rectDraw:null,          // {x0,y0,x1,y1} anteprima Scala
   dragSnap:null,          // stato prima di un trascinamento, per l'Annulla
   drag:null,              // {kind,idx,...} trascinamento generico
-  measureFrom:null, hoverScala:null, stairResize:null, exp:null,   // exp = selezione della zona da esportare
-  measureShow:null,       // {ax,ay,bx,by,d}: ultima misura, tratteggio temporaneo fino alla prossima azione
+  hoverScala:null, stairResize:null, exp:null,   // exp = selezione della zona da esportare
+  measA:null, measPrev:null,   // Misura: primo punto {x,y} e anteprima del secondo (con Ortho e angoli guidati)
   selBox:null,
   multi:false,            // selezione multipla attiva: ogni tocco aggiunge o toglie un elemento invece di aprirne il menu
   selAnchor:null,         // {x,y} mondo: dove compare la barra della selezione (ultimo elemento toccato)
@@ -858,7 +887,7 @@ function hitAmbLabel(sx, sy) {
 // ---- quote dei muri: posizione, convalida (valida finche' la lunghezza resta quella validata)
 function segOk(g, len) { return !!g.ok && Math.abs(len - g.okLen) < 0.01; }
 function quotaInfo(i) {
-  const g = state.segments[i]; if (!g || hid(g) || g.layer==='MURI_EST') return null;     // i muri esterni non hanno quota
+  const g = state.segments[i]; if (!QINT || !g || hid(g) || g.layer==='MURI_EST') return null;     // i muri esterni non hanno quota; spente da Vista = nessuna quota, ne' a video ne' in uscita
   const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return null;
   const sa = w2s(A.x,A.y), sb = w2s(B.x,B.y);
   if (Math.hypot(sb.x-sa.x, sb.y-sa.y) < (PRINT ? 18 : 46)) return null;      // troppo corto sullo schermo: ci si avvicina con lo zoom
@@ -1955,13 +1984,13 @@ function wallCom(g) { return g.commType==='comunione' || g.commType==='nonrisc';
 //  sono gli stessi elementi. La fase la riceve ogni elemento nuovo alla prima registrazione (commit).
 // ═══════════════════════════════════════════════════════════
 const FASE_KEYS = ['points','segments','openings','ambienti','pilastri','scale','labels','pencilLines'];
-const SEL_ARR = {point:'points', segment:'segments', quota:'segments', opening:'openings', ambiente:'ambienti', pilastro:'pilastri', scala:'scale', label:'labels', pencil:'pencilLines'};
+const SEL_ARR = {point:'points', segment:'segments', quota:'segments', opening:'openings', ambiente:'ambienti', pilastro:'pilastri', scala:'scale', label:'labels', pencil:'pencilLines', misura:'misure'};
 const FASE_COL = {demo:['#ffd400','#d4a800'], nuovo:['#ff3b3b','#e00000']};      // [video, stampa]
 const FASE_LAYER = {demo:'DEMOLIZIONI', nuovo:'COSTRUZIONI'};
 function prog() { return state.view==='prog'; }
 function hid(el) { return !!el && el.fase==='nuovo' && !prog(); }                          // nascosto nella vista corrente
 function live(el) { return !!el && (prog() ? el.fase!=='demo' : el.fase!=='nuovo'); }      // fa parte dello stato che si guarda
-function locked(el) { return prog() && !!el && el.fase!=='nuovo'; }                        // rilievo esistente visto dal Progetto
+function locked(el) { return prog() && !!el && !el.tmp && el.fase!=='nuovo'; }          // le quote temporanee (tmp) si toccano sempre                        // rilievo esistente visto dal Progetto
 function faseCol(el) { const c = prog() && el && FASE_COL[el.fase]; return c ? c[PRINT ? 1 : 0] : null; }
 function selEl() { const s = state.sel; return s && SEL_ARR[s.kind] ? state[SEL_ARR[s.kind]][s.idx] : null; }
 function hasProject() { return FASE_KEYS.some(k => state[k].some(el => el.fase==='demo' || el.fase==='nuovo')); }
@@ -2406,27 +2435,13 @@ function drawRectPreview() {
 }
 
 function drawMeasure() {
-  if (state.measureShow) {
-    const m = state.measureShow, a = w2s(m.ax,m.ay), b = w2s(m.bx,m.by);
-    ctx.save();
-    ctx.setLineDash([8,6]); ctx.strokeStyle='#00e5ff'; ctx.lineWidth=2;
-    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
-    ctx.setLineDash([]);
-    const txt = m.d.toFixed(2)+' m', cx = (a.x+b.x)/2, cy = (a.y+b.y)/2;
-    ctx.font='bold 16px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    const tw = ctx.measureText(txt).width + 18;
-    ctx.fillStyle='rgba(22,33,62,0.95)'; ctx.strokeStyle='#00e5ff'; ctx.lineWidth=1.5;
-    ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(cx-tw/2, cy-14, tw, 28, 6); else ctx.rect(cx-tw/2, cy-14, tw, 28);
-    ctx.fill(); ctx.stroke();
-    ctx.fillStyle='#00e5ff'; ctx.fillText(txt, cx, cy);
-    ctx.restore();
-  }
-  if (state.measureFrom===null) return;
-  const A = state.points[state.measureFrom]; if (!A) return;
+  if (PRINT) return;                                  // le quote temporanee sono di lavoro: non escono in PDF/JPG/DXF
+  if (SHOWMIS) state.misure.forEach((m,i) => drawMis(m, isSel('misura', i)));
+  const A = state.measA; if (!A) return;
   const s = w2s(A.x,A.y);
   ctx.beginPath(); ctx.arc(s.x,s.y,13,0,Math.PI*2);
   ctx.strokeStyle='#00e5ff'; ctx.lineWidth=2; ctx.stroke();
+  if (state.measPrev) drawMis({ax:A.x, ay:A.y, bx:state.measPrev.x, by:state.measPrev.y}, false, true);
 }
 
 function drawLabels() {
@@ -2444,9 +2459,10 @@ function drawPoints() {
     if (hid(p)) return;
     const s = w2s(p.x,p.y);
     const on   = isSel('point',i) || !!(state.selSet && state.selSet.has(i));
-    const conn = state.connectFrom===i || state.measureFrom===i;
+    const conn = state.connectFrom===i;
     const tril = state.trilPoints.includes(i);
     const wall = state.wallOrigin===i;
+    if (!SHOWPTS && !on && !conn && !tril && !wall && !['connect','roompts','trilatere'].includes(state.tool) && !(state.roomPts && state.roomPts.includes(i))) return;   // Vista: punti spenti (restano quelli in uso)
     ctx.beginPath(); ctx.arc(s.x, s.y, (on||wall)?9:3, 0, Math.PI*2);          // punti piccoli e fissi (3 px) a qualunque zoom: non coprono il disegno
     ctx.fillStyle = wall?'#ffe066' : conn?'#ffaa00' : tril?'#ff6b6b' : on?'#e94560' : '#4a9eff';
     ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
@@ -2496,7 +2512,7 @@ const TIPS = {
   point:    'Clicca per aggiungere punti, quanti ne vuoi. Seleziona per uscire.',
   connect:  'Clicca il punto A, poi il punto B.',
   trilatere:'Clicca il 1° punto e dai il raggio: se la circonferenza incontra dei muri compaiono i punti numerati, altrimenti clicca un 2° punto, dai il raggio e scegli l\'intersezione.',
-  measure:  'Clicca due punti per leggerne la distanza.',
+  measure:  'Tocca il punto di partenza e quello di arrivo, anche liberi: Ortho e angoli guidati come nel muro. La quota resta come misura temporanea.',
   split:    'Clicca su una linea per spezzarla con un nuovo punto; trascina i punti per correggere le inclinazioni.',
   opening:  'Clicca sulla parete dove inserire il serramento.',
   pilastro: 'Clicca un punto rilevato (il pilastro si aggancia) oppure un punto qualsiasi della pianta.',
@@ -2512,14 +2528,14 @@ const TIPS = {
 };
 
 // strumento attivo: il pulsante del suo gruppo ne prende icona e nome, la voce nella lista si evidenzia
-const TOOL_ICON  = {pasteOp:'⎗', inherit:'⇉', boundary:'⬚', roompts:'⬠',wall:'▭', room:'⬚', point:'+', connect:'/', trilatere:'◎', measure:'📏', split:'✂', opening:'🚪', pilastro:'▪', stair:'🪜', label:'🏷', pencil:'✏'};
+const TOOL_ICON  = {paste:'⎗', pasteOp:'⎗', inherit:'⇉', boundary:'⬚', roompts:'⬠',wall:'▭', room:'⬚', point:'+', connect:'/', trilatere:'◎', measure:'📏', split:'✂', opening:'🚪', pilastro:'▪', stair:'🪜', label:'🏷', pencil:'✏'};
 const TOOL_NAME  = {paste:'Incolla', pasteOp:'Incolla serramento', inherit:'Eredita proprietà', boundary:'Ambiente da area', roompts:'Ambiente da punti',wall:'Muro', room:'Stanza', point:'Punto', connect:'Collega', trilatere:'Trilatera', measure:'Misura', split:'Spezza', opening:'Serramento', pilastro:'Pilastro', stair:'Scala', label:'Etichetta', pencil:'Matita'};
-const TOOL_GROUP = {pasteOp:'draw', inherit:'draw', boundary:'draw', roompts:'draw',wall:'draw', room:'draw', point:'draw', connect:'draw', trilatere:'draw', measure:'draw', split:'draw', opening:'ins', pilastro:'ins', stair:'ins', label:'ins', pencil:'ins'};
-const GROUP_DEF  = {draw:{icon:'📐', name:'Disegna'}, ins:{icon:'🧱', name:'Inserisci'}};
+const TOOL_GROUP = {pasteOp:'edit', paste:'edit', inherit:'edit', split:'edit', boundary:'draw', roompts:'draw',wall:'draw', room:'draw', point:'draw', connect:'draw', trilatere:'draw', measure:'draw', pencil:'draw', opening:'ins', pilastro:'ins', stair:'ins', label:'ins'};
+const GROUP_DEF  = {draw:{icon:'📐', name:'Disegna'}, ins:{icon:'🧱', name:'Inserisci'}, edit:{icon:'🛠', name:'Modifica'}};
 function markTool(t) {
   document.querySelectorAll('.tool-btn, .tool-item').forEach(b => b.classList.remove('active'));
   if (t==='select') document.getElementById('btn-select').classList.add('active');
-  ['draw','ins'].forEach(g => {
+  ['draw','ins','edit'].forEach(g => {
     const b = document.getElementById('btn-g-'+g);
     b.querySelector('.ic').textContent = GROUP_DEF[g].icon; b.querySelector('.cap').textContent = GROUP_DEF[g].name; b.title = GROUP_DEF[g].name;
   });
@@ -2536,7 +2552,7 @@ function pickTool(t) { hideAllMenus(); if (t==='paste') { startPaste(); return; 
 function setTool(t) {
   if (state.exp) expCancel();
   state.tool = t;
-  state.connectFrom=null; state.measureFrom=null; state.measureShow=null;
+  state.connectFrom=null; state.measA=null; state.measPrev=null;
   resetTril();
   state.wallOrigin=null; state.wallPreview=null; state.wallSnapAngle=null; state.wallSnapPoint=null;
   state.openingDrag=null; state.drag=null; state.rectDraw=null; state.roomDraw=null; state.selBox=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null;
@@ -3879,7 +3895,7 @@ function setWallLength(si, m) {
 // ═══════════════════════════════════════════════════════════
 //  MENU
 // ═══════════════════════════════════════════════════════════
-const MENU_IDS = ['quota-context','seg-context','amb-context','context-menu','opening-context','entity-context','group-draw','group-ins','file-submenu'];
+const MENU_IDS = ['quota-context','seg-context','amb-context','context-menu','opening-context','entity-context','group-draw','group-ins','group-edit','group-view','file-submenu'];
 let _menuOpenedAt = 0;
 function showMenu(id, x, y, above, avoid) {
   hideAllMenus();
@@ -3900,7 +3916,7 @@ function showMenu(id, x, y, above, avoid) {
     en.innerHTML = door ? '📋 Trasmittanza e note<small class="md">Trasmittanza della porta; gli altri dati nel campo note</small>'
                         : ("📋 Dati energetici<small class=\"md\">Vetro, telaio, cassonetto e specchiature, per l'APE</small>");
   }
-  if (id==='entity-context' && state.sel && state.sel.kind==='pencil') document.getElementById('ent-edit').style.display = 'none';
+  if (id==='entity-context' && state.sel && (state.sel.kind==='pencil' || state.sel.kind==='misura')) document.getElementById('ent-edit').style.display = 'none';
   if (id==='seg-context') {                    // muro esterno col tipo proposto dall'app: conferma con un tocco
     const g = state.sel && state.sel.kind==='segment' && state.segments[state.sel.idx], it = document.getElementById('sm-conf');
     if (g && g.cv==='dubbio') { it.style.display = ''; it.textContent = '✔ Conferma: '+wallName(g.commType||'')+(g.thick ? ' '+Math.round(g.thick*100)+' cm' : ''); }
@@ -3917,12 +3933,15 @@ function showMenu(id, x, y, above, avoid) {
     document.getElementById('qm-reset').style.display = g && g.qo ? '' : 'none';
   }
   const m = document.getElementById(id), isCtx = m.classList.contains('ctx');
+  if (id==='group-view') updateViewMenu();
+  if (id==='group-edit') { const n = state.misure.length, d = document.getElementById('ed-delmis'); d.style.display = n ? '' : 'none'; d.firstChild.textContent = '🗑 Cancella le quote temporanee ('+n+')'; }
+  if (m.classList.contains('smart')) smartZone(m, id);
   m.querySelectorAll('.menu-grp').forEach(g => {                                                     // gruppi chiusi; spariscono se nessuna voce e' disponibile
     g.classList.remove('open');
     g.style.display = [...g.querySelectorAll('.grp-b > .menu-item')].some(it => it.style.display!=='none') ? '' : 'none';
   });
   m.style.display='block'; _menuOpenedAt = Date.now();
-  const rows = isCtx ? [] : [...m.querySelectorAll('.menu-item')].filter(it => it.style.display!=='none');       // oltre 3 righe: colori alternati (non nei contestuali)
+  const rows = isCtx ? [] : [...m.querySelectorAll('.menu-item')].filter(it => it.style.display!=='none' && !it.closest('.grp-b'));       // oltre 3 righe: colori alternati (non nei contestuali)
   rows.forEach((it,k) => it.classList.toggle('alt', rows.length > 3 && k%2===1));
   const r = m.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight, clamp = (v,a,b) => Math.max(a, Math.min(v, b));
   let left, top;
@@ -3948,6 +3967,154 @@ document.addEventListener('click', e => {
   if (Date.now() - _menuOpenedAt < 350 && e.target instanceof Element && MENU_IDS.some(id => document.getElementById(id).contains(e.target))) { e.stopPropagation(); e.preventDefault(); }
 }, true);
 function hideAllMenus(){ MENU_IDS.forEach(id => document.getElementById(id).style.display='none'); }
+// ── Azioni proposte nei menu contestuali ────────────────────────────────────────────────────────────────────────
+// Le prime 2 voci sono sempre le stesse per tipo di elemento. Subito dopo, fino a 2 voci "proposte" (con una barra gialla): prima quelle
+// che dipendono dallo stato (muro da confermare, Progetto, punto riassorbibile, serramento senza dati energetici), poi gli ultimi comandi
+// usati su quel menu (salvati nel browser, solo comodita'). Sono copie: l'originale resta nel gruppo, oppure sparisce se era in elenco.
+const SMART_KEY = 'app_rilievo_ctx_recenti';
+function smartRecent() { try { return JSON.parse(localStorage.getItem(SMART_KEY)) || {}; } catch (err) { return {}; } }
+document.addEventListener('click', e => {
+  const it = e.target instanceof Element && e.target.closest('.menu-item[onclick]'); if (!it) return;
+  const m = it.closest('.floating-menu.smart'); if (!m || it.classList.contains('grp-h') || it.classList.contains('danger')) return;
+  const oc = it.getAttribute('onclick');
+  try { const r = smartRecent(), l = (r[m.id] || []).filter(x => x!==oc); l.unshift(oc); r[m.id] = l.slice(0, 4); localStorage.setItem(SMART_KEY, JSON.stringify(r)); } catch (err) {}
+});
+function smartRules(id) {
+  const s = state.sel, el = selEl(), out = [];
+  if (id==='context-menu' && s && s.kind==='point') {
+    const n = state.segments.filter(g => g.a===s.idx || g.b===s.idx).length;
+    if (n===2) out.push("[onclick=\"menuAction('absorb')\"]");                       // vertice tra due linee: probabile da riassorbire
+  }
+  if (id==='opening-context' && s && s.kind==='opening' && el && !el.energy) out.push('#om-energy');       // dati energetici ancora da compilare
+  return out;
+}
+function smartZone(m, id) {
+  m.querySelectorAll('.smart-zone').forEach(z => z.remove());
+  m.querySelectorAll('.dup').forEach(d => d.classList.remove('dup'));
+  const inn = m.querySelector('.ctx-in'); if (!inn) return;
+  const vis = it => !!it && it.style.display!=='none', cond = it => it.hasAttribute('data-demo') || it.id==='sm-conf';
+  const top = [...inn.children].filter(c => c.classList.contains('menu-item') && vis(c));
+  const fixed = top.filter(it => !cond(it) && !it.classList.contains('danger')).slice(0, 2);
+  const cand = [], add = it => { if (vis(it) && !fixed.includes(it) && !cand.includes(it)) cand.push(it); };
+  top.filter(cond).forEach(add);
+  smartRules(id).forEach(sel => add(m.querySelector(sel)));
+  const all = [...m.querySelectorAll('.menu-item[onclick]')].filter(x => !x.classList.contains('grp-h'));
+  (smartRecent()[id] || []).forEach(oc => add(all.find(x => x.getAttribute('onclick')===oc)));
+  const pick = cand.slice(0, Math.max(2, top.filter(cond).filter(vis).length));
+  if (!pick.length) return;
+  const zone = document.createElement('div'); zone.className = 'smart-zone';
+  pick.forEach(it => {
+    const k = it.cloneNode(true); k.removeAttribute('id'); k.classList.add('smart-clone'); zone.appendChild(k);
+    if (it.parentElement===inn) it.classList.add('dup');
+  });
+  const ref = fixed[fixed.length-1];
+  if (ref) ref.after(zone); else inn.prepend(zone);
+}
+
+// ── VISTA: interruttori (restano nel browser) ───────────────────────────────────────────────────────────────────
+let QINT = true, SHOWPTS = true, SHOWMIS = true;
+try { QINT = localStorage.getItem('app_rilievo_qint')!=='0'; SHOWPTS = localStorage.getItem('app_rilievo_pts')!=='0'; SHOWMIS = localStorage.getItem('app_rilievo_mis')!=='0'; } catch (err) {}
+function toggleVista(k) {
+  const T = {qint:['Quote interne dei muri', 'app_rilievo_qint'], pts:['Punti', 'app_rilievo_pts'], mis:['Quote temporanee', 'app_rilievo_mis']}[k];
+  if (k==='qint') QINT = !QINT; else if (k==='pts') SHOWPTS = !SHOWPTS; else SHOWMIS = !SHOWMIS;
+  const on = k==='qint' ? QINT : k==='pts' ? SHOWPTS : SHOWMIS;
+  try { localStorage.setItem(T[1], on ? '1' : '0'); } catch (err) {}
+  setTip(T[0]+(on ? ': visibili.' : ': nascoste.')); updateViewMenu(); draw();
+}
+function updateViewMenu() {
+  const bp = document.getElementById('base-panel'), lb = document.getElementById('leg-box');
+  const on = {'vw-thk':THKQ, 'vw-qint':QINT, 'vw-pts':SHOWPTS, 'vw-mis':SHOWMIS, 'vw-op':OPPANEL, 'vw-leg':!!lb && lb.style.display==='block', 'vw-base':!!bp && bp.classList.contains('show')};
+  Object.keys(on).forEach(id => { const it = document.getElementById(id), c = it && it.querySelector('.ck'); if (c) c.textContent = on[id] ? '☑' : '☐'; });
+}
+// Seleziona per tipo (menu Modifica)
+function selectByType(t) {
+  hideAllMenus();
+  if (t==='dubbi') { if (!state.segments.some(g => g.cv==='dubbio')) { setTip('Nessun muro non assegnato.'); return; } selectDubbi(); return; }
+  const ids = state.openings.map((o,i) => (!hid(o) && (t==='P' ? o.type==='P' : o.type!=='P')) ? i : -1).filter(i => i>=0);
+  if (!ids.length) { setTip(t==='P' ? 'Nessuna porta nel disegno.' : 'Nessuna finestra nel disegno.'); return; }
+  setTool('select');
+  state.selOpen = new Set(ids); state.multi = true;
+  const c = openingCenterW(ids[0]); if (c) state.selAnchor = c;
+  setTip(ids.length+(t==='P' ? ' porte selezionate' : ' finestre e porte-finestre selezionate')+': le azioni sono nella barra vicino alla selezione.');
+  draw();
+}
+function deleteAllMisure() {
+  hideAllMenus();
+  if (!state.misure.length) return;
+  const n = state.misure.length;
+  saveHistory(); state.misure = []; state.sel = null;
+  commit(n+(n===1 ? ' quota temporanea cancellata.' : ' quote temporanee cancellate.'), true);
+}
+
+// ── MISURA: quote temporanee tra due punti qualsiasi ────────────────────────────────────────────────────────────
+// Il punto puo' essere uno esistente, un angolo della base o un punto libero; dal secondo punto valgono Ortho, angoli guidati e allineamenti
+// come nel muro (calamita 🧲). La misura resta sul disegno finche' non si nasconde (Vista) o si cancella (Modifica o toccandola).
+function measureTarget(sx, sy, O) {
+  const si = document.getElementById('snap-indicator');
+  const np = nearestPoint(sx, sy, -1);
+  if (np!==null) {
+    const P = state.points[np], t = w2s(P.x,P.y);
+    si.textContent = '⊙ punto '+P.label; si.style.display = 'block'; setAssist(sx, sy, {tx:t.x, ty:t.y});
+    return {x:P.x, y:P.y};
+  }
+  let w = s2w(sx,sy), guides = null, marks = null, corner = null;
+  const bs = baseSnap(sx, sy);
+  if (bs) { w = {x:bs.x, y:bs.y}; corner = bs; si.textContent = '◈ angolo della base'; si.style.display = 'block'; }
+  else {
+    const sn = O ? angleSnapAt(O, w.x, w.y, []) : null;
+    const r = snapResolve(sx, sy, w, sn ? [{N:O, sn}] : [], new Set());
+    if (r) { w = {x:r.x, y:r.y}; guides = r.guides; marks = r.marks; si.textContent = r.text; si.style.display = 'block'; }
+    else si.style.display = 'none';
+  }
+  const t = w2s(w.x,w.y); setAssist(sx, sy, {corner, guides, marks, tx:t.x, ty:t.y});
+  return w;
+}
+function updateMeasurePreview(sx, sy) {
+  if (!state.measA) return;
+  state.measPrev = measureTarget(sx, sy, state.measA);
+  draw();
+}
+function finishMeasure() {
+  const A = state.measA, B = state.measPrev; if (!A || !B) return;
+  const d = Math.hypot(B.x-A.x, B.y-A.y);
+  if (d < 0.005) return;
+  saveHistory();
+  state.misure.push({ax:A.x, ay:A.y, bx:B.x, by:B.y, tmp:true});
+  state.measA = null; state.measPrev = null; clearAssist();
+  if (!SHOWMIS) { SHOWMIS = true; try { localStorage.setItem('app_rilievo_mis', '1'); } catch (err) {} }
+  commit('Distanza '+d.toFixed(3)+' m. Tocca il punto di partenza della prossima misura, oppure Esc per finire.', true);
+}
+function misSeg(m) { return {a:w2s(m.ax,m.ay), b:w2s(m.bx,m.by), d:Math.hypot(m.bx-m.ax, m.by-m.ay)}; }
+function hitMisura(sx, sy) {
+  if (!SHOWMIS || PRINT) return null;
+  const tol = COARSE ? 14 : 7;
+  for (let i=state.misure.length-1; i>=0; i--) {
+    const q = misSeg(state.misure[i]), cx = (q.a.x+q.b.x)/2, cy = (q.a.y+q.b.y)/2;
+    if (Math.abs(sx-cx) <= 34 && Math.abs(sy-cy) <= 12) return i;                              // la targhetta col numero
+    if (hitSegment(sx,sy)===null && distPtSeg(sx, sy, q.a.x, q.a.y, q.b.x, q.b.y) <= tol) return i;     // la linea, se non e' anche un muro
+  }
+  return null;
+}
+function drawMis(m, sel, prev) {
+  const q = misSeg(m), a = q.a, b = q.b;
+  ctx.save();
+  ctx.strokeStyle = sel ? '#ffe066' : '#00e5ff'; ctx.lineWidth = sel ? 2.5 : 1.5; ctx.setLineDash(prev ? [3,5] : [8,6]);
+  ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); ctx.setLineDash([]);
+  const ang = Math.atan2(b.y-a.y, b.x-a.x), nx = -Math.sin(ang)*6, ny = Math.cos(ang)*6;
+  ctx.beginPath(); ctx.moveTo(a.x-nx,a.y-ny); ctx.lineTo(a.x+nx,a.y+ny); ctx.moveTo(b.x-nx,b.y-ny); ctx.lineTo(b.x+nx,b.y+ny); ctx.stroke();
+  let txt = q.d.toFixed(2)+' m';
+  if (prev) { const dg = Math.round(angleDeg(m.ax, m.ay, m.bx, m.by)*10)/10; txt += '  '+dg+'°'; }
+  const cx = (a.x+b.x)/2, cy = (a.y+b.y)/2;
+  ctx.font = 'bold 13px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const tw = ctx.measureText(txt).width + 14;
+  ctx.fillStyle = 'rgba(22,33,62,0.95)'; ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(cx-tw/2, cy-11, tw, 22, 5); else ctx.rect(cx-tw/2, cy-11, tw, 22);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = sel ? '#ffe066' : '#00e5ff'; ctx.fillText(txt, cx, cy);
+  ctx.restore();
+}
+
 function toggleGrp(h) {                          // apre/chiude un gruppo del menu contestuale; se il menu cresce oltre lo schermo lo rialza
   const g = h.parentElement, m = h.closest('.floating-menu');
   g.classList.toggle('open');
@@ -3994,7 +4161,7 @@ function menuAction(action) {
     return;
   }
   if (action==='connect')    { setTool('connect'); state.connectFrom=i; setTip('Clicca il punto di destinazione.'); draw(); return; }
-  if (action==='measure')    { setTool('measure'); state.measureFrom=i; setTip('Clicca il punto fino a cui misurare.'); draw(); return; }
+  if (action==='measure')    { setTool('measure'); state.measA = {x:P.x, y:P.y}; setTip('Tocca il punto fino a cui misurare (anche libero: Ortho e angoli guidati).'); draw(); return; }
   if (action==='wall')       { setTool('wall'); state.wallOrigin=i; setTip('Trascina per disegnare il muro da '+P.label+'.'); draw(); return; }
   if (action==='photo')      { takePhoto(i); return; }
   if (action==='note') {
@@ -4031,6 +4198,7 @@ function entityMenuAction(action) {
     if (s.kind==='scala')    state.scale.splice(s.idx,1);
     if (s.kind==='ambiente') state.ambienti.splice(s.idx,1);
     if (s.kind==='pencil')   state.pencilLines.splice(s.idx,1);
+    if (s.kind==='misura')   state.misure.splice(s.idx,1);
     if (s.kind==='label')    state.labels.splice(s.idx,1);
     state.sel=null; commit('Entità eliminata.'); return;
   }
@@ -4264,6 +4432,7 @@ function handleClick(sx, sy, clientX, clientY, shift) {
       ['pilastro', hitPilastro(sx,sy),    'entity-context'],
       ['scala',    hitScala(sx,sy),       'entity-context'],
       ['pencil',   hitPencil(sx,sy),      'entity-context'],
+      ['misura',   hitMisura(sx,sy),      'entity-context'],
       ['segment',  hitSegment(sx,sy),     'seg-context'],
       ['ambiente', hitAmbiente(sx,sy),    'amb-context'],
     ].find(h => h[1]!==null);
@@ -4339,16 +4508,11 @@ function handleClick(sx, sy, clientX, clientY, shift) {
     return;
   }
 
-  case 'measure': {
-    if (pi===null) return;
-    if (state.measureFrom===null) { state.measureFrom=pi; setTip('Clicca il secondo punto.'); draw(); return; }
-    const A=state.points[state.measureFrom], B=state.points[pi];
-    const d = Math.hypot(B.x-A.x, B.y-A.y);
-    setTool('select');
-    state.measureShow = {ax:A.x, ay:A.y, bx:B.x, by:B.y, d};
-    setTip('Distanza '+A.label+'–'+B.label+' = '+d.toFixed(3)+' m');
-    draw();
-    return;
+  case 'measure': {                    // quota temporanea: due punti qualsiasi, il secondo con Ortho e angoli guidati
+    if (state.measA) { updateMeasurePreview(sx, sy); finishMeasure(); return; }
+    state.measA = measureTarget(sx, sy, null); state.measPrev = null; clearAssist();
+    setTip('Tocca il secondo punto: Ortho e angoli guidati come nel muro. Esc per finire.');
+    draw(); return;
   }
 
   case 'trilatere': {
@@ -4441,7 +4605,6 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   if (state.pointers.size>2) return;
-  if (state.measureShow) { state.measureShow=null; draw(); }   // il tratteggio della misura dura fino alla prossima azione
   if (state.exp) { expDown(evtPos(e), e); return; }               // selezione della zona da esportare
 
   const {x:sx, y:sy} = evtPos(e);
@@ -4471,6 +4634,7 @@ canvas.addEventListener('pointerdown', e => {
     case 'stair':  { const w=s2w(sx,sy); state.rectDraw={x0:w.x,y0:w.y,x1:w.x,y1:w.y}; return; }
     case 'room':   { const c=roomCorner(sx,sy); state.roomDraw={x0:c.x, y0:c.y, x1:c.x, y1:c.y, a:c.pi, b:null}; return; }
     case 'wall':   return;                  // i vertici si mettono al clic (handleClick)
+    case 'measure': if (state.measA) return; if (hitPoint(sx,sy)===null) startPan(e.clientX, e.clientY); return;      // col primo punto messo, il trascinamento guida l'anteprima; prima, sposta la vista
     case 'opening': {
       const hh = hitOpeningHandle(sx,sy); if (hh && !locked(state.openings[hh.idx])) { state.openingResize=hh; return; }
       const oi = hitOpening(sx,sy);
@@ -4518,6 +4682,7 @@ canvas.addEventListener('pointerdown', e => {
 canvas.addEventListener('pointermove', e => {
   if (!state.pointers.has(e.pointerId)) {
     if (state.tool==='wall' && state.wallOrigin!==null) { const p=evtPos(e); updateWallPreview(p.x,p.y); }
+    if (state.tool==='measure' && state.measA) { const p=evtPos(e); updateMeasurePreview(p.x,p.y); }
     if (state.tool==='paste' && state.paste) { const p=evtPos(e), pi=hitPoint(p.x,p.y); state.paste.at = pi!==null ? {x:state.points[pi].x, y:state.points[pi].y} : s2w(p.x,p.y); draw(); }
     if (e.pointerType==='mouse' && state.tool==='select') {         // col mouse sopra la scala compare la sua etichetta
       const q = evtPos(e), h = hitScala(q.x,q.y);
@@ -4611,6 +4776,7 @@ canvas.addEventListener('pointermove', e => {
   }
 
   if (state.tool==='wall' && state.wallOrigin!==null) updateWallPreview(sx,sy);
+  if (state.tool==='measure' && state.measA) updateMeasurePreview(sx,sy);
 });
 
 canvas.addEventListener('pointerup', endPointer);
@@ -4682,6 +4848,7 @@ function endPointer(e) {
     return;
   }
   if (state.tool==='wall' && state.wallOrigin!==null && state.wallPreview && state.moved) { finishWall(); return; }
+  if (state.tool==='measure' && state.measA && state.measPrev && state.moved) { finishMeasure(); return; }
   if (!state.moved) handleClick(sx, sy, e.clientX, e.clientY);
 }
 
@@ -4757,7 +4924,7 @@ document.addEventListener('keydown', e => {
     if (state.tool==='pasteOp') { setTool('select'); setTip('Incolla serramento finito.'); return; }
     if (state.pending || state.trilStep || state.circles.length) { resetTril(); setTip('Trilaterazione annullata.'); }
     if (state.tool==='wall') resetWall();
-    state.measureShow=null; state.roomDraw=null;
+    state.measA=null; state.measPrev=null; state.roomDraw=null;
     state.selBox=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null; state.sel=null; state.multi=false; state.moveSel=false;
     document.getElementById('photo-viewer').classList.remove('show');
     state.pencilCurrent = null;               // la matita a meta' si annulla, non si salva
@@ -4821,7 +4988,7 @@ function clearAll() {
   if (!confirm('Cancellare tutto il disegno? L\'operazione è annullabile con ↩ Annulla.')) return;
   saveHistory();
   state.points=[]; state.segments=[]; state.ambienti=[]; state.openings=[];
-  state.pilastri=[]; state.scale=[]; state.labels=[]; state.pencilLines=[];
+  state.pilastri=[]; state.scale=[]; state.labels=[]; state.pencilLines=[]; state.misure=[];
   COUNTERS.forEach(k => state[k] = 0);
   state.sel=null; state.selSet=null; state.selOpen=null; state.selSeg=null;
   commit('Disegno azzerato.');
@@ -4830,7 +4997,7 @@ function clearAll() {
 // ═══════════════════════════════════════════════════════════
 //  UNDO + SALVATAGGIO AUTOMATICO
 // ═══════════════════════════════════════════════════════════
-const SNAP_KEYS = ['points','segments','ambienti','openings','pilastri','scale','labels','pencilLines'];
+const SNAP_KEYS = ['points','segments','ambienti','openings','pilastri','scale','labels','pencilLines','misure'];   // 'misure' (2.34) e' facoltativa: i progetti vecchi si aprono senza
 const COUNTERS  = ['pilastroCounter','scalaCounter','pointCounter'];   // numeri che non si riusano (PIL, SCALA, P)
 
 // le foto dei punti pesano: nelle copie di Annulla ce n'e' una per passo (fino a 60), quindi i dati stanno in un deposito unico (pid)
@@ -4951,7 +5118,6 @@ function undo() {
 // commit = aggiorna barra di stato, ridisegna e salva
 function commit(msg, keepTool){
   assignFase(); autoWallThick();
-  state.measureShow=null;
   if (state.wallOrigin!==null && !state.points[state.wallOrigin]) state.wallOrigin = null;    // vertice sparito (annulla, cancella tutto): niente muro appeso
   if (!keepTool && state.tool!=='select' && state.tool!=='point' && !(state.tool==='wall' && state.wallOrigin!==null)) setTool('select');
   updateStatus(); draw(); persist(); if (msg) setTip(msg);
@@ -8168,8 +8334,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.33';
-const APP_NOTE = ["Menu che si apre toccando un elemento (punto, muro, serramento, ambiente): ora mostra solo le azioni più usate e raccoglie le altre in gruppi che si aprono con un tocco (per il muro: Facce e spessore, Serramento qui, Altro; per il serramento: Su più serramenti, Elenco serramenti; per il punto: Costruisci, Foto e nota). Le voci che cancellano stanno in fondo, in rosso", "Su smartphone e tablet il menu diventa un pannello in basso, a due colonne e senza descrizioni; sul computer resta accanto all'elemento, con le descrizioni"];
+const APP_VERSION = '2.34';
+const APP_NOTE = ["Barra dei comandi riordinata: Seleziona, Disegna, Inserisci, Modifica, Vista, Annulla, File, Stato di fatto. Disegna ha 6 voci (gli ambienti e i punti stanno in due gruppi); Inserisci ha serramenti, scala, pilastro ed etichetta; File raccoglie Importa ed Esporta in due gruppi, con \"Cancella tutto\" in fondo in rosso", "Nuovo menu Modifica: Incolla, Incolla sul posto, Eredita proprietà, Spezza, Seleziona per tipo (muri non assegnati, tutte le porte, tutte le finestre), Selezione multipla", "Nuovo menu Vista, con caselle che si accendono e spengono senza chiudere il menu: quote dello spessore, quote interne dei muri, punti, quote temporanee, pannello serramenti, legenda, pannello base; qui ci sono anche Centra vista e Tabella serramenti. A destra restano solo Mano, Calamita, Guida e Incolla", "Misura rifatta: i due punti possono essere anche liberi sul disegno, con Ortho e angoli guidati come nel muro, e la misura resta come quota temporanea (si può fare una dopo l'altra). Si nasconde da Vista, si cancella da Modifica (tutte insieme) o toccandola. Le quote temporanee non escono in PDF, JPG e DXF", "I menu che si aprono toccando un elemento propongono in evidenza (barra gialla) fino a due azioni: quelle che dipendono dallo stato (muro da confermare, Progetto, punto tra due linee, serramento senza dati energetici) e gli ultimi comandi che hai usato"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
