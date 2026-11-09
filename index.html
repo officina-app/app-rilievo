@@ -318,6 +318,7 @@
 <div id="amb-context" class="floating-menu">
   <div class="menu-item" data-demo onclick="ambMenuAction('demo')"></div>
   <div class="menu-item" data-lock onclick="ambMenuAction('edit')">✎ Modifica ambiente<small class="md">Nome, altezza e categoria; mostra superficie e pareti</small></div>
+  <div class="menu-item" data-lock onclick="ambMenuAction('volta')">⌒ Volta<small class="md">A botte o a crociera: quote d'imposta e in chiave, tratteggio in pianta, H min e H max</small></div>
   <div class="menu-item" onclick="ambMenuAction('copy')">⎘ Copia ambiente<small class="md">Contorno, serramenti e dati: poi Incolla, per fare una variante</small></div>
   <div class="menu-item" onclick="ambMenuAction('inherit')">🖌 Eredita proprietà<small class="md">Copia categoria e altezza su altri ambienti</small></div>
   <div class="menu-item" data-lock onclick="ambMenuAction('merge')">⊕ Unisci con un altro ambiente<small class="md">Tocca l'altro: diventano uno, se hanno un lato in comune</small></div>
@@ -585,6 +586,163 @@ function ambIngombro(am) {
   return t;
 }
 function ambNet(am) { return Math.max(0, ambNetBase(am) - ambIngombro(am)); }
+
+// ═══════════════════════════════════════════════════════════
+//  VOLTE (a botte o a crociera) su un ambiente intero
+//  am.volta = {tipo:'botte'|'crociera', n, z:[...], e:[k1,k2], zc}
+//  z[j] = quota d'imposta al vertice j dell'ambiente (m dal pavimento, puo' essere diversa da un vertice all'altro);
+//  e = i due lati d'imposta della botte (il lato k va dal vertice k al k+1); zc = quota in chiave;
+//  n = numero di vertici dell'ambiente quando la volta e' stata scritta: se cambia, la volta torna da rifare.
+//  Il tratteggio in pianta (asse in chiave o diagonali) e le altezze (H min, H max, media, volume) si calcolano da questi dati.
+//  Altezza media della botte: imposta media + segmento circolare per tre quote (due imposte e chiave); crociera: imposta media + 2/3
+//  della freccia (approssimazione per la crociera a costoloni circolari).
+// ═══════════════════════════════════════════════════════════
+function voltaInfo(am) {
+  const v = am && am.volta; if (!v) return null;
+  const bad = why => ({ok:false, why, tipo:v.tipo});
+  const pts = am.indices.map(i => state.points[i]), n = pts.length;
+  if (n < 3 || pts.some(p => !p) || v.n !== n || !Array.isArray(v.z) || v.z.length !== n) return bad('il contorno dell\'ambiente è cambiato: rifai la volta');
+  const z = v.z.map(Number), zc = +v.zc;
+  if (!(zc > 0)) return bad('manca la quota in chiave');
+  const D = (a, b) => Math.hypot(a.x-b.x, a.y-b.y), mid = (a, b) => ({x:(a.x+b.x)/2, y:(a.y+b.y)/2});
+  if (v.tipo==='crociera') {
+    if (n !== 4) return bad('la crociera vuole un ambiente a quattro lati');
+    if (z.some(q => !(q > 0))) return bad('manca una quota d\'imposta');
+    const zi = (z[0]+z[1]+z[2]+z[3])/4, f = zc - zi;
+    if (f <= 0) return bad('la quota in chiave è sotto l\'imposta');
+    return {ok:true, tipo:'crociera', hmin:Math.min(...z), hmax:zc, hm:zi + 2*f/3, f, lines:[[pts[0], pts[2]], [pts[1], pts[3]]], quote:[0, 1, 2, 3]};
+  }
+  const [k1, k2] = v.e || [];
+  if (!Number.isInteger(k1) || !Number.isInteger(k2) || k1 === k2 || k1 < 0 || k2 < 0 || k1 >= n || k2 >= n) return bad('mancano i due lati d\'imposta');
+  const q1 = (k1+1) % n, q2 = (k2+1) % n, vs = [k1, q1, k2, q2], P = vs.map(j => pts[j]);
+  if (vs.some(j => !(z[j] > 0))) return bad('manca una quota d\'imposta');
+  const zi = vs.reduce((t, j) => t + z[j], 0) / 4, f = zc - zi;
+  if (f <= 0) return bad('la quota in chiave è sotto l\'imposta');
+  const L1 = D(P[0], P[1]) || 1, nx = -(P[1].y-P[0].y)/L1, ny = (P[1].x-P[0].x)/L1, m1 = mid(P[0], P[1]), m2 = mid(P[2], P[3]);
+  const w = Math.abs((m2.x-m1.x)*nx + (m2.y-m1.y)*ny);
+  if (w < 0.3) return bad('i due lati d\'imposta sono troppo vicini');
+  const R = (w*w/4 + f*f)/(2*f), al = Math.atan2(w/2, R-f), seg = R*R*(al - Math.sin(al)*Math.cos(al));
+  const straight = D(P[0], P[2]) + D(P[1], P[3]) <= D(P[0], P[3]) + D(P[1], P[2]);       // coppie di estremi che non si incrociano
+  const A = straight ? [mid(P[0], P[2]), mid(P[1], P[3])] : [mid(P[0], P[3]), mid(P[1], P[2])];
+  return {ok:true, tipo:'botte', hmin:Math.min(...vs.map(j => z[j])), hmax:zc, hm:zi + seg/w, f, lines:[A], quote:[...new Set(vs)], e:[k1, k2]};
+}
+// altezza per volume e pareti: con una volta valida e' la media, altrimenti l'altezza netta scritta
+function ambHe(am) { const V = voltaInfo(am); return V && V.ok ? V.hm : am.h; }
+// testo dell'altezza: "2.20 - 3.35" con una volta valida, altrimenti l'altezza netta
+function ambHtxt(am, dec) {
+  const V = voltaInfo(am), f = x => { const s = Number(x).toFixed(2); return dec ? s.replace('.', dec) : s; };
+  return V && V.ok ? f(V.hmin)+' - '+f(V.hmax) : f(am.h);
+}
+// proposta: botte = i due lati piu' lunghi paralleli (fino a 20 gradi, non adiacenti); crociera = ambiente a quattro lati. null = ambiente non adatto
+function voltaPropose(am, tipo) {
+  const pts = am.indices.map(i => state.points[i]), n = pts.length;
+  if (n < 3 || pts.some(p => !p)) return null;
+  if (tipo==='crociera') return n === 4 ? {} : null;
+  let best = null;
+  for (let a=0; a<n; a++) for (let b=a+1; b<n; b++) {
+    if (b === a+1 || (a === 0 && b === n-1)) continue;
+    const A0 = pts[a], A1 = pts[(a+1)%n], B0 = pts[b], B1 = pts[(b+1)%n];
+    const la = Math.hypot(A1.x-A0.x, A1.y-A0.y), lb = Math.hypot(B1.x-B0.x, B1.y-B0.y); if (la < 0.5 || lb < 0.5) continue;
+    if (Math.abs(((A1.x-A0.x)*(B1.y-B0.y) - (A1.y-A0.y)*(B1.x-B0.x))/(la*lb)) > FACE_SIN) continue;
+    if (!best || la+lb > best.s) best = {e:[a, b], s:la+lb};
+  }
+  return best ? {e:best.e} : null;
+}
+function voltaLines(am) { const V = voltaInfo(am); return V && V.ok ? V.lines : []; }
+
+function voltaDialog(k) {
+  const am = state.ambienti[k]; if (!am) return;
+  const n = am.indices.length, lb = j => { const p = state.points[am.indices[j]]; return p ? p.label : '?'; };
+  const old = am.volta, ov = old && old.n === n ? old : null;
+  const edgeOpts = am.indices.map((_, j) => ({value:String(j), label:lb(j)+' - '+lb((j+1)%n)}));
+  const prop = voltaPropose(am, 'botte'), e0 = ov && ov.tipo==='botte' && ov.e ? ov.e : prop ? prop.e : [0, Math.min(2, n-1)];
+  const zb = ov ? ov.z.filter(q => q > 0)[0] : null, z0 = zb || (am.h > 0 ? am.h : 2.20), zc0 = ov && ov.zc > 0 ? ov.zc : Math.round((z0+0.8)*100)/100;
+  const zAt = j => ov && ov.z[j] > 0 ? ov.z[j] : z0, num = x => Number(x).toFixed(2);
+  const fields = [
+    {label:'Tipo di volta', id:'vt', type:'select', value:old ? old.tipo : '', options:[{value:'', label:'Nessuna (soffitto piano)'}, {value:'botte', label:'A botte'}, {value:'crociera', label:'A crociera'}]},
+    {label:'Lato d\'imposta 1', id:'e1', type:'select', value:String(e0[0]), options:edgeOpts, sec:'botte'},
+    {label:'Quota imposta, inizio lato 1 (m)', id:'b1a', type:'number', value:num(zAt(e0[0])), half:true, sec:'botte'},
+    {label:'Quota imposta, fine lato 1 (m)', id:'b1b', type:'number', value:num(zAt((e0[0]+1)%n)), half:true, sec:'botte'},
+    {label:'Lato d\'imposta 2', id:'e2', type:'select', value:String(e0[1]), options:edgeOpts, sec:'botte'},
+    {label:'Quota imposta, inizio lato 2 (m)', id:'b2a', type:'number', value:num(zAt(e0[1])), half:true, sec:'botte'},
+    {label:'Quota imposta, fine lato 2 (m)', id:'b2b', type:'number', value:num(zAt((e0[1]+1)%n)), half:true, sec:'botte'},
+  ];
+  if (n === 4) [0, 1, 2, 3].forEach(j => fields.push({label:'Quota imposta in '+lb(j)+' (m)', id:'c'+j, type:'number', value:num(zAt(j)), half:true, sec:'crociera'}));
+  fields.push({label:'Quota in chiave (m, dal pavimento)', id:'zc', type:'number', value:num(zc0), sec:'volta'});
+  const hint = prop ? 'Botte: lati d\'imposta proposti, cambiali se serve.' : 'Non trovo due lati paralleli: per la botte scegli tu i lati d\'imposta.';
+  askDialog('Volta di '+am.name, fields, hint+(n !== 4 ? ' La crociera vuole un ambiente a quattro lati.' : ''), v => {
+    saveHistory();
+    if (!v.vt) { delete am.volta; commit('Volta tolta da '+am.name+'.'); return; }
+    const z = new Array(n).fill(0), zc = parseFloat(v.zc);
+    if (v.vt === 'crociera') {
+      if (n !== 4) { setTip('La crociera vuole un ambiente a quattro lati.'); return; }
+      [0, 1, 2, 3].forEach(j => { z[j] = parseFloat(v['c'+j]); });
+      am.volta = {tipo:'crociera', n, z, zc};
+    } else {
+      const e1 = +v.e1, e2 = +v.e2;
+      z[e1] = parseFloat(v.b1a); z[(e1+1)%n] = parseFloat(v.b1b); z[e2] = parseFloat(v.b2a); z[(e2+1)%n] = parseFloat(v.b2b);
+      am.volta = {tipo:'botte', n, z, e:[e1, e2], zc};
+    }
+    const V = voltaInfo(am);
+    commit(V.ok ? 'Volta a '+V.tipo+' su '+am.name+': H '+ambHtxt(am)+' m, altezza media '+V.hm.toFixed(2)+' m.' : 'Volta salvata ma incompleta: '+V.why+'.');
+  });
+  const sel = $id('dlg_vt'), upd = () => { showSec('botte', sel.value==='botte'); showSec('crociera', sel.value==='crociera'); showSec('volta', !!sel.value); };
+  upd(); sel.addEventListener('change', upd);
+}
+// quote d'imposta sui vertici: compaiono solo con l'ambiente selezionato (modifica); toccandone una si cambia quella sola
+function voltaQuoteTargets() {
+  if (PRINT || !state.sel || state.sel.kind!=='ambiente') return [];
+  const am = state.ambienti[state.sel.idx], V = voltaInfo(am); if (!V || !V.ok) return [];
+  const n = am.indices.length, out = [];
+  V.quote.forEach(j => { const p = state.points[am.indices[j]]; if (p) out.push({k:state.sel.idx, j, p, z:am.volta.z[j]}); });
+  out.push({k:state.sel.idx, j:-1, p:null, z:am.volta.zc, chiave:true});
+  return out;
+}
+function voltaQuotePos(t) {
+  if (t.chiave) { const am = state.ambienti[t.k], V = voltaInfo(am), L = V.lines[0], m = {x:(L[0].x+L[1].x)/2, y:(L[0].y+L[1].y)/2}; const s = w2s(m.x, m.y); return {x:s.x, y:s.y}; }
+  const am = state.ambienti[t.k], pts = am.indices.map(i => state.points[i]), c = pts.reduce((a, q) => ({x:a.x+q.x/pts.length, y:a.y+q.y/pts.length}), {x:0, y:0});
+  const s = w2s(t.p.x, t.p.y), d = w2s(c.x, c.y), dx = d.x-s.x, dy = d.y-s.y, l = Math.hypot(dx, dy) || 1;
+  return {x:s.x + dx/l*26, y:s.y + dy/l*26};
+}
+function drawVoltaQuote() {
+  const T = voltaQuoteTargets(); if (!T.length) return;
+  ctx.save();
+  T.forEach(t => {
+    const q = voltaQuotePos(t), txt = (t.chiave ? 'chiave ' : '')+Number(t.z).toFixed(2);
+    ctx.font = 'bold 11px Segoe UI'; const w = ctx.measureText(txt).width + 12;
+    ctx.fillStyle = t.chiave ? '#7b3fbf' : '#14507a'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+    ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(q.x-w/2, q.y-10, w, 20, 6); else ctx.rect(q.x-w/2, q.y-10, w, 20); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, q.x, q.y+1);
+    if (!t.chiave) { const s = w2s(t.p.x, t.p.y); ctx.strokeStyle = '#5ec8ff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(s.x, s.y, 7, 0, Math.PI*2); ctx.stroke(); }
+  });
+  ctx.restore();
+}
+function hitVoltaQuota(sx, sy) {
+  const R = COARSE ? 26 : 16;
+  for (const t of voltaQuoteTargets()) { const q = voltaQuotePos(t); if (Math.abs(sx-q.x) <= R+10 && Math.abs(sy-q.y) <= R) return t; }
+  return null;
+}
+function voltaQuotaDialog(t) {
+  const am = state.ambienti[t.k]; if (!am || !am.volta) return;
+  const lab = t.chiave ? 'Quota in chiave (m)' : 'Quota imposta in '+state.points[am.indices[t.j]].label+' (m)';
+  askDialog('Volta di '+am.name, [{label:lab, id:'z', type:'number', value:Number(t.z).toFixed(2)}], 'Metri dal pavimento.', v => {
+    const z = parseFloat(v.z); if (!(z > 0)) { setTip('Quota non valida.'); return; }
+    saveHistory();
+    if (t.chiave) am.volta.zc = z; else am.volta.z[t.j] = z;
+    const V = voltaInfo(am);
+    commit(V.ok ? 'Quota aggiornata: H '+ambHtxt(am)+' m.' : 'Quota aggiornata, ma la volta è incompleta: '+V.why+'.');
+  });
+}
+// tratteggio in pianta: asse in chiave (botte) o diagonali (crociera); come le linee tratteggiate delle scale, uguale a video, in PDF/JPG e nel DXF
+function drawVolte() {
+  state.ambienti.forEach(am => {
+    if (hid(am) || (prog() && am.fase==='demo')) return;
+    const L = voltaLines(am); if (!L.length) return;
+    ctx.save(); ctx.strokeStyle = PRINT ? '#555' : '#9fd8ff'; ctx.lineWidth = prLw(1.5, 0.18); ctx.setLineDash(PRINT ? [3*PX_MM, 1.5*PX_MM] : [8, 5]);
+    L.forEach(([a, b]) => { const p = w2s(a.x, a.y), q = w2s(b.x, b.y); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); });
+    ctx.restore();
+  });
+}
 // pareti di un ambiente: perimetro x altezza (lorde, vuoto per pieno) e nette, cioe' meno le aperture sul suo bordo.
 // Un serramento conta se sta su un lato dell'ambiente o sulla faccia opposta del suo muro: una porta tra due stanze
 // si toglie da entrambe. All'aperto niente pareti: null.
@@ -612,7 +770,7 @@ function ambWalls(am, cuts) {
   if (pts.length < 3 || ambNoVol(am)) return null;
   const per = pts.reduce((t,p,k) => { const q = pts[(k+1)%pts.length]; return t + Math.hypot(q.x-p.x, q.y-p.y); }, 0);
   const ops = ambOpenings(am, cuts), ap = ops.reduce((t,i) => t + state.openings[i].width*opHb(state.openings[i]), 0);
-  const lorde = per*am.h;
+  const lorde = per*ambHe(am);
   return {per, lorde, ap, n:ops.length, ops, nette:Math.max(0, lorde-ap)};
 }
 function ambCenter(am) {
@@ -631,7 +789,7 @@ function ambBlockBox(am, c) {
   const dy = prU(16), hn = PRINT ? 2.5*PX_MM : 14, hs = PRINT ? 2*PX_MM : 13;
   ctx.font = prFont(14, 2.5, true); let w = ctx.measureText(am.name).width;
   const showH = +am.h > 0;
-  ctx.font = prFont(13, 2, true);   w = Math.max(w, ctx.measureText(ambNet(am).toFixed(2)+' m²').width, showH ? ctx.measureText('H. '+Number(am.h).toFixed(2)+' m').width : 0);
+  ctx.font = prFont(13, 2, true);   w = Math.max(w, ctx.measureText(ambNet(am).toFixed(2)+' m²').width, showH ? ctx.measureText('H. '+ambHtxt(am)+' m').width : 0);
   return { x0:c.x-w/2, x1:c.x+w/2, y0:c.y-dy-hn*0.6, y1:c.y+(!showH ? 0 : ambNoVol(am) ? dy : 2*dy)+hs*0.6 };
 }
 // punto della linea S->c dove entra nel riquadro b (null se S e' gia' dentro)
@@ -1163,10 +1321,12 @@ function drawNow() {
   drawWallsPrev();
   drawScale();
   drawAmbienti();
+  drawVolte();
   drawPencil();
   drawRoomPreview();
   drawSegments();
   drawAmbHighlight();
+  drawVoltaQuote();
   drawPilastri();
   drawOpenings();
   drawOpeningHandles();
@@ -1306,11 +1466,11 @@ function confirmProposals() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  VARCO DEI SERRAMENTI: la linea del muro si interrompe sulla larghezza del serramento. Se a meno di 65 cm c'e' la
+//  VARCO DEI SERRAMENTI: la linea del muro si interrompe sulla larghezza del serramento. Se a meno di 1 m c'e' la
 //  faccia opposta dello stesso muro (una linea parallela, dal lato fuori dall'ambiente), si interrompe anche quella
 //  e due spalle chiudono lo spessore. Vale a video, in PDF/JPG e nel DXF.
 // ═══════════════════════════════════════════════════════════
-const WALL_FACE_MAX = 0.65;
+const WALL_FACE_MAX = 1.0;                    // spessore massimo di un muro letto dalle due facce parallele (m): anche una muratura portante da 60 cm
 const FACE_SIN = Math.sin(20*Math.PI/180);   // la faccia opposta di un muro puo' essere inclinata fino a 20 gradi (muri non paralleli)
 // primo "Ambiente N" libero: mai due ambienti con lo stesso nome
 function freeAmbName() { const used = new Set(state.ambienti.map(a => a.name)); let n = 1; while (used.has('Ambiente '+n)) n++; return 'Ambiente '+n; }
@@ -1336,7 +1496,7 @@ function drawThickQuotes() {
   });
 }
 // SPESSORE DALLA GRAFICA: il filo interno di un muro (linea che delimita un ambiente) prende lo spessore dalla linea parallela
-// oltre il muro, a meno di 65 cm. Vale finche' lo spessore non e' scritto a mano (g.thAuto); se la linea esterna sparisce torna da dare.
+// oltre il muro, a meno di 1 m. Vale finche' lo spessore non e' scritto a mano (g.thAuto); se la linea esterna sparisce torna da dare.
 function autoWallThick() {
   state.segments.forEach((g, si) => {
     if (hid(g) || (g.thick && !g.thAuto) || GWS.has(g)) return;
@@ -1639,7 +1799,7 @@ function wallSummary(idxs) {
 }
 // muro con spessore scritto a mano (non quello letto dalla grafica), modificabile nella vista corrente
 function wallManual(g) { return !!g && !!g.thick && !g.thAuto && !GWS.has(g) && !locked(g); }
-// "Ricalcola dalla grafica": toglie lo spessore scritto a mano e rimette quello automatico (linea parallela entro 65 cm)
+// "Ricalcola dalla grafica": toglie lo spessore scritto a mano e rimette quello automatico (linea parallela entro 1 m)
 function wallRecalcAction(only) {
   hideAllMenus();
   const idxs = (only || (state.selSeg ? [...state.selSeg] : [])).filter(i => wallManual(state.segments[i]));
@@ -1648,7 +1808,7 @@ function wallRecalcAction(only) {
   idxs.forEach(i => { const g = state.segments[i]; delete g.thick; delete g.thN; delete g.thF; });
   autoWallThick();
   const ok = idxs.filter(i => state.segments[i].thAuto).length, no = idxs.length-ok, pl = n => n===1 ? 'muro' : 'muri';
-  commit('Ricalcolato dalla grafica: '+ok+' '+pl(ok)+' con lo spessore delle linee'+(no ? '; '+no+' senza una linea parallela entro 65 cm: spessore da dare a mano.' : '.'), true);
+  commit('Ricalcolato dalla grafica: '+ok+' '+pl(ok)+' con lo spessore delle linee'+(no ? '; '+no+' senza una linea parallela entro 1 m: spessore da dare a mano.' : '.'), true);
 }
 function wallThickMenuAction(only) {
   hideAllMenus();
@@ -1838,7 +1998,7 @@ function demoTract(si, d0, d1) {
   state.sel = null;
   commit('Demolito un tratto di '+(d1-d0).toFixed(2)+' m (giallo, nelle quantità)'+(m ? ' con '+m+(m===1 ? ' serramento' : ' serramenti') : '')+'.');
 }
-// la linea e le facce parallele dello stesso muro (distanza 3-60 cm, sovrapposte per almeno meta'), con il filtro ok
+// la linea e le facce parallele dello stesso muro (distanza 3 cm - 1 m, inclinate fino a 20 gradi, sovrapposte per almeno meta'), con il filtro ok
 function wallFaces(si, ok) {
   const g = state.segments[si], A = state.points[g.a], B = state.points[g.b], out = [si]; if (!A || !B) return out;
   const L = Math.hypot(B.x-A.x, B.y-A.y); if (L < 1e-6) return out;
@@ -1846,8 +2006,8 @@ function wallFaces(si, ok) {
   state.segments.forEach((h,k) => {
     if (k===si || !ok(h)) return;
     const C = state.points[h.a], D = state.points[h.b]; if (!C || !D) return;
-    const Lc = Math.hypot(D.x-C.x, D.y-C.y); if (Lc < 1e-6 || Math.abs(ux*(D.y-C.y)/Lc - uy*(D.x-C.x)/Lc) > 0.05) return;
-    const vx = (D.x-C.x)/Lc, vy = (D.y-C.y)/Lc, d = Math.abs(((A.x+B.x)/2-C.x)*vy - ((A.y+B.y)/2-C.y)*vx); if (d < 0.03 || d > 0.6) return;     // dalla retta della linea candidata
+    const Lc = Math.hypot(D.x-C.x, D.y-C.y); if (Lc < 1e-6 || Math.abs(ux*(D.y-C.y)/Lc - uy*(D.x-C.x)/Lc) > FACE_SIN) return;
+    const vx = (D.x-C.x)/Lc, vy = (D.y-C.y)/Lc, d = Math.abs(((A.x+B.x)/2-C.x)*vy - ((A.y+B.y)/2-C.y)*vx); if (d < 0.03 || d > WALL_FACE_MAX) return;     // dalla retta della linea candidata
     const s0 = (C.x-A.x)*ux + (C.y-A.y)*uy, s1 = (D.x-A.x)*ux + (D.y-A.y)*uy;
     const ov = Math.min(L, Math.max(s0,s1)) - Math.max(0, Math.min(s0,s1));
     if (ov >= 0.5*Math.min(L, Lc)) out.push(k);
@@ -1946,6 +2106,7 @@ function ambMenuAction(action) {
   const s = state.sel; if (!s || s.kind!=='ambiente') return;
   const amb = state.ambienti[s.idx]; if (!amb) return;
   if (action==='demo') { setDemo([], [], [s.idx], amb.fase!=='demo'); return; }
+  if (action==='volta') { voltaDialog(s.idx); return; }
   if (action==='copy') { const H = ambHighlight(s.idx); clipCopy(new Set(), H ? H.edges : new Set(), new Set(), new Set([s.idx])); return; }
   if (action==='copy') { const H = ambHighlight(s.idx); clipCopy(new Set(), H ? H.edges : new Set(), new Set(), new Set([s.idx])); return; }
   if (action==='inherit') { inheritStart('ambiente', s.idx); return; }
@@ -2011,8 +2172,8 @@ function drawAmbienti() {
     const dy = prU(16);
     ctx.fillStyle=C.ambName; ctx.font=prFont(14, 2.5, true); ctx.fillText(amb.name, c.x, c.y-dy);
     ctx.fillStyle=C.ambArea; ctx.font=prFont(13, 2, true);   ctx.fillText(area.toFixed(2)+' m²', c.x, c.y);
-    if (+amb.h > 0) { ctx.fillStyle=C.ambH;    ctx.font=prFont(13, 2, true);   ctx.fillText('H. '+Number(amb.h).toFixed(2)+' m', c.x, c.y+dy); }      // altezza 0 (terrazzo): la riga sparisce
-    if (+amb.h > 0 && !ambNoVol(amb)) { ctx.fillStyle=C.ambVol; ctx.font=prFont(11, 1.8); ctx.fillText((area*amb.h).toFixed(2)+' m³', c.x, c.y+2*dy); }
+    if (+amb.h > 0) { ctx.fillStyle=C.ambH;    ctx.font=prFont(13, 2, true);   ctx.fillText('H. '+ambHtxt(amb)+' m'+(amb.volta && !(voltaInfo(amb)||{}).ok ? ' (!)' : ''), c.x, c.y+dy); }      // altezza 0 (terrazzo): la riga sparisce; (!) = volta incompleta
+    if (+amb.h > 0 && !ambNoVol(amb)) { ctx.fillStyle=C.ambVol; ctx.font=prFont(11, 1.8); ctx.fillText((area*ambHe(amb)).toFixed(2)+' m³', c.x, c.y+2*dy); }
   });
 }
 
@@ -2608,7 +2769,7 @@ function finishWall() {
 // si duplica; (4) il tratto di parete tra le due facce di una tramezza (l'attacco) sparisce, come nel disegno reale; (5) gli ambienti
 // attraversati si dividono e il locale nuovo si registra. Un solo passo di Annulla (la storia e' gia' salvata da finishWall).
 const weldLocked = el => prog() && !!el && !!el.fase && el.fase!=='nuovo';      // rilievo esistente nel Progetto (un elemento appena creato non ha ancora la fase)
-const WELD_OVERSHOOT = 0.65, WELD_UNDERSHOOT = 0.12;                       // sbordo da tagliare, mancanza da prolungare fino al muro (m)
+const WELD_OVERSHOOT = WALL_FACE_MAX, WELD_UNDERSHOOT = 0.12;              // sbordo da tagliare (fino allo spessore massimo del muro), mancanza da prolungare fino al muro (m)
 const WELD_SIN = Math.sin(20*Math.PI/180), WELD_COS = Math.cos(20*Math.PI/180);      // le linee possono essere inclinate fino a 20 gradi rispetto all'ideale
 const WELD_MIN_SIN = 0.3;                                                    // sotto ~17 gradi tra le due linee non e' un attacco ma un affiancamento: niente taglio ne' prolungamento
 function weldTol() { return Math.min(0.06, Math.max(0.01, 6/state.zoom)); }
@@ -2735,7 +2896,7 @@ function hasParallelFace(a, b) {
     if ((g.a===a && g.b===b) || (g.a===b && g.b===a) || !live(g) || hid(g)) return false;
     const C = state.points[g.a], D = state.points[g.b], Lc = Math.hypot(D.x-C.x, D.y-C.y); if (Lc < 1e-6) return false;
     if (Math.abs(ux*(D.y-C.y)/Lc - uy*(D.x-C.x)/Lc) > 0.035) return false;
-    const dist = Math.abs((C.x-A.x)*uy - (C.y-A.y)*ux); if (dist < 0.02 || dist > 0.30) return false;
+    const dist = Math.abs((C.x-A.x)*uy - (C.y-A.y)*ux); if (dist < 0.02 || dist > WALL_FACE_MAX) return false;
     const s0 = (C.x-A.x)*ux + (C.y-A.y)*uy, s1 = (D.x-A.x)*ux + (D.y-A.y)*uy;
     return Math.min(L, Math.max(s0, s1)) - Math.max(0, Math.min(s0, s1)) >= 0.5*L;
   });
@@ -2791,8 +2952,8 @@ function twinRemoveFor(o, P, t) {
     const s0 = (Fa.x-O.x)*ux + (Fa.y-O.y)*uy, s1 = (Fb.x-O.x)*ux + (Fb.y-O.y)*uy;
     if (Math.min(L, Math.max(s0, s1)) - Math.max(0, Math.min(s0, s1)) < 0.5*lf) continue;
     const near = w => { const X = Pt(w); return Math.hypot(Fa.x-X.x, Fa.y-X.y) <= Math.hypot(Fb.x-X.x, Fb.y-X.y) ? F.a : F.b; };
-    const sfm = Math.abs(sdN({x:(Fa.x+Fb.x)/2, y:(Fa.y+Fb.y)/2}));            // la linea nuova e' l'altra faccia di F: vicina (fino a 60 cm), da qualunque lato
-    if (sfm < 0.02 || sfm > 0.6) continue;
+    const sfm = Math.abs(sdN({x:(Fa.x+Fb.x)/2, y:(Fa.y+Fb.y)/2}));            // la linea nuova e' l'altra faccia di F: vicina (fino a 1 m), da qualunque lato
+    if (sfm < 0.02 || sfm > WALL_FACE_MAX) continue;
     // se il clic e' stato agganciato a un estremo della seconda faccia automatica (stanno a pochi pixel), la linea nuova parte da una copia del punto
     let oo = o, tt = t;
     if (W.a===o || W.b===o) oo = newPoint(O.x, O.y);
@@ -2838,7 +2999,7 @@ function twinFaces(k) {
     const C = state.points[h.a], D = state.points[h.b], Lh = Math.hypot(D.x-C.x, D.y-C.y); if (Lh < 1e-6) return;
     if (Math.abs(((B0.x-A0.x)*(D.y-C.y) - (B0.y-A0.y)*(D.x-C.x))/(L0*Lh)) > 0.35) return;                  // 20 gradi
     const ux = (B0.x-A0.x)/L0, uy = (B0.y-A0.y)/L0, sd = ((C.x+D.x)/2-A0.x)*(-uy) + ((C.y+D.y)/2-A0.y)*ux;
-    if (Math.abs(sd) < 0.02 || Math.abs(sd) > 0.60) return;
+    if (Math.abs(sd) < 0.02 || Math.abs(sd) > WALL_FACE_MAX) return;
     const s0 = (C.x-A0.x)*ux + (C.y-A0.y)*uy, s1 = (D.x-A0.x)*ux + (D.y-A0.y)*uy;
     const ov = Math.min(L0, Math.max(s0, s1)) - Math.max(0, Math.min(s0, s1)); if (ov < 0.5*Math.min(L0, Lh)) return;
     cands.push({m, sd, same: !!(g0.tw && h.tw===g0.tw)});
@@ -4050,6 +4211,8 @@ function handleClick(sx, sy, clientX, clientY, shift) {
     }
     // il primo elemento toccato, in ordine di priorita', viene selezionato e apre il suo menu
     state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null; state.moveSel=false;
+    const vq = hitVoltaQuota(sx, sy);                          // con l'ambiente selezionato, toccando una quota della volta si cambia solo quella
+    if (vq) { voltaQuotaDialog(vq); return; }
     const pick = [
       ['opening',  pi===null ? hitOpening(sx,sy) : null, 'opening-context'],
       ['point',    pi,                    'context-menu'],
@@ -4947,7 +5110,7 @@ function renderExport(E, den, orient) {
     CUTS = wallCuts(); PLAY = layoutPrint();
     ctx.save(); ctx.beginPath(); ctx.rect(a.x, a.y, b.x-a.x, b.y-a.y); ctx.clip();
     if (E.wm) drawWatermark();
-    drawAmbienti(); drawPencil(); drawSegments(); drawPilastri(); drawScale(); drawOpenings(); drawLabels();
+    drawAmbienti(); drawVolte(); drawPencil(); drawSegments(); drawPilastri(); drawScale(); drawOpenings(); drawLabels();
     ctx.restore();
     drawScaleBar(den, Hl); drawWallLegend(Wl, Hl);
     ctx.save(); ctx.font = 'italic 8pt Segoe UI'; ctx.fillStyle = '#828282'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';      // come nelle tabelle
@@ -5295,7 +5458,7 @@ function exportDXF() {
   hideAllMenus(); refreshGW();
   // layer: [nome, colore]; colore negativo = spento all'apertura (QUOTE_CORTE: quote che non stanno nel loro muro)
   const LAYERS = [['MURI',5],['MURI_EST',6],['MURI_COM',3],['MURI_NONRISC',30],['MURI_ND',200],['MURI_GRAFICI',8],['QUOTE',2],['QUOTE_CORTE',-2],['SERRAMENTI',5],
-                  ['PORTE',4],['AMBIENTI',4],['AMBIENTI_TESTO',7],['PILASTRI',8],['SCALE',6],['SCALE_TESTO',8],['QUOTE_SPESSORI',3],['ETICHETTE',1],['MATITA',30],['DEMOLIZIONI',2],['COSTRUZIONI',1]];
+                  ['PORTE',4],['AMBIENTI',4],['AMBIENTI_TESTO',7],['VOLTE',5],['PILASTRI',8],['SCALE',6],['SCALE_TESTO',8],['QUOTE_SPESSORI',3],['ETICHETTE',1],['MATITA',30],['DEMOLIZIONI',2],['COSTRUZIONI',1]];
   const D = dxfWriter(LAYERS), {line, poly, mtext, rect} = D;
   const CW = 0.7;                                   // larghezza media di un carattere in altezze di testo (stima degli ingombri, larga: i CAD sostituiscono il carattere)
   const readable = (ux, uy) => (ux < -1e-9 || (Math.abs(ux) < 1e-9 && uy < 0)) ? {x:-ux, y:-uy} : {x:ux, y:uy};   // testo lungo il muro, mai capovolto
@@ -5356,7 +5519,8 @@ function exportDXF() {
     if (pts.length<3 || !live(a)) return;
     poly('AMBIENTI', pts, true);
     const cc = ambCenter(a), cx = cc.x+(a.lo?a.lo.x:0), cy = cc.y+(a.lo?a.lo.y:0), net = ambNet(a);
-    const rows = [a.name, 'Sup. netta: '+net.toFixed(2)+' mq'].concat(+a.h > 0 ? ['Altezza: '+(+a.h).toFixed(2)+' m'] : [], ambNoVol(a) || !(+a.h > 0) ? [] : ['Volume: '+(net*a.h).toFixed(2)+' mc']);
+    const rows = [a.name, 'Sup. netta: '+net.toFixed(2)+' mq'].concat(+a.h > 0 ? ['Altezza: '+ambHtxt(a)+' m'] : [], ambNoVol(a) || !(+a.h > 0) ? [] : ['Volume: '+(net*ambHe(a)).toFixed(2)+' mc']);
+    voltaLines(a).forEach(([p, q]) => line('VOLTE', p.x, p.y, q.x, q.y, 'TRATTEGGIATA'));
     const bw = Math.max(...pts.map(p=>p.x)) - Math.min(...pts.map(p=>p.x)), bh = Math.max(...pts.map(p=>p.y)) - Math.min(...pts.map(p=>p.y));
     const nc = Math.max(...rows.map(r => r.length)), LS = 5/3;          // interlinea MTEXT = 5/3 dell'altezza
     const h = Math.max(0.04, Math.min(0.10, bw*0.85/(nc*CW), bh*0.85/(rows.length*LS)));
@@ -5483,8 +5647,8 @@ function wallH(si) {
   let h = 0, hin = 0;
   state.ambienti.forEach(a => {
     const pts = a.indices.map(i => state.points[i]).filter(Boolean); if (pts.length < 3) return;
-    if (pts.some((P,k) => { const Q = pts[(k+1)%pts.length]; return distPtSeg(M.x, M.y, P.x, P.y, Q.x, Q.y) < 0.03; })) h = Math.max(h, a.h);
-    else if (inPoly(pts, M.x, M.y)) hin = Math.max(hin, a.h);
+    if (pts.some((P,k) => { const Q = pts[(k+1)%pts.length]; return distPtSeg(M.x, M.y, P.x, P.y, Q.x, Q.y) < 0.03; })) h = Math.max(h, ambHe(a));
+    else if (inPoly(pts, M.x, M.y)) hin = Math.max(hin, ambHe(a));
   });
   return h || hin || lastAmbH();
 }
@@ -5533,10 +5697,10 @@ function ambTable() {
   const rooms = state.ambienti.filter(live); if (!rooms.length) return null;
   const cuts = wallCuts(), f = v => v.toFixed(2), T = {area:0, ing:0, vol:0, lorde:0, ap:0, nette:0};
   const rows = rooms.map(a => {
-    const net = ambNet(a), ing = ambIngombro(a), pw = ambWalls(a, cuts), vol = ambNoVol(a) ? null : net*a.h;
+    const net = ambNet(a), ing = ambIngombro(a), pw = ambWalls(a, cuts), vol = ambNoVol(a) ? null : net*ambHe(a);
     T.area += net; T.ing += ing; if (vol!=null) T.vol += vol;
     if (pw) { T.lorde += pw.lorde; T.ap += pw.ap; T.nette += pw.nette; }
-    return [a.name, a.category ? COMM_CAT[a.category].label : '', f(net), ing > 0.0005 ? f(ing) : '', f(a.h), vol!=null ? f(vol) : '-',
+    return [a.name, a.category ? COMM_CAT[a.category].label : '', f(net), ing > 0.0005 ? f(ing) : '', ambHtxt(a, ','), vol!=null ? f(vol) : '-',
             pw ? f(pw.per) : '-', pw ? f(pw.lorde) : '-', pw ? f(pw.ap)+(pw.n ? ' ('+pw.n+')' : '') : '-', pw ? f(pw.nette) : '-'];
   });
   rows.push(['Totale', '', f(T.area), T.ing > 0.0005 ? f(T.ing) : '', '', f(T.vol), '', f(T.lorde), f(T.ap), f(T.nette)]);
@@ -7962,8 +8126,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.31';
-const APP_NOTE = ["Tramezze: \"Sposta\" sul menu della linea sposta il muro interno insieme alla sua faccia gemella (la seconda linea parallela, anche disegnata a mano, fino a 20 gradi e a 60 cm). Le due facce restano a distanza costante e gli attacchi scorrono sui muri senza piegarli", "Mentre trascini compaiono in tempo reale le superfici degli ambienti toccati, per verificare le dimensioni nel Progetto", "Nuovo comando \"Sposta solo questa linea\" per muovere una faccia sola", "Corretto: spostando una tramezza attaccata alla faccia di un'altra tramezza, o a un muro con una linea sola rimasta, i muri collegati non si deformano più"];
+const APP_VERSION = '2.32';
+const APP_NOTE = ["Muri spessi: due linee parallele (fino a 20 gradi) a una distanza fino a 1 m sono lette come le due facce dello stesso muro. Prima il limite era 65 cm per lo spessore automatico e i varchi, 60 cm per demolizione, \"Sposta\" e seconda faccia, 30 cm per evitare la seconda faccia automatica. Una muratura portante da 60 cm genera ora la doppia linea e lo spessore. Lo sbordo di una linea oltre un muro, tagliato sul muro, arriva anch'esso a 1 m", "Volte su ambiente: nuovo comando \"Volta\" nel menu dell'ambiente, a botte o a crociera. La botte ha due lati d'imposta (proposti dall'app: i due lati più lunghi paralleli, oppure li scegli tu), ognuno con quota d'imposta all'inizio e alla fine (anche diversa), e la quota in chiave; la crociera, per ambienti a quattro lati, ha una quota d'imposta per angolo e la quota in chiave", "Volte: in pianta compare solo il tratteggio, l'asse in chiave per la botte o le due diagonali per la crociera, e l'altezza diventa \"H. min - max\". Con l'ambiente selezionato compaiono le quote d'imposta e di chiave: toccandone una la cambi da sola. Uguale in PDF/JPG, nella tabella ambienti e nel DXF (layer VOLTE, linea tratteggiata)", "Volte: volume e pareti dell'ambiente usano l'altezza media della volta (botte: segmento circolare per le tre quote; crociera: imposta media più 2/3 della freccia, approssimazione). Se la volta è incompleta (quota mancante, chiave sotto l'imposta, contorno cambiato) l'altezza porta \"(!)\" e non si blocca nulla"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
