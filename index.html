@@ -71,6 +71,21 @@
     .menu-item:hover { background:#0f3460; }
     .menu-item.alt { background:rgba(187,112,40,.30); }
     .menu-item:hover, .menu-item.alt:hover { background:#0f3460; }
+    /* menu contestuali: azioni in vista + gruppi a fisarmonica; su touch diventano un pannello in basso a due colonne, senza descrizioni */
+    .menu-item.danger { color:#ff8a8a; }
+    .menu-grp > .grp-h { font-weight:600; color:#9fd0ff; }
+    .menu-grp > .grp-h::after { content:'▸'; float:right; }
+    .menu-grp.open > .grp-h::after { content:'▾'; }
+    .grp-b { display:none; background:#101a33; padding-left:10px; }
+    .menu-grp.open > .grp-b { display:block; }
+    @media (pointer:coarse) {
+      .floating-menu.ctx { left:var(--tb-w,0px) !important; right:0 !important; top:auto !important; bottom:calc(28px + var(--tb-h,0px)) !important; max-height:55vh; min-width:0; border-radius:12px 12px 0 0; }
+      .ctx .ctx-in { display:grid; grid-template-columns:1fr 1fr; }
+      .ctx .menu-grp, .ctx .menu-item.full { grid-column:1 / -1; }
+      .ctx .menu-grp.open > .grp-b { display:grid; grid-template-columns:1fr 1fr; padding-left:0; }
+      .ctx .menu-item { padding:14px 12px; border-right:1px solid #0f3460; }
+      .ctx small.md { display:none; }
+    }
 
     #dialog-overlay {
       position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:300;
@@ -266,69 +281,85 @@
   <div class="menu-item" id="menu-install" style="display:none" onclick="installApp()">📲 Installa app<small class="md">Icona sul telefono, funziona anche senza rete</small></div>
   <div class="menu-item" id="menu-version" style="font-size:12px;color:#aaa" onclick="showNews()"></div>
 </div>
-<div id="context-menu" class="floating-menu">
-  <div class="menu-item" onclick="menuAction('circumference')">◎ Circonferenza<small class="md">Cerchio di raggio misurato: il punto nuovo sta sull'incrocio</small></div>
-  <div class="menu-item" onclick="menuAction('connect')">/ Collega a…<small class="md">Linea da questo punto a un altro</small></div>
+<div id="context-menu" class="floating-menu ctx"><div class="ctx-in">
   <div class="menu-item" onclick="menuAction('wall')">▭ Muro da qui<small class="md">Continua a tracciare muri partendo da qui</small></div>
+  <div class="menu-item" onclick="menuAction('connect')">/ Collega a…<small class="md">Linea da questo punto a un altro</small></div>
   <div class="menu-item" onclick="menuAction('measure')">📏 Misura da qui<small class="md">Distanza da questo punto a un altro</small></div>
-  <div class="menu-item"    onclick="menuAction('photo')">📷 Fai foto<small class="md">Foto del dettaglio, resta legata al punto</small></div>
-  <div class="menu-item"    onclick="menuAction('note')">📝 Inserisci nota<small class="md">Appunto legato al punto</small></div>
-  <div class="menu-item"    data-lock onclick="menuAction('absorb')">⟷ Riassorbi punto nella linea<small class="md">Toglie il vertice: le due linee diventano una</small></div>
-  <div class="menu-item"    onclick="menuAction('multi')">➕ Selezione multipla<small class="md">Poi tocca altri elementi per agire su tutti</small></div>
-  <div class="menu-item"    data-lock onclick="menuAction('delete')">🗑 Elimina punto<small class="md">Cancella il punto e le sue linee</small></div>
-</div>
-<div id="opening-context" class="floating-menu">
+  <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Costruisci</div><div class="grp-b">
+    <div class="menu-item" onclick="menuAction('circumference')">◎ Circonferenza<small class="md">Cerchio di raggio misurato: il punto nuovo sta sull'incrocio</small></div>
+    <div class="menu-item" data-lock onclick="menuAction('absorb')">⟷ Riassorbi punto nella linea<small class="md">Toglie il vertice: le due linee diventano una</small></div>
+  </div></div>
+  <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Foto e nota</div><div class="grp-b">
+    <div class="menu-item" onclick="menuAction('photo')">📷 Fai foto<small class="md">Foto del dettaglio, resta legata al punto</small></div>
+    <div class="menu-item" onclick="menuAction('note')">📝 Inserisci nota<small class="md">Appunto legato al punto</small></div>
+  </div></div>
+  <div class="menu-item" onclick="menuAction('multi')">➕ Selezione multipla<small class="md">Poi tocca altri elementi per agire su tutti</small></div>
+  <div class="menu-item danger full" data-lock onclick="menuAction('delete')">🗑 Elimina punto<small class="md">Cancella il punto e le sue linee</small></div>
+</div></div>
+<div id="opening-context" class="floating-menu ctx"><div class="ctx-in">
   <div class="menu-item" data-demo onclick="openingMenuAction('demo')"></div>
-  <div class="menu-item" onclick="openingMenuAction('multi')">➕ Selezione multipla<small class="md">Poi tocca altri elementi per agire su tutti</small></div>
-  <div class="menu-item" data-lock onclick="openingMenuAction('setdist')">📏 Imposta distanza<small class="md">Posizionalo a una distanza misurata dallo spigolo</small></div>
   <div class="menu-item" data-lock onclick="openingMenuAction('edit')">✎ Modifica misure<small class="md">Larghezza, altezza, davanzale e nome</small></div>
-  <div class="menu-item" data-lock id="om-glass" onclick="openingMenuAction('glass')">🪟 Porta a vetro<small class="md">Anta in vetro invece che a pannello opaco</small></div>
+  <div class="menu-item" data-lock onclick="openingMenuAction('setdist')">📏 Imposta distanza<small class="md">Posizionalo a una distanza misurata dallo spigolo</small></div>
   <div class="menu-item" id="om-energy" onclick="openingMenuAction('energy')">📋 Dati energetici<small class="md">Vetro, telaio, cassonetto e specchiature, per l'APE</small></div>
-  <div class="menu-item" data-lock onclick="openingMenuAction('delete')">🗑 Elimina<small class="md">Il muro si richiude</small></div>
-  <div class="menu-item" onclick="openingMenuAction('copy')">⎘ Copia<small class="md">Solo il serramento, senza muro: poi tocca i muri dove incollarlo, uno dopo l'altro</small></div>
-  <div class="menu-item" onclick="openingMenuAction('table')">▦ Tabella serramenti<small class="md">Tutte le bucature in una schermata, misure modificabili</small></div>
-  <div class="menu-item" onclick="openingMenuAction('inherit')">🖌 Eredita proprietà<small class="md">Copia misure e dati energetici su altri serramenti dello stesso tipo</small></div>
-  <div class="menu-item" data-sdf onclick="openingMenuAction('editall')">✎ Modifica tutti quelli dello stesso tipo<small class="md">Stesse misure a tutte le F, PF o P</small></div>
-  <div class="menu-item" data-sdf onclick="openingMenuAction('renum')">🔢 Rinumera F, PF e P<small class="md">Numeri in ordine, senza buchi</small></div>
-  <div class="menu-item" data-sdf onclick="openingMenuAction('deldoors')">🗑 Elimina tutte le porte (P)<small class="md">Via in un colpo le porte messe dal ricalco</small></div>
-</div>
-<div id="seg-context" class="floating-menu">
+  <div class="menu-item" data-lock id="om-glass" onclick="openingMenuAction('glass')">🪟 Porta a vetro<small class="md">Anta in vetro invece che a pannello opaco</small></div>
+  <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Su più serramenti</div><div class="grp-b">
+    <div class="menu-item" onclick="openingMenuAction('multi')">➕ Selezione multipla<small class="md">Poi tocca altri elementi per agire su tutti</small></div>
+    <div class="menu-item" onclick="openingMenuAction('copy')">⎘ Copia<small class="md">Solo il serramento, senza muro: poi tocca i muri dove incollarlo, uno dopo l'altro</small></div>
+    <div class="menu-item" onclick="openingMenuAction('inherit')">🖌 Eredita proprietà<small class="md">Copia misure e dati energetici su altri serramenti dello stesso tipo</small></div>
+    <div class="menu-item" data-sdf onclick="openingMenuAction('editall')">✎ Modifica tutti quelli dello stesso tipo<small class="md">Stesse misure a tutte le F, PF o P</small></div>
+  </div></div>
+  <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Elenco serramenti</div><div class="grp-b">
+    <div class="menu-item" onclick="openingMenuAction('table')">▦ Tabella serramenti<small class="md">Tutte le bucature in una schermata, misure modificabili</small></div>
+    <div class="menu-item" data-sdf onclick="openingMenuAction('renum')">🔢 Rinumera F, PF e P<small class="md">Numeri in ordine, senza buchi</small></div>
+    <div class="menu-item danger" data-sdf onclick="openingMenuAction('deldoors')">🗑 Elimina tutte le porte (P)<small class="md">Via in un colpo le porte messe dal ricalco</small></div>
+  </div></div>
+  <div class="menu-item danger full" data-lock onclick="openingMenuAction('delete')">🗑 Elimina<small class="md">Il muro si richiude</small></div>
+</div></div>
+<div id="seg-context" class="floating-menu ctx"><div class="ctx-in">
   <div class="menu-item" id="sm-conf" onclick="segMenuAction('confirm')"></div>
   <div class="menu-item" data-demo onclick="segMenuAction('demo')"></div>
-  <div class="menu-item" onclick="segMenuAction('multi')">➕ Selezione multipla<small class="md">Poi tocca altri elementi per agire su tutti</small></div>
-  <div class="menu-item" onclick="segMenuAction('F')">🪟 Inserisci finestra qui<small class="md">Nel punto toccato</small></div>
-  <div class="menu-item" onclick="segMenuAction('PF')">🚪 Inserisci porta-finestra qui<small class="md">Nel punto toccato</small></div>
-  <div class="menu-item" onclick="segMenuAction('copy')">⎘ Copia<small class="md">Il muro con i suoi serramenti; poi Incolla</small></div>
-  <div class="menu-item" onclick="segMenuAction('inherit')">🖌 Eredita proprietà<small class="md">Copia classe e spessore su altri muri: tocca i muri di destinazione</small></div>
-  <div class="menu-item" data-lock onclick="segMenuAction('move')">✥ Sposta<small class="md">Trascina il muro, insieme alla sua faccia gemella se c'è</small></div>
-  <div class="menu-item" data-lock id="sm-move1" onclick="segMenuAction('moveone')">✥ Sposta solo questa linea<small class="md">Senza la faccia parallela</small></div>
-  <div class="menu-item" data-lock id="sm-twflip" onclick="segMenuAction('twflip')">⇄ Spessore dall'altro lato<small class="md">La seconda linea della tramezza passa dall'altra parte</small></div>
   <div class="menu-item" onclick="segMenuAction('thick')">📏 Spessore e tipo<small class="md">Classe (colore) e spessore: servono a superficie commerciale e demolizioni</small></div>
-  <div class="menu-item" id="sm-recalc" onclick="segMenuAction('recalc')">⟳ Ricalcola dalla grafica<small class="md">Toglie lo spessore scritto a mano: torna quello automatico delle linee</small></div>
-  <div class="menu-item" data-demotract onclick="segMenuAction('demotract')">⛏ Demolisci un tratto<small class="md">Solo la parte indicata: varco o ampliamento di una bucatura</small></div>
-  <div class="menu-item" onclick="segMenuAction('split')">✂ Spezza qui<small class="md">Nuovo vertice nel punto toccato</small></div>
-  <div class="menu-item" data-lock onclick="segMenuAction('delete')">🗑 Elimina linea<small class="md">Cancella solo questa linea</small></div>
-</div>
-<div id="quota-context" class="floating-menu">
+  <div class="menu-item" data-lock onclick="segMenuAction('move')">✥ Sposta<small class="md">Trascina il muro, insieme alla sua faccia gemella se c'è</small></div>
+  <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Facce e spessore</div><div class="grp-b">
+    <div class="menu-item" data-lock id="sm-move1" onclick="segMenuAction('moveone')">✥ Sposta solo questa linea<small class="md">Senza la faccia parallela</small></div>
+    <div class="menu-item" data-lock id="sm-twflip" onclick="segMenuAction('twflip')">⇄ Spessore dall'altro lato<small class="md">La seconda linea della tramezza passa dall'altra parte</small></div>
+    <div class="menu-item" id="sm-recalc" onclick="segMenuAction('recalc')">⟳ Ricalcola dalla grafica<small class="md">Toglie lo spessore scritto a mano: torna quello automatico delle linee</small></div>
+  </div></div>
+  <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Serramento qui</div><div class="grp-b">
+    <div class="menu-item" onclick="segMenuAction('F')">🪟 Inserisci finestra qui<small class="md">Nel punto toccato</small></div>
+    <div class="menu-item" onclick="segMenuAction('PF')">🚪 Inserisci porta-finestra qui<small class="md">Nel punto toccato</small></div>
+  </div></div>
+  <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Altro</div><div class="grp-b">
+    <div class="menu-item" data-demotract onclick="segMenuAction('demotract')">⛏ Demolisci un tratto<small class="md">Solo la parte indicata: varco o ampliamento di una bucatura</small></div>
+    <div class="menu-item" onclick="segMenuAction('split')">✂ Spezza qui<small class="md">Nuovo vertice nel punto toccato</small></div>
+    <div class="menu-item" onclick="segMenuAction('copy')">⎘ Copia<small class="md">Il muro con i suoi serramenti; poi Incolla</small></div>
+    <div class="menu-item" onclick="segMenuAction('inherit')">🖌 Eredita proprietà<small class="md">Copia classe e spessore su altri muri: tocca i muri di destinazione</small></div>
+    <div class="menu-item" onclick="segMenuAction('multi')">➕ Selezione multipla<small class="md">Poi tocca altri elementi per agire su tutti</small></div>
+  </div></div>
+  <div class="menu-item danger full" data-lock onclick="segMenuAction('delete')">🗑 Elimina linea<small class="md">Cancella solo questa linea</small></div>
+</div></div>
+<div id="quota-context" class="floating-menu ctx"><div class="ctx-in">
   <div class="menu-item" data-lock onclick="quotaMenuAction('set')">✎ Imposta misura<small class="md">Scrivi la misura rilevata: il muro si adegua</small></div>
   <div class="menu-item"    id="qm-val"   onclick="quotaMenuAction('validate')">✔ Valida così com'è<small class="md">La misura del disegno è giusta: la quota diventa verde</small></div>
   <div class="menu-item"    id="qm-unval" onclick="quotaMenuAction('unvalidate')">↺ Togli convalida<small class="md">Torna da verificare</small></div>
   <div class="menu-item"    id="qm-reset" onclick="quotaMenuAction('reset')">⌖ Riporta la quota al suo posto<small class="md">Il numero torna accanto al muro</small></div>
-</div>
-<div id="amb-context" class="floating-menu">
+</div></div>
+<div id="amb-context" class="floating-menu ctx"><div class="ctx-in">
   <div class="menu-item" data-demo onclick="ambMenuAction('demo')"></div>
   <div class="menu-item" data-lock onclick="ambMenuAction('edit')">✎ Modifica ambiente<small class="md">Nome, altezza e categoria; mostra superficie e pareti</small></div>
   <div class="menu-item" data-lock onclick="ambMenuAction('volta')">⌒ Volta<small class="md">A botte o a crociera: quote d'imposta e in chiave, tratteggio in pianta, H min e H max</small></div>
   <div class="menu-item" onclick="ambMenuAction('copy')">⎘ Copia ambiente<small class="md">Contorno, serramenti e dati: poi Incolla, per fare una variante</small></div>
   <div class="menu-item" onclick="ambMenuAction('inherit')">🖌 Eredita proprietà<small class="md">Copia categoria e altezza su altri ambienti</small></div>
   <div class="menu-item" data-lock onclick="ambMenuAction('merge')">⊕ Unisci con un altro ambiente<small class="md">Tocca l'altro: diventano uno, se hanno un lato in comune</small></div>
-  <div class="menu-item" data-lock onclick="ambMenuAction('delete')">🗑 Elimina solo l'ambiente<small class="md">Le linee restano</small></div>
-  <div class="menu-item" data-lock onclick="ambMenuAction('deleteall')">🗑 Elimina ambiente e sue linee<small class="md">Anche i muri che non servono ad altri ambienti</small></div>
-</div>
-<div id="entity-context" class="floating-menu">
+  <div class="menu-grp"><div class="menu-item grp-h danger" onclick="toggleGrp(this)">Elimina</div><div class="grp-b">
+    <div class="menu-item danger" data-lock onclick="ambMenuAction('delete')">🗑 Elimina solo l'ambiente<small class="md">Le linee restano</small></div>
+    <div class="menu-item danger" data-lock onclick="ambMenuAction('deleteall')">🗑 Elimina ambiente e sue linee<small class="md">Anche i muri che non servono ad altri ambienti</small></div>
+  </div></div>
+</div></div>
+<div id="entity-context" class="floating-menu ctx"><div class="ctx-in">
   <div class="menu-item" data-lock id="ent-edit" onclick="entityMenuAction('edit')">✎ Modifica</div>
-  <div class="menu-item" data-lock onclick="entityMenuAction('delete')">🗑 Elimina</div>
-</div>
+  <div class="menu-item danger" data-lock onclick="entityMenuAction('delete')">🗑 Elimina</div>
+</div></div>
 
 <div id="dialog-overlay">
   <div id="dialog-box">
@@ -3885,9 +3916,13 @@ function showMenu(id, x, y, above, avoid) {
     document.getElementById('qm-unval').style.display = ok ? '' : 'none';
     document.getElementById('qm-reset').style.display = g && g.qo ? '' : 'none';
   }
-  const m = document.getElementById(id);
+  const m = document.getElementById(id), isCtx = m.classList.contains('ctx');
+  m.querySelectorAll('.menu-grp').forEach(g => {                                                     // gruppi chiusi; spariscono se nessuna voce e' disponibile
+    g.classList.remove('open');
+    g.style.display = [...g.querySelectorAll('.grp-b > .menu-item')].some(it => it.style.display!=='none') ? '' : 'none';
+  });
   m.style.display='block'; _menuOpenedAt = Date.now();
-  const rows = [...m.querySelectorAll('.menu-item')].filter(it => it.style.display!=='none');       // oltre 3 righe: colori alternati
+  const rows = isCtx ? [] : [...m.querySelectorAll('.menu-item')].filter(it => it.style.display!=='none');       // oltre 3 righe: colori alternati (non nei contestuali)
   rows.forEach((it,k) => it.classList.toggle('alt', rows.length > 3 && k%2===1));
   const r = m.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight, clamp = (v,a,b) => Math.max(a, Math.min(v, b));
   let left, top;
@@ -3913,6 +3948,13 @@ document.addEventListener('click', e => {
   if (Date.now() - _menuOpenedAt < 350 && e.target instanceof Element && MENU_IDS.some(id => document.getElementById(id).contains(e.target))) { e.stopPropagation(); e.preventDefault(); }
 }, true);
 function hideAllMenus(){ MENU_IDS.forEach(id => document.getElementById(id).style.display='none'); }
+function toggleGrp(h) {                          // apre/chiude un gruppo del menu contestuale; se il menu cresce oltre lo schermo lo rialza
+  const g = h.parentElement, m = h.closest('.floating-menu');
+  g.classList.toggle('open');
+  if (!m) return;
+  const r = m.getBoundingClientRect(), vh = window.innerHeight;
+  if (r.bottom > vh - 6) m.style.top = Math.max(4, vh - r.height - 6) + 'px';
+}
 function toggleMenu(id, btn) {
   const m = document.getElementById(id);
   const open = m.style.display==='block';
@@ -8126,8 +8168,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.32';
-const APP_NOTE = ["Muri spessi: due linee parallele (fino a 20 gradi) a una distanza fino a 1 m sono lette come le due facce dello stesso muro. Prima il limite era 65 cm per lo spessore automatico e i varchi, 60 cm per demolizione, \"Sposta\" e seconda faccia, 30 cm per evitare la seconda faccia automatica. Una muratura portante da 60 cm genera ora la doppia linea e lo spessore. Lo sbordo di una linea oltre un muro, tagliato sul muro, arriva anch'esso a 1 m", "Volte su ambiente: nuovo comando \"Volta\" nel menu dell'ambiente, a botte o a crociera. La botte ha due lati d'imposta (proposti dall'app: i due lati più lunghi paralleli, oppure li scegli tu), ognuno con quota d'imposta all'inizio e alla fine (anche diversa), e la quota in chiave; la crociera, per ambienti a quattro lati, ha una quota d'imposta per angolo e la quota in chiave", "Volte: in pianta compare solo il tratteggio, l'asse in chiave per la botte o le due diagonali per la crociera, e l'altezza diventa \"H. min - max\". Con l'ambiente selezionato compaiono le quote d'imposta e di chiave: toccandone una la cambi da sola. Uguale in PDF/JPG, nella tabella ambienti e nel DXF (layer VOLTE, linea tratteggiata)", "Volte: volume e pareti dell'ambiente usano l'altezza media della volta (botte: segmento circolare per le tre quote; crociera: imposta media più 2/3 della freccia, approssimazione). Se la volta è incompleta (quota mancante, chiave sotto l'imposta, contorno cambiato) l'altezza porta \"(!)\" e non si blocca nulla"];
+const APP_VERSION = '2.33';
+const APP_NOTE = ["Menu che si apre toccando un elemento (punto, muro, serramento, ambiente): ora mostra solo le azioni più usate e raccoglie le altre in gruppi che si aprono con un tocco (per il muro: Facce e spessore, Serramento qui, Altro; per il serramento: Su più serramenti, Elenco serramenti; per il punto: Costruisci, Foto e nota). Le voci che cancellano stanno in fondo, in rosso", "Su smartphone e tablet il menu diventa un pannello in basso, a due colonne e senza descrizioni; sul computer resta accanto all'elemento, con le descrizioni"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
