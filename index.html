@@ -256,8 +256,10 @@
   <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Punti e linee</div><div class="grp-b">
     <div class="menu-item tool-item" id="ti-point" onclick="pickTool('point')"><span class="ti">+</span><span class="tt"><b>Punto</b><small>Aggiunge un punto libero</small></span></div>
     <div class="menu-item tool-item" id="ti-connect" onclick="pickTool('connect')"><span class="ti">/</span><span class="tt"><b>Collega</b><small>Unisce due punti con una linea</small></span></div>
+    <div class="menu-item tool-item" id="ti-tratto" onclick="pickTool('tratto')"><span class="ti">┈</span><span class="tt"><b>Linea tratteggiata</b><small>Unisce due punti con un tratteggio: archi, riferimenti</small></span></div>
     <div class="menu-item tool-item" id="ti-trilatere" onclick="pickTool('trilatere')"><span class="ti">◎</span><span class="tt"><b>Trilatera</b><small>Trova un punto da due distanze misurate</small></span></div>
   </div></div>
+  <div class="menu-item tool-item" id="ti-arco" onclick="pickTool('arco')"><span class="ti">⌒</span><span class="tt"><b>Arco</b><small>Tocca le due facce di imposta: nascono le due linee tratteggiate dell'arco</small></span></div>
   <div class="menu-item tool-item" id="ti-measure" onclick="pickTool('measure')"><span class="ti">📏</span><span class="tt"><b>Misura</b><small>Quota temporanea tra due punti qualsiasi, con Ortho e angoli guidati; si nasconde o si cancella da Vista e Modifica</small></span></div>
   <div class="menu-item tool-item" id="ti-pencil" onclick="pickTool('pencil')"><span class="ti">✏</span><span class="tt"><b>Matita</b><small>Disegno a mano libera</small></span></div>
 </div>
@@ -266,6 +268,7 @@
   <div class="menu-item tool-item" id="ti-opening-PF" onclick="selectOpeningType('PF')"><span class="ti">🚪</span><span class="tt"><b>Porta-finestra (PF)</b><small>Poi tocca il muro dove va</small></span></div>
   <div class="menu-item tool-item" id="ti-opening-P" onclick="selectOpeningType('P')"><span class="ti">🚪</span><span class="tt"><b>Porta (P)</b><small>Poi tocca il muro dove va</small></span></div>
   <div class="menu-item tool-item" id="ti-stair" onclick="pickTool('stair')"><span class="ti">🪜</span><span class="tt"><b>Scala</b><small>Trascina: un gradino ogni 30 cm. Due rampe a 90° che si toccano diventano una scala col pianerottolo</small></span></div>
+  <div class="menu-item tool-item" id="ti-volta" onclick="pickTool('volta')"><span class="ti">⌒</span><span class="tt"><b>Volta a botte</b><small>Tocca l'ambiente e i quattro punti d'imposta; le quote le dai dopo, toccandole</small></span></div>
   <div class="menu-item tool-item" id="ti-pilastro" onclick="pickTool('pilastro')"><span class="ti">▪</span><span class="tt"><b>Pilastro o ingombro</b><small>Pilastro, camino, canna: su un punto; si toglie dalla superficie dell'ambiente</small></span></div>
   <div class="menu-item tool-item" id="ti-label" onclick="pickTool('label')"><span class="ti">🏷</span><span class="tt"><b>Etichetta</b><small>Testo libero sul disegno</small></span></div>
 </div>
@@ -378,7 +381,9 @@
 <div id="amb-context" class="floating-menu ctx smart"><div class="ctx-in">
   <div class="menu-item" data-demo onclick="ambMenuAction('demo')"></div>
   <div class="menu-item" data-lock onclick="ambMenuAction('edit')">✎ Modifica ambiente<small class="md">Nome, altezza e categoria; mostra superficie e pareti</small></div>
-  <div class="menu-item" data-lock onclick="ambMenuAction('volta')">⌒ Volta<small class="md">A botte o a crociera: quote d'imposta e in chiave, tratteggio in pianta, H min e H max</small></div>
+  <div class="menu-item" data-lock id="am-vgraf" onclick="ambMenuAction('vgraf')">⌒ Volta sul disegno<small class="md">Tocchi i quattro punti d'imposta sul disegno, poi le quote</small></div>
+  <div class="menu-item" data-lock id="am-volta" onclick="ambMenuAction('volta')">⌒ Volta<small class="md">A botte o a crociera: quote d'imposta e in chiave, tratteggio in pianta, H min e H max</small></div>
+  <div class="menu-item" data-lock id="am-novolta" onclick="ambMenuAction('novolta')">⌓ Togli volta<small class="md">Torna al soffitto piano, con l'altezza dell'ambiente</small></div>
   <div class="menu-item" onclick="ambMenuAction('copy')">⎘ Copia ambiente<small class="md">Contorno, serramenti e dati: poi Incolla, per fare una variante</small></div>
   <div class="menu-item" onclick="ambMenuAction('inherit')">🖌 Eredita proprietà<small class="md">Copia categoria e altezza su altri ambienti</small></div>
   <div class="menu-item" data-lock onclick="ambMenuAction('merge')">⊕ Unisci con un altro ambiente<small class="md">Tocca l'altro: diventano uno, se hanno un lato in comune</small></div>
@@ -551,6 +556,7 @@ const state = {
   scale:       [],   // {x,y,w,h,ax,sgn,n,pedata,alzata,label}  ax = asse di salita, sgn = verso, n gradini
   labels:      [],   // {x,y,text}
   pencilLines: [],   // {pts:[{x,y}]}
+  tratti:      [],   // {a:'P69', b:'P66', fase}  linee tratteggiate tra due punti (archi, riferimenti), per etichetta del punto
   misure:      [],   // {ax,ay,bx,by,tmp}  quote temporanee di lavoro (Misura): non escono in PDF/JPG/DXF
   history:     [],
 
@@ -569,6 +575,8 @@ const state = {
   dragSnap:null,          // stato prima di un trascinamento, per l'Annulla
   drag:null,              // {kind,idx,...} trascinamento generico
   hoverScala:null, stairResize:null, exp:null,   // exp = selezione della zona da esportare
+  voltaPick:null,         // Volta sul disegno: {k, pts:[etichette]} ambiente scelto e punti d'imposta toccati finora
+  arcoFrom:null,          // Arco: primo lato d'imposta toccato (indice del muro)
   measA:null, measPrev:null,   // Misura: primo punto {x,y} e anteprima del secondo (con Ortho e angoli guidati)
   selBox:null,
   multi:false,            // selezione multipla attiva: ogni tocco aggiunge o toglie un elemento invece di aprirne il menu
@@ -657,34 +665,49 @@ function ambNet(am) { return Math.max(0, ambNetBase(am) - ambIngombro(am)); }
 //  Altezza media della botte: imposta media + segmento circolare per tre quote (due imposte e chiave); crociera: imposta media + 2/3
 //  della freccia (approssimazione per la crociera a costoloni circolari).
 // ═══════════════════════════════════════════════════════════
+function ptByLabel(l) { const i = state.points.findIndex(p => p.label===l); return i < 0 ? null : state.points[i]; }
+// la botte della 2.32 aveva i lati d'imposta come lati dell'ambiente (e, z per vertice): diventa quattro punti per etichetta
+function voltaNorm(am) {
+  const v = am && am.volta;
+  if (!v || v.tipo!=='botte' || !Array.isArray(v.e)) return;
+  const n = am.indices.length;
+  if (v.n===n && Array.isArray(v.z) && v.z.length===n) {
+    const [k1, k2] = v.e, vs = [k1, (k1+1) % n, k2, (k2+1) % n], P = vs.map(j => state.points[am.indices[j]]);
+    if (P.every(Boolean)) { am.volta = {tipo:'botte', pt:P.map(p => p.label), z:vs.map(j => +v.z[j] || 0), zc:v.zc}; return; }
+  }
+  am.volta = {tipo:'botte', pt:[], z:[0, 0, 0, 0], zc:v.zc};          // contorno gia' cambiato: da rifare
+}
 function voltaInfo(am) {
-  const v = am && am.volta; if (!v) return null;
-  const bad = why => ({ok:false, why, tipo:v.tipo});
-  const pts = am.indices.map(i => state.points[i]), n = pts.length;
-  if (n < 3 || pts.some(p => !p) || v.n !== n || !Array.isArray(v.z) || v.z.length !== n) return bad('il contorno dell\'ambiente è cambiato: rifai la volta');
-  const z = v.z.map(Number), zc = +v.zc;
-  if (!(zc > 0)) return bad('manca la quota in chiave');
+  if (!am || !am.volta) return null;
+  voltaNorm(am);
+  const v = am.volta, bad = why => ({ok:false, why, tipo:v.tipo}), zc = +v.zc;
   const D = (a, b) => Math.hypot(a.x-b.x, a.y-b.y), mid = (a, b) => ({x:(a.x+b.x)/2, y:(a.y+b.y)/2});
   if (v.tipo==='crociera') {
+    const pts = am.indices.map(i => state.points[i]), n = pts.length;
+    if (n < 3 || pts.some(p => !p) || v.n !== n || !Array.isArray(v.z) || v.z.length !== n) return bad('il contorno dell\'ambiente è cambiato: rifai la volta');
+    const z = v.z.map(Number);
+    if (!(zc > 0)) return bad('manca la quota in chiave');
     if (n !== 4) return bad('la crociera vuole un ambiente a quattro lati');
     if (z.some(q => !(q > 0))) return bad('manca una quota d\'imposta');
     const zi = (z[0]+z[1]+z[2]+z[3])/4, f = zc - zi;
     if (f <= 0) return bad('la quota in chiave è sotto l\'imposta');
     return {ok:true, tipo:'crociera', hmin:Math.min(...z), hmax:zc, hm:zi + 2*f/3, f, lines:[[pts[0], pts[2]], [pts[1], pts[3]]], quote:[0, 1, 2, 3]};
   }
-  const [k1, k2] = v.e || [];
-  if (!Number.isInteger(k1) || !Number.isInteger(k2) || k1 === k2 || k1 < 0 || k2 < 0 || k1 >= n || k2 >= n) return bad('mancano i due lati d\'imposta');
-  const q1 = (k1+1) % n, q2 = (k2+1) % n, vs = [k1, q1, k2, q2], P = vs.map(j => pts[j]);
-  if (vs.some(j => !(z[j] > 0))) return bad('manca una quota d\'imposta');
-  const zi = vs.reduce((t, j) => t + z[j], 0) / 4, f = zc - zi;
+  if (!(zc > 0)) return bad('manca la quota in chiave');
+  const P = (v.pt || []).map(ptByLabel), z = (v.z || []).map(Number);
+  if (P.length !== 4 || P.some(p => !p)) return bad('mancano i punti d\'imposta (o uno non esiste più)');
+  if (z.length !== 4 || z.some(q => !(q > 0))) return bad('manca una quota d\'imposta');
+  const zi = (z[0]+z[1]+z[2]+z[3])/4, f = zc - zi;
   if (f <= 0) return bad('la quota in chiave è sotto l\'imposta');
-  const L1 = D(P[0], P[1]) || 1, nx = -(P[1].y-P[0].y)/L1, ny = (P[1].x-P[0].x)/L1, m1 = mid(P[0], P[1]), m2 = mid(P[2], P[3]);
+  const L1 = D(P[0], P[1]);
+  if (L1 < 0.3 || D(P[2], P[3]) < 0.3) return bad('i due punti di una linea d\'imposta coincidono');
+  const nx = -(P[1].y-P[0].y)/L1, ny = (P[1].x-P[0].x)/L1, m1 = mid(P[0], P[1]), m2 = mid(P[2], P[3]);
   const w = Math.abs((m2.x-m1.x)*nx + (m2.y-m1.y)*ny);
-  if (w < 0.3) return bad('i due lati d\'imposta sono troppo vicini');
+  if (w < 0.3) return bad('le due linee d\'imposta sono troppo vicine');
   const R = (w*w/4 + f*f)/(2*f), al = Math.atan2(w/2, R-f), seg = R*R*(al - Math.sin(al)*Math.cos(al));
   const straight = D(P[0], P[2]) + D(P[1], P[3]) <= D(P[0], P[3]) + D(P[1], P[2]);       // coppie di estremi che non si incrociano
   const A = straight ? [mid(P[0], P[2]), mid(P[1], P[3])] : [mid(P[0], P[3]), mid(P[1], P[2])];
-  return {ok:true, tipo:'botte', hmin:Math.min(...vs.map(j => z[j])), hmax:zc, hm:zi + seg/w, f, lines:[A], quote:[...new Set(vs)], e:[k1, k2]};
+  return {ok:true, tipo:'botte', hmin:Math.min(...z), hmax:zc, hm:zi + seg/w, f, lines:[A], quote:[0, 1, 2, 3], pts:P};
 }
 // altezza per volume e pareti: con una volta valida e' la media, altrimenti l'altezza netta scritta
 function ambHe(am) { const V = voltaInfo(am); return V && V.ok ? V.hm : am.h; }
@@ -693,55 +716,136 @@ function ambHtxt(am, dec) {
   const V = voltaInfo(am), f = x => { const s = Number(x).toFixed(2); return dec ? s.replace('.', dec) : s; };
   return V && V.ok ? f(V.hmin)+' - '+f(V.hmax) : f(am.h);
 }
-// proposta: botte = i due lati piu' lunghi paralleli (fino a 20 gradi, non adiacenti); crociera = ambiente a quattro lati. null = ambiente non adatto
+// proposta: botte = asse lungo il lato lungo del rettangolo minimo che racchiude l'ambiente; le imposte sono i due lati lunghi, con i vertici piu' esterni
+// lungo l'asse (da correggere a mano se serve: es. un punto fuori dall'ambiente). Crociera = ambiente a quattro lati. null = ambiente non adatto
 function voltaPropose(am, tipo) {
   const pts = am.indices.map(i => state.points[i]), n = pts.length;
   if (n < 3 || pts.some(p => !p)) return null;
   if (tipo==='crociera') return n === 4 ? {} : null;
   let best = null;
-  for (let a=0; a<n; a++) for (let b=a+1; b<n; b++) {
-    if (b === a+1 || (a === 0 && b === n-1)) continue;
-    const A0 = pts[a], A1 = pts[(a+1)%n], B0 = pts[b], B1 = pts[(b+1)%n];
-    const la = Math.hypot(A1.x-A0.x, A1.y-A0.y), lb = Math.hypot(B1.x-B0.x, B1.y-B0.y); if (la < 0.5 || lb < 0.5) continue;
-    if (Math.abs(((A1.x-A0.x)*(B1.y-B0.y) - (A1.y-A0.y)*(B1.x-B0.x))/(la*lb)) > FACE_SIN) continue;
-    if (!best || la+lb > best.s) best = {e:[a, b], s:la+lb};
+  for (let k=0; k<n; k++) {                                          // rettangolo di area minima con un lato su un lato dell'ambiente
+    const A = pts[k], B = pts[(k+1)%n], l = Math.hypot(B.x-A.x, B.y-A.y); if (l < 0.05) continue;
+    const ux = (B.x-A.x)/l, uy = (B.y-A.y)/l, a = pts.map(p => (p.x-A.x)*ux + (p.y-A.y)*uy), b = pts.map(p => -(p.x-A.x)*uy + (p.y-A.y)*ux);
+    const da = Math.max(...a)-Math.min(...a), db = Math.max(...b)-Math.min(...b);
+    if (!best || da*db < best.area - 1e-9) best = {area:da*db, ux, uy, a, b, da, db};
   }
-  return best ? {e:best.e} : null;
+  if (!best || Math.min(best.da, best.db) < 0.5) return null;
+  const long = best.da >= best.db, ax = long ? best.a : best.b, pe = long ? best.b : best.a, tol = 0.30;      // ax = lungo l'asse, pe = di traverso
+  const side = (lo) => {                                              // vertici vicini al lato (minimo o massimo di traverso): i due piu' esterni lungo l'asse
+    const ext = lo ? Math.min(...pe) : Math.max(...pe), c = pts.map((_, j) => j).filter(j => Math.abs(pe[j]-ext) <= tol);
+    if (c.length < 2) return null;
+    return [c.reduce((m, j) => ax[j] < ax[m] ? j : m, c[0]), c.reduce((m, j) => ax[j] > ax[m] ? j : m, c[0])];
+  };
+  const s1 = side(true), s2 = side(false); if (!s1 || !s2) return null;
+  return {pt:[pts[s1[1]].label, pts[s1[0]].label, pts[s2[1]].label, pts[s2[0]].label], z:null};
 }
+// ── Volta sul disegno (solo manuale): si tocca l'ambiente, poi i due punti della prima parete d'imposta e i due della seconda; la volta nasce con
+// quote provvisorie (altezza dell'ambiente, chiave +0,80 m) e le quote si cambiano toccandole sul disegno, senza finestre che coprono la pianta ──
+function voltaGraf(k) {
+  const am = state.ambienti[k]; if (!am) return;
+  if (locked(am)) { lockTip(); return; }
+  setTool('volta'); state.voltaPick = {k, pts:[]};
+  setTip('Volta di '+am.name+': tocca i due punti estremi della prima parete d\'imposta (la parete su cui poggia la volta).');
+  draw();
+}
+function voltaPickTip(n) {
+  return ['Prima parete d\'imposta: tocca i suoi due punti estremi.', 'Tocca il secondo punto della prima parete.', 'Seconda parete (di fronte): tocca i suoi due punti estremi.', 'Tocca il secondo punto della seconda parete.'][n] || '';
+}
+function voltaFromPick(vp) {
+  const am = state.ambienti[vp.k]; if (!am) { setTool('select'); return; }
+  voltaNorm(am);
+  const old = am.volta && am.volta.tipo==='botte' && Array.isArray(am.volta.z) ? am.volta : null;
+  const z0 = (old && old.z.find(q => q > 0)) || (am.h > 0 ? +am.h : 2.20), zc = old && old.zc > 0 ? old.zc : Math.round((z0+0.8)*100)/100;
+  const z = vp.pts.map((_, j) => old && old.z[j] > 0 ? old.z[j] : z0);
+  saveHistory(); am.volta = {tipo:'botte', pt:vp.pts.slice(), z, zc};
+  const V = voltaInfo(am), k = vp.k;
+  commit(V.ok ? 'Volta a botte su '+am.name+' con quote provvisorie: tocca le quote sul disegno per metterle giuste.' : 'Volta salvata ma incompleta: '+V.why+'.');
+  state.sel = {kind:'ambiente', idx:k}; draw();
+}
+function drawVoltaPick() {
+  const vp = state.voltaPick; if (!vp || PRINT) return;
+  const am = state.ambienti[vp.k], P = vp.pts.map(ptByLabel);
+  ctx.save();
+  if (am) {
+    const c = am.indices.map(i => state.points[i]).filter(Boolean).map(p => w2s(p.x, p.y));
+    if (c.length > 2) { ctx.strokeStyle = 'rgba(255,224,102,.8)'; ctx.lineWidth = 3; ctx.setLineDash([]); ctx.beginPath(); c.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath(); ctx.stroke(); }
+  }
+  ctx.strokeStyle = '#5ec8ff'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+  [[0, 1], [2, 3]].forEach(([a, b]) => { if (P[a] && P[b]) { const p = w2s(P[a].x, P[a].y), q = w2s(P[b].x, P[b].y); ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); } });
+  ctx.setLineDash([]); ctx.font = 'bold 12px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  P.forEach((p, j) => {
+    if (!p) return; const q = w2s(p.x, p.y);
+    ctx.strokeStyle = '#5ec8ff'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(q.x, q.y, 13, 0, Math.PI*2); ctx.stroke();
+    ctx.fillStyle = '#5ec8ff'; ctx.beginPath(); ctx.arc(q.x+14, q.y-14, 9, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#10243a'; ctx.fillText(String(j+1), q.x+14, q.y-14);
+  });
+  ctx.restore();
+}
+// ── TRATTI: linee tratteggiate tra due punti (archi, riferimenti), salvate con le etichette dei punti: seguono i punti se li sposti ──
+function trattoPts(t) { const A = ptByLabel(t.a), B = ptByLabel(t.b); return A && B ? [A, B] : null; }
+function drawTratti() {
+  ctx.save(); ctx.lineWidth = prLw(1.5, 0.18);
+  state.tratti.forEach((t, i) => {
+    if (hid(t)) return; const P = trattoPts(t); if (!P) return;
+    const a = w2s(P[0].x, P[0].y), b = w2s(P[1].x, P[1].y), sel = isSel('tratto', i);
+    ctx.setLineDash(PRINT ? [3*PX_MM, 1.5*PX_MM] : [8, 5]); ctx.strokeStyle = sel ? '#ffe066' : PRINT ? '#555' : '#c9a7ff';
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  });
+  const g = !PRINT && state.arcoFrom!==null && state.segments[state.arcoFrom];       // Arco: il primo lato scelto resta evidenziato
+  if (g && state.points[g.a] && state.points[g.b]) {
+    const a = w2s(state.points[g.a].x, state.points[g.a].y), b = w2s(state.points[g.b].x, state.points[g.b].y);
+    ctx.setLineDash([]); ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+  ctx.restore();
+}
+function hitTratto(sx, sy) {
+  for (let i = state.tratti.length-1; i >= 0; i--) {
+    const t = state.tratti[i]; if (hid(t)) continue;
+    const P = trattoPts(t); if (!P) continue;
+    const a = w2s(P[0].x, P[0].y), b = w2s(P[1].x, P[1].y);
+    if (distPtSeg(sx, sy, a.x, a.y, b.x, b.y) <= (COARSE ? 12 : 7)) return i;
+  }
+  return null;
+}
+// Arco: si toccano le due facce di imposta (i lati dei piedritti); nascono le due linee tratteggiate che le uniscono
+function creaArco(s1, s2) {
+  const g1 = state.segments[s1], g2 = state.segments[s2]; if (!g1 || !g2) return;
+  const A = [state.points[g1.a], state.points[g1.b]], B = [state.points[g2.a], state.points[g2.b]], D = (p, q) => Math.hypot(p.x-q.x, p.y-q.y);
+  const straight = D(A[0], B[0]) + D(A[1], B[1]) <= D(A[0], B[1]) + D(A[1], B[0]);          // coppie di estremi che non si incrociano
+  const pairs = straight ? [[A[0], B[0]], [A[1], B[1]]] : [[A[0], B[1]], [A[1], B[0]]];
+  saveHistory(); pairs.forEach(([p, q]) => state.tratti.push({a:p.label, b:q.label})); state.arcoFrom = null;
+  commit('Arco tratteggiato tra '+A[0].label+'-'+A[1].label+' e '+B[0].label+'-'+B[1].label+'. Tocca due facce per un altro arco, oppure Esc per finire.', true);
+}
+
 function voltaLines(am) { const V = voltaInfo(am); return V && V.ok ? V.lines : []; }
 
 function voltaDialog(k) {
   const am = state.ambienti[k]; if (!am) return;
+  voltaNorm(am);
   const n = am.indices.length, lb = j => { const p = state.points[am.indices[j]]; return p ? p.label : '?'; };
-  const old = am.volta, ov = old && old.n === n ? old : null;
-  const edgeOpts = am.indices.map((_, j) => ({value:String(j), label:lb(j)+' - '+lb((j+1)%n)}));
-  const prop = voltaPropose(am, 'botte'), e0 = ov && ov.tipo==='botte' && ov.e ? ov.e : prop ? prop.e : [0, Math.min(2, n-1)];
-  const zb = ov ? ov.z.filter(q => q > 0)[0] : null, z0 = zb || (am.h > 0 ? am.h : 2.20), zc0 = ov && ov.zc > 0 ? ov.zc : Math.round((z0+0.8)*100)/100;
-  const zAt = j => ov && ov.z[j] > 0 ? ov.z[j] : z0, num = x => Number(x).toFixed(2);
-  const fields = [
-    {label:'Tipo di volta', id:'vt', type:'select', value:old ? old.tipo : '', options:[{value:'', label:'Nessuna (soffitto piano)'}, {value:'botte', label:'A botte'}, {value:'crociera', label:'A crociera'}]},
-    {label:'Lato d\'imposta 1', id:'e1', type:'select', value:String(e0[0]), options:edgeOpts, sec:'botte'},
-    {label:'Quota imposta, inizio lato 1 (m)', id:'b1a', type:'number', value:num(zAt(e0[0])), half:true, sec:'botte'},
-    {label:'Quota imposta, fine lato 1 (m)', id:'b1b', type:'number', value:num(zAt((e0[0]+1)%n)), half:true, sec:'botte'},
-    {label:'Lato d\'imposta 2', id:'e2', type:'select', value:String(e0[1]), options:edgeOpts, sec:'botte'},
-    {label:'Quota imposta, inizio lato 2 (m)', id:'b2a', type:'number', value:num(zAt(e0[1])), half:true, sec:'botte'},
-    {label:'Quota imposta, fine lato 2 (m)', id:'b2b', type:'number', value:num(zAt((e0[1]+1)%n)), half:true, sec:'botte'},
-  ];
-  if (n === 4) [0, 1, 2, 3].forEach(j => fields.push({label:'Quota imposta in '+lb(j)+' (m)', id:'c'+j, type:'number', value:num(zAt(j)), half:true, sec:'crociera'}));
+  const old = am.volta, ob = old && old.tipo==='botte' && Array.isArray(old.pt) && old.pt.length === 4 ? old : null, oc = old && old.tipo==='crociera' && old.n === n ? old : null;
+  const prop = voltaPropose(am, 'botte'), pt0 = ob ? ob.pt : prop ? prop.pt : [];
+  const labels = state.points.map(p => p.label).sort((a, b) => (parseInt(String(a).replace(/\D/g, '')) || 0) - (parseInt(String(b).replace(/\D/g, '')) || 0) || String(a).localeCompare(String(b)));
+  const opts = labels.map(l => ({value:l, label:l}));
+  const zb = ob ? ob.z.filter(q => q > 0)[0] : null, z0 = zb || (oc ? oc.z.filter(q => q > 0)[0] : null) || (am.h > 0 ? am.h : 2.20), zc0 = (old && old.zc > 0) ? old.zc : Math.round((z0+0.8)*100)/100;
+  const num = x => Number(x).toFixed(2), zB = j => ob && ob.z[j] > 0 ? ob.z[j] : z0, zC = j => oc && oc.z[j] > 0 ? oc.z[j] : z0;
+  const fields = [{label:'Tipo di volta', id:'vt', type:'select', value:old ? old.tipo : '', options:[{value:'', label:'Nessuna (soffitto piano)'}, {value:'botte', label:'A botte'}, {value:'crociera', label:'A crociera'}]}];
+  [['Imposta 1, primo punto', 'p0', 'b0'], ['Imposta 1, secondo punto', 'p1', 'b1'], ['Imposta 2, primo punto', 'p2', 'b2'], ['Imposta 2, secondo punto', 'p3', 'b3']].forEach(([lab, ip, iz], j) => {
+    fields.push({label:lab, id:ip, type:'select', value:pt0[j] || labels[0], options:opts, half:true, sec:'botte'});
+    fields.push({label:'Quota (m)', id:iz, type:'number', value:num(zB(j)), half:true, sec:'botte'});
+  });
+  if (n === 4) [0, 1, 2, 3].forEach(j => fields.push({label:'Quota imposta in '+lb(j)+' (m)', id:'c'+j, type:'number', value:num(zC(j)), half:true, sec:'crociera'}));
   fields.push({label:'Quota in chiave (m, dal pavimento)', id:'zc', type:'number', value:num(zc0), sec:'volta'});
-  const hint = prop ? 'Botte: lati d\'imposta proposti, cambiali se serve.' : 'Non trovo due lati paralleli: per la botte scegli tu i lati d\'imposta.';
-  askDialog('Volta di '+am.name, fields, hint+(n !== 4 ? ' La crociera vuole un ambiente a quattro lati.' : ''), v => {
+  const hint = (prop ? 'Botte: due linee d\'imposta (le pareti lungo cui poggia la volta), ognuna con i due punti estremi e la quota in quei punti. Punti proposti dall\'app, cambiali se serve: l\'asse in chiave corre tra le due linee.' : 'Botte: scegli i quattro punti d\'imposta (due per ogni parete su cui poggia la volta).')+(n !== 4 ? ' La crociera vuole un ambiente a quattro lati.' : '');
+  askDialog('Volta di '+am.name, fields, hint, v => {
     saveHistory();
-    if (!v.vt) { delete am.volta; commit('Volta tolta da '+am.name+'.'); return; }
-    const z = new Array(n).fill(0), zc = parseFloat(v.zc);
+    if (!v.vt) { delete am.volta; commit('Volta tolta da '+am.name+': soffitto piano.'); return; }
+    const zc = parseFloat(v.zc);
     if (v.vt === 'crociera') {
       if (n !== 4) { setTip('La crociera vuole un ambiente a quattro lati.'); return; }
-      [0, 1, 2, 3].forEach(j => { z[j] = parseFloat(v['c'+j]); });
-      am.volta = {tipo:'crociera', n, z, zc};
+      am.volta = {tipo:'crociera', n, z:[0, 1, 2, 3].map(j => parseFloat(v['c'+j])), zc};
     } else {
-      const e1 = +v.e1, e2 = +v.e2;
-      z[e1] = parseFloat(v.b1a); z[(e1+1)%n] = parseFloat(v.b1b); z[e2] = parseFloat(v.b2a); z[(e2+1)%n] = parseFloat(v.b2b);
-      am.volta = {tipo:'botte', n, z, e:[e1, e2], zc};
+      am.volta = {tipo:'botte', pt:[v.p0, v.p1, v.p2, v.p3], z:[v.b0, v.b1, v.b2, v.b3].map(parseFloat), zc};
     }
     const V = voltaInfo(am);
     commit(V.ok ? 'Volta a '+V.tipo+' su '+am.name+': H '+ambHtxt(am)+' m, altezza media '+V.hm.toFixed(2)+' m.' : 'Volta salvata ma incompleta: '+V.why+'.');
@@ -754,12 +858,12 @@ function voltaQuoteTargets() {
   if (PRINT || !state.sel || state.sel.kind!=='ambiente') return [];
   const am = state.ambienti[state.sel.idx], V = voltaInfo(am); if (!V || !V.ok) return [];
   const n = am.indices.length, out = [];
-  V.quote.forEach(j => { const p = state.points[am.indices[j]]; if (p) out.push({k:state.sel.idx, j, p, z:am.volta.z[j]}); });
+  V.quote.forEach(j => { const p = V.pts ? V.pts[j] : state.points[am.indices[j]]; if (p) out.push({k:state.sel.idx, j, p, z:am.volta.z[j]}); });
   out.push({k:state.sel.idx, j:-1, p:null, z:am.volta.zc, chiave:true});
   return out;
 }
 function voltaQuotePos(t) {
-  if (t.chiave) { const am = state.ambienti[t.k], V = voltaInfo(am), L = V.lines[0], m = {x:(L[0].x+L[1].x)/2, y:(L[0].y+L[1].y)/2}; const s = w2s(m.x, m.y); return {x:s.x, y:s.y}; }
+  if (t.chiave) { const am = state.ambienti[t.k], V = voltaInfo(am), L = V.lines[0], m = {x:L[0].x+(L[1].x-L[0].x)*0.12, y:L[0].y+(L[1].y-L[0].y)*0.12}; const s = w2s(m.x, m.y); return {x:s.x, y:s.y}; }       // vicino a un'estremita' dell'asse: il centro della stanza resta libero per toccare l'ambiente
   const am = state.ambienti[t.k], pts = am.indices.map(i => state.points[i]), c = pts.reduce((a, q) => ({x:a.x+q.x/pts.length, y:a.y+q.y/pts.length}), {x:0, y:0});
   const s = w2s(t.p.x, t.p.y), d = w2s(c.x, c.y), dx = d.x-s.x, dy = d.y-s.y, l = Math.hypot(dx, dy) || 1;
   return {x:s.x + dx/l*26, y:s.y + dy/l*26};
@@ -784,8 +888,8 @@ function hitVoltaQuota(sx, sy) {
 }
 function voltaQuotaDialog(t) {
   const am = state.ambienti[t.k]; if (!am || !am.volta) return;
-  const lab = t.chiave ? 'Quota in chiave (m)' : 'Quota imposta in '+state.points[am.indices[t.j]].label+' (m)';
-  askDialog('Volta di '+am.name, [{label:lab, id:'z', type:'number', value:Number(t.z).toFixed(2)}], 'Metri dal pavimento.', v => {
+  const lab = t.chiave ? 'Quota in chiave (m)' : 'Quota imposta in '+(am.volta.pt ? am.volta.pt[t.j] : state.points[am.indices[t.j]].label)+' (m)';
+  askDialog('Volta di '+am.name, [{label:lab, id:'z', type:'number', value:Number(t.z).toFixed(2)}], 'Metri dal pavimento. Per cambiare tipo o togliere la volta: tocca l\'ambiente, poi "Modifica volta".', v => {
     const z = parseFloat(v.z); if (!(z > 0)) { setTip('Quota non valida.'); return; }
     saveHistory();
     if (t.chiave) am.volta.zc = z; else am.volta.z[t.j] = z;
@@ -1382,6 +1486,7 @@ function drawNow() {
   drawScale();
   drawAmbienti();
   drawVolte();
+  drawTratti();
   drawPencil();
   drawRoomPreview();
   drawSegments();
@@ -1394,6 +1499,7 @@ function drawNow() {
   drawWallPreview();
   drawRectPreview();
   drawMeasure();
+  drawVoltaPick();
   drawLabels();
   drawPoints();
   drawPending();
@@ -1983,8 +2089,8 @@ function wallCom(g) { return g.commType==='comunione' || g.commType==='nonrisc';
 //  si demolisce o si ripristina; il nuovo si disegna libero. Correggendo il rilievo il Progetto lo segue, perche'
 //  sono gli stessi elementi. La fase la riceve ogni elemento nuovo alla prima registrazione (commit).
 // ═══════════════════════════════════════════════════════════
-const FASE_KEYS = ['points','segments','openings','ambienti','pilastri','scale','labels','pencilLines'];
-const SEL_ARR = {point:'points', segment:'segments', quota:'segments', opening:'openings', ambiente:'ambienti', pilastro:'pilastri', scala:'scale', label:'labels', pencil:'pencilLines', misura:'misure'};
+const FASE_KEYS = ['points','segments','openings','ambienti','pilastri','scale','labels','pencilLines','tratti'];
+const SEL_ARR = {point:'points', segment:'segments', quota:'segments', opening:'openings', ambiente:'ambienti', pilastro:'pilastri', scala:'scale', label:'labels', pencil:'pencilLines', tratto:'tratti', misura:'misure'};
 const FASE_COL = {demo:['#ffd400','#d4a800'], nuovo:['#ff3b3b','#e00000']};      // [video, stampa]
 const FASE_LAYER = {demo:'DEMOLIZIONI', nuovo:'COSTRUZIONI'};
 function prog() { return state.view==='prog'; }
@@ -2167,6 +2273,8 @@ function ambMenuAction(action) {
   const amb = state.ambienti[s.idx]; if (!amb) return;
   if (action==='demo') { setDemo([], [], [s.idx], amb.fase!=='demo'); return; }
   if (action==='volta') { voltaDialog(s.idx); return; }
+  if (action==='vgraf') { voltaGraf(s.idx); return; }
+  if (action==='novolta') { const a = state.ambienti[s.idx]; if (!a || !a.volta) return; saveHistory(); delete a.volta; state.sel = null; commit('Volta tolta da '+a.name+': soffitto piano.'); return; }
   if (action==='copy') { const H = ambHighlight(s.idx); clipCopy(new Set(), H ? H.edges : new Set(), new Set(), new Set([s.idx])); return; }
   if (action==='copy') { const H = ambHighlight(s.idx); clipCopy(new Set(), H ? H.edges : new Set(), new Set(), new Set([s.idx])); return; }
   if (action==='inherit') { inheritStart('ambiente', s.idx); return; }
@@ -2512,6 +2620,9 @@ const TIPS = {
   point:    'Clicca per aggiungere punti, quanti ne vuoi. Seleziona per uscire.',
   connect:  'Clicca il punto A, poi il punto B.',
   trilatere:'Clicca il 1° punto e dai il raggio: se la circonferenza incontra dei muri compaiono i punti numerati, altrimenti clicca un 2° punto, dai il raggio e scegli l\'intersezione.',
+  volta:    'Volta a botte sul disegno: tocca l\'ambiente voltato, poi i punti d\'imposta. Esc per annullare.',
+  tratto:   'Tocca due punti: li unisce una linea tratteggiata (arco, riferimento). Esc per finire.',
+  arco:     'Tocca le due facce di imposta dell\'arco (i lati dei piedritti): nascono le due linee tratteggiate. Esc per finire.',
   measure:  'Tocca il punto di partenza e quello di arrivo, anche liberi: Ortho e angoli guidati come nel muro. La quota resta come misura temporanea.',
   split:    'Clicca su una linea per spezzarla con un nuovo punto; trascina i punti per correggere le inclinazioni.',
   opening:  'Clicca sulla parete dove inserire il serramento.',
@@ -2528,9 +2639,9 @@ const TIPS = {
 };
 
 // strumento attivo: il pulsante del suo gruppo ne prende icona e nome, la voce nella lista si evidenzia
-const TOOL_ICON  = {paste:'⎗', pasteOp:'⎗', inherit:'⇉', boundary:'⬚', roompts:'⬠',wall:'▭', room:'⬚', point:'+', connect:'/', trilatere:'◎', measure:'📏', split:'✂', opening:'🚪', pilastro:'▪', stair:'🪜', label:'🏷', pencil:'✏'};
-const TOOL_NAME  = {paste:'Incolla', pasteOp:'Incolla serramento', inherit:'Eredita proprietà', boundary:'Ambiente da area', roompts:'Ambiente da punti',wall:'Muro', room:'Stanza', point:'Punto', connect:'Collega', trilatere:'Trilatera', measure:'Misura', split:'Spezza', opening:'Serramento', pilastro:'Pilastro', stair:'Scala', label:'Etichetta', pencil:'Matita'};
-const TOOL_GROUP = {pasteOp:'edit', paste:'edit', inherit:'edit', split:'edit', boundary:'draw', roompts:'draw',wall:'draw', room:'draw', point:'draw', connect:'draw', trilatere:'draw', measure:'draw', pencil:'draw', opening:'ins', pilastro:'ins', stair:'ins', label:'ins'};
+const TOOL_ICON  = {volta:'⌒', tratto:'┈', arco:'⌒', paste:'⎗', pasteOp:'⎗', inherit:'⇉', boundary:'⬚', roompts:'⬠',wall:'▭', room:'⬚', point:'+', connect:'/', trilatere:'◎', measure:'📏', split:'✂', opening:'🚪', pilastro:'▪', stair:'🪜', label:'🏷', pencil:'✏'};
+const TOOL_NAME  = {volta:'Volta', tratto:'Tratteggio', arco:'Arco', paste:'Incolla', pasteOp:'Incolla serramento', inherit:'Eredita proprietà', boundary:'Ambiente da area', roompts:'Ambiente da punti',wall:'Muro', room:'Stanza', point:'Punto', connect:'Collega', trilatere:'Trilatera', measure:'Misura', split:'Spezza', opening:'Serramento', pilastro:'Pilastro', stair:'Scala', label:'Etichetta', pencil:'Matita'};
+const TOOL_GROUP = {pasteOp:'edit', paste:'edit', inherit:'edit', split:'edit', boundary:'draw', roompts:'draw',wall:'draw', room:'draw', point:'draw', connect:'draw', trilatere:'draw', measure:'draw', tratto:'draw', arco:'draw', pencil:'draw', opening:'ins', volta:'ins', pilastro:'ins', stair:'ins', label:'ins'};
 const GROUP_DEF  = {draw:{icon:'📐', name:'Disegna'}, ins:{icon:'🧱', name:'Inserisci'}, edit:{icon:'🛠', name:'Modifica'}};
 function markTool(t) {
   document.querySelectorAll('.tool-btn, .tool-item').forEach(b => b.classList.remove('active'));
@@ -2552,7 +2663,7 @@ function pickTool(t) { hideAllMenus(); if (t==='paste') { startPaste(); return; 
 function setTool(t) {
   if (state.exp) expCancel();
   state.tool = t;
-  state.connectFrom=null; state.measA=null; state.measPrev=null;
+  state.connectFrom=null; state.arcoFrom=null; state.voltaPick=null; state.measA=null; state.measPrev=null;
   resetTril();
   state.wallOrigin=null; state.wallPreview=null; state.wallSnapAngle=null; state.wallSnapPoint=null;
   state.openingDrag=null; state.drag=null; state.rectDraw=null; state.roomDraw=null; state.selBox=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null;
@@ -3916,7 +4027,13 @@ function showMenu(id, x, y, above, avoid) {
     en.innerHTML = door ? '📋 Trasmittanza e note<small class="md">Trasmittanza della porta; gli altri dati nel campo note</small>'
                         : ("📋 Dati energetici<small class=\"md\">Vetro, telaio, cassonetto e specchiature, per l'APE</small>");
   }
-  if (id==='entity-context' && state.sel && (state.sel.kind==='pencil' || state.sel.kind==='misura')) document.getElementById('ent-edit').style.display = 'none';
+  if (id==='amb-context') {
+    const a = state.sel && state.sel.kind==='ambiente' && state.ambienti[state.sel.idx], has = !!(a && a.volta);
+    document.getElementById('am-novolta').style.display = has && !lk ? '' : 'none';
+    document.getElementById('am-volta').firstChild.textContent = has ? '⌒ Modifica volta (finestra)' : '⌒ Volta (finestra)';
+    document.getElementById('am-vgraf').firstChild.textContent = has ? '⌒ Rifai i punti sul disegno' : '⌒ Volta sul disegno';
+  }
+  if (id==='entity-context' && state.sel && (state.sel.kind==='pencil' || state.sel.kind==='misura' || state.sel.kind==='tratto')) document.getElementById('ent-edit').style.display = 'none';
   if (id==='seg-context') {                    // muro esterno col tipo proposto dall'app: conferma con un tocco
     const g = state.sel && state.sel.kind==='segment' && state.segments[state.sel.idx], it = document.getElementById('sm-conf');
     if (g && g.cv==='dubbio') { it.style.display = ''; it.textContent = '✔ Conferma: '+wallName(g.commType||'')+(g.thick ? ' '+Math.round(g.thick*100)+' cm' : ''); }
@@ -4199,6 +4316,7 @@ function entityMenuAction(action) {
     if (s.kind==='ambiente') state.ambienti.splice(s.idx,1);
     if (s.kind==='pencil')   state.pencilLines.splice(s.idx,1);
     if (s.kind==='misura')   state.misure.splice(s.idx,1);
+    if (s.kind==='tratto')   state.tratti.splice(s.idx,1);
     if (s.kind==='label')    state.labels.splice(s.idx,1);
     state.sel=null; commit('Entità eliminata.'); return;
   }
@@ -4432,6 +4550,7 @@ function handleClick(sx, sy, clientX, clientY, shift) {
       ['pilastro', hitPilastro(sx,sy),    'entity-context'],
       ['scala',    hitScala(sx,sy),       'entity-context'],
       ['pencil',   hitPencil(sx,sy),      'entity-context'],
+      ['tratto',   hitTratto(sx,sy),      'entity-context'],
       ['misura',   hitMisura(sx,sy),      'entity-context'],
       ['segment',  hitSegment(sx,sy),     'seg-context'],
       ['ambiente', hitAmbiente(sx,sy),    'amb-context'],
@@ -4508,6 +4627,36 @@ function handleClick(sx, sy, clientX, clientY, shift) {
     return;
   }
 
+  case 'volta': {                      // volta a botte sul disegno: ambiente, poi quattro punti d'imposta
+    const vp = state.voltaPick;
+    if (!vp) {
+      const k = hitAmbiente(sx,sy); if (k===null) { setTip('Tocca l\'ambiente voltato.'); return; }
+      if (locked(state.ambienti[k])) { lockTip(); return; }
+      state.voltaPick = {k, pts:[]}; setTip(state.ambienti[k].name+': '+voltaPickTip(0)); draw(); return;
+    }
+    if (pi===null) { setTip('Tocca un punto esistente (P...). '+voltaPickTip(vp.pts.length)); return; }
+    const lab = state.points[pi].label;
+    if (vp.pts.includes(lab)) return;
+    vp.pts.push(lab);
+    if (vp.pts.length < 4) { setTip(voltaPickTip(vp.pts.length)); draw(); return; }
+    voltaFromPick(vp); return;
+  }
+  case 'tratto': {                     // linea tratteggiata tra due punti
+    if (pi===null) return;
+    if (state.connectFrom===null) { state.connectFrom=pi; setTip('Tocca il secondo punto.'); draw(); return; }
+    if (state.connectFrom===pi) return;
+    const A = state.points[state.connectFrom], B = state.points[pi];
+    saveHistory(); state.tratti.push({a:A.label, b:B.label}); state.connectFrom = null;
+    commit('Linea tratteggiata '+A.label+' - '+B.label+'. Tocca il punto di partenza della prossima, oppure Esc per finire.', true);
+    return;
+  }
+  case 'arco': {                       // arco: due facce di imposta, due tratteggi
+    const si = hitSegment(sx,sy);
+    if (si===null) { setTip('Tocca una faccia di imposta dell\'arco (il lato di un piedritto).'); return; }
+    if (state.arcoFrom===null) { state.arcoFrom = si; setTip('Ora tocca la faccia di imposta opposta.'); draw(); return; }
+    if (state.arcoFrom===si) return;
+    creaArco(state.arcoFrom, si); return;
+  }
   case 'measure': {                    // quota temporanea: due punti qualsiasi, il secondo con Ortho e angoli guidati
     if (state.measA) { updateMeasurePreview(sx, sy); finishMeasure(); return; }
     state.measA = measureTarget(sx, sy, null); state.measPrev = null; clearAssist();
@@ -4988,7 +5137,7 @@ function clearAll() {
   if (!confirm('Cancellare tutto il disegno? L\'operazione è annullabile con ↩ Annulla.')) return;
   saveHistory();
   state.points=[]; state.segments=[]; state.ambienti=[]; state.openings=[];
-  state.pilastri=[]; state.scale=[]; state.labels=[]; state.pencilLines=[]; state.misure=[];
+  state.pilastri=[]; state.scale=[]; state.labels=[]; state.pencilLines=[]; state.tratti=[]; state.misure=[];
   COUNTERS.forEach(k => state[k] = 0);
   state.sel=null; state.selSet=null; state.selOpen=null; state.selSeg=null;
   commit('Disegno azzerato.');
@@ -4997,7 +5146,7 @@ function clearAll() {
 // ═══════════════════════════════════════════════════════════
 //  UNDO + SALVATAGGIO AUTOMATICO
 // ═══════════════════════════════════════════════════════════
-const SNAP_KEYS = ['points','segments','ambienti','openings','pilastri','scale','labels','pencilLines','misure'];   // 'misure' (2.34) e' facoltativa: i progetti vecchi si aprono senza
+const SNAP_KEYS = ['points','segments','ambienti','openings','pilastri','scale','labels','pencilLines','tratti','misure'];   // 'tratti' e 'misure' sono facoltativi: i progetti vecchi si aprono senza
 const COUNTERS  = ['pilastroCounter','scalaCounter','pointCounter'];   // numeri che non si riusano (PIL, SCALA, P)
 
 // le foto dei punti pesano: nelle copie di Annulla ce n'e' una per passo (fino a 60), quindi i dati stanno in un deposito unico (pid)
@@ -5318,7 +5467,7 @@ function renderExport(E, den, orient) {
     CUTS = wallCuts(); PLAY = layoutPrint();
     ctx.save(); ctx.beginPath(); ctx.rect(a.x, a.y, b.x-a.x, b.y-a.y); ctx.clip();
     if (E.wm) drawWatermark();
-    drawAmbienti(); drawVolte(); drawPencil(); drawSegments(); drawPilastri(); drawScale(); drawOpenings(); drawLabels();
+    drawAmbienti(); drawVolte(); drawTratti(); drawPencil(); drawSegments(); drawPilastri(); drawScale(); drawOpenings(); drawLabels();
     ctx.restore();
     drawScaleBar(den, Hl); drawWallLegend(Wl, Hl);
     ctx.save(); ctx.font = 'italic 8pt Segoe UI'; ctx.fillStyle = '#828282'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';      // come nelle tabelle
@@ -5666,7 +5815,7 @@ function exportDXF() {
   hideAllMenus(); refreshGW();
   // layer: [nome, colore]; colore negativo = spento all'apertura (QUOTE_CORTE: quote che non stanno nel loro muro)
   const LAYERS = [['MURI',5],['MURI_EST',6],['MURI_COM',3],['MURI_NONRISC',30],['MURI_ND',200],['MURI_GRAFICI',8],['QUOTE',2],['QUOTE_CORTE',-2],['SERRAMENTI',5],
-                  ['PORTE',4],['AMBIENTI',4],['AMBIENTI_TESTO',7],['VOLTE',5],['PILASTRI',8],['SCALE',6],['SCALE_TESTO',8],['QUOTE_SPESSORI',3],['ETICHETTE',1],['MATITA',30],['DEMOLIZIONI',2],['COSTRUZIONI',1]];
+                  ['PORTE',4],['AMBIENTI',4],['AMBIENTI_TESTO',7],['VOLTE',5],['ARCHI',6],['PILASTRI',8],['SCALE',6],['SCALE_TESTO',8],['QUOTE_SPESSORI',3],['ETICHETTE',1],['MATITA',30],['DEMOLIZIONI',2],['COSTRUZIONI',1]];
   const D = dxfWriter(LAYERS), {line, poly, mtext, rect} = D;
   const CW = 0.7;                                   // larghezza media di un carattere in altezze di testo (stima degli ingombri, larga: i CAD sostituiscono il carattere)
   const readable = (ux, uy) => (ux < -1e-9 || (Math.abs(ux) < 1e-9 && uy < 0)) ? {x:-ux, y:-uy} : {x:ux, y:uy};   // testo lungo il muro, mai capovolto
@@ -5722,6 +5871,7 @@ function exportDXF() {
 
   // ambienti: poligono e un'etichetta MTEXT a piu' righe (senza cornice), alta al massimo 10 cm e ridotta
   // finche' sta nell'ingombro dell'ambiente
+  state.tratti.forEach(t => { const P = live(t) && trattoPts(t); if (P) line('ARCHI', P[0].x, P[0].y, P[1].x, P[1].y, 'TRATTEGGIATA'); });
   state.ambienti.forEach(a => {
     const pts = a.indices.map(i=>state.points[i]).filter(Boolean);
     if (pts.length<3 || !live(a)) return;
@@ -8334,8 +8484,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.34';
-const APP_NOTE = ["Barra dei comandi riordinata: Seleziona, Disegna, Inserisci, Modifica, Vista, Annulla, File, Stato di fatto. Disegna ha 6 voci (gli ambienti e i punti stanno in due gruppi); Inserisci ha serramenti, scala, pilastro ed etichetta; File raccoglie Importa ed Esporta in due gruppi, con \"Cancella tutto\" in fondo in rosso", "Nuovo menu Modifica: Incolla, Incolla sul posto, Eredita proprietà, Spezza, Seleziona per tipo (muri non assegnati, tutte le porte, tutte le finestre), Selezione multipla", "Nuovo menu Vista, con caselle che si accendono e spengono senza chiudere il menu: quote dello spessore, quote interne dei muri, punti, quote temporanee, pannello serramenti, legenda, pannello base; qui ci sono anche Centra vista e Tabella serramenti. A destra restano solo Mano, Calamita, Guida e Incolla", "Misura rifatta: i due punti possono essere anche liberi sul disegno, con Ortho e angoli guidati come nel muro, e la misura resta come quota temporanea (si può fare una dopo l'altra). Si nasconde da Vista, si cancella da Modifica (tutte insieme) o toccandola. Le quote temporanee non escono in PDF, JPG e DXF", "I menu che si aprono toccando un elemento propongono in evidenza (barra gialla) fino a due azioni: quelle che dipendono dallo stato (muro da confermare, Progetto, punto tra due linee, serramento senza dati energetici) e gli ultimi comandi che hai usato"];
+const APP_VERSION = '2.35';
+const APP_NOTE = ["Volta a botte rifatta: ora poggia su due pareti d'imposta, ognuna con i suoi due punti estremi (anche punti fuori dal contorno dell'ambiente) e una quota in ciascun punto; l'asse in chiave corre tra le due pareti. Le quote possono essere diverse da un punto all'altro. Le botti fatte con la versione precedente si convertono da sole", "Volta sul disegno: dal menu dell'ambiente \"Volta sul disegno\" (o Inserisci, Volta a botte) si tocca l'ambiente e poi i quattro punti d'imposta; la volta nasce con quote provvisorie e le quote si mettono toccandole sul disegno, senza finestre che coprono la pianta. \"Rifai i punti sul disegno\" cambia i punti tenendo le quote", "Menu dell'ambiente con una volta: \"Modifica volta (finestra)\" e \"Togli volta\" (torna al soffitto piano). La quota in chiave non sta più al centro della stanza: toccando la stanza si apre di nuovo il suo menu", "La proposta automatica della botte sceglie il lato lungo dell'ambiente, anche quando le pareti sono spezzate dai piedritti; i punti si correggono a mano", "Nuovi strumenti \"Arco\" (tocca le due facce di imposta: nascono le due linee tratteggiate dell'arco) e \"Linea tratteggiata\" (unisce due punti). Seguono i punti se li sposti, si selezionano e si cancellano, escono in PDF, JPG e DXF (layer ARCHI, tratteggiato)"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
