@@ -1502,6 +1502,7 @@ function drawNow() {
   drawVoltaPick();
   drawLabels();
   drawPoints();
+  drawPickMarks();
   drawPending();
   drawPastePreview();
   drawSelBox();
@@ -2562,6 +2563,21 @@ function drawLabels() {
 }
 
 
+// punti toccati dagli strumenti a punti (Ambiente da punti, Collega, Tratteggio, Trilatera): cerchio ben visibile e numero d'ordine sul punto
+function drawPickMarks() {
+  if (PRINT) return;
+  const t = state.tool;
+  const list = t==='roompts' ? (state.roomPts || []) : (t==='connect' || t==='tratto') ? (state.connectFrom!==null ? [state.connectFrom] : []) : t==='trilatere' ? (state.trilPoints || []) : [];
+  if (!list.length) return;
+  ctx.save(); ctx.font = 'bold 12px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.setLineDash([]);
+  list.forEach((i, j) => {
+    const p = state.points[i]; if (!p) return; const q = w2s(p.x, p.y);
+    ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(q.x, q.y, 14, 0, Math.PI*2); ctx.stroke();
+    ctx.fillStyle = '#ffe066'; ctx.beginPath(); ctx.arc(q.x+15, q.y-15, 9, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#2a2200'; ctx.fillText(String(j+1), q.x+15, q.y-15);
+  });
+  ctx.restore();
+}
 function drawPoints() {
   state.points.forEach((p,i) => {
     if (hid(p)) return;
@@ -3384,9 +3400,11 @@ function finishRoom() {
     {label:'Larghezza (m)', id:'w', value:w0.toFixed(2), type:'number'},
     {label:'Profondità (m)', id:'d', value:h0.toFixed(2), type:'number'},
     {label:'Altezza netta (m)', id:'h', value:lastAmbH().toFixed(2), type:'number'},
-  ]), 'Misure lette dal trascinamento: correggile con quelle rilevate. L\'angolo da cui sei partito resta fermo.', v => {
-    const w = parseFloat(v.w), d = parseFloat(v.d), hh = parseFloat(v.h);
+    {label:'Spessore del muro attorno (cm) - 0 = solo il perimetro interno', id:'t', value:'15', type:'number'},
+  ]), 'Misure lette dal trascinamento: correggile con quelle rilevate (sono le misure nette, interne). L\'angolo da cui sei partito resta fermo. Il muro si disegna come seconda linea verso l\'esterno, tranne dove c\'è già un muro vicino.', v => {
+    const w = parseFloat(v.w), d = parseFloat(v.d), hh = parseFloat(v.h), tcm = parseFloat(v.t);
     if (!(w>0) || !(d>0) || !(hh>0)) { draw(); return; }
+    const tw = tcm > 0 ? Math.min(tcm, 100)/100 : 0;
     saveHistory();
     const keepEnd = Math.abs(w-w0) < 0.005 && Math.abs(d-h0) < 0.005;     // misure invariate: l'angolo d'arrivo resta agganciato
     const C = [{x:r.x0, y:r.y0}, {x:r.x0+sx*w, y:r.y0}, {x:r.x0+sx*w, y:r.y0+sy*d}, {x:r.x0, y:r.y0+sy*d}];
@@ -3397,9 +3415,28 @@ function finishRoom() {
       return near>=0 ? near : newPoint(p.x, p.y);
     });
     ids.forEach((id,k) => { const nx = ids[(k+1)%4]; if (!segExists(id, nx)) state.segments.push({a:id, b:nx}); });
+    let nOut = 0;
+    if (tw > 0) {                                                  // seconda linea del muro, verso l'esterno: l'app ne legge lo spessore dalle due facce
+      const O = C.map((p,k) => ({x:p.x + (k===0||k===3 ? -sx : sx)*tw, y:p.y + (k<2 ? -sy : sy)*tw})), oid = [];
+      const outPt = k => { if (oid[k]===undefined) { const near = state.points.findIndex(P => Math.hypot(P.x-O[k].x, P.y-O[k].y) < 0.01); oid[k] = near>=0 ? near : newPoint(O[k].x, O[k].y); } return oid[k]; };
+      for (let k = 0; k < 4; k++) {
+        const k2 = (k+1)%4, A = C[k], B = C[k2], L = Math.hypot(B.x-A.x, B.y-A.y), ux = (B.x-A.x)/L, uy = (B.y-A.y)/L;
+        const nx = (k===0 ? 0 : k===1 ? sx : k===2 ? 0 : -sx), ny = (k===0 ? -sy : k===1 ? 0 : k===2 ? sy : 0);          // verso l'esterno di questo lato
+        const taken = state.segments.some((h, hi) => {             // c'e' gia' un muro parallelo a meno di 1 m, dalla parte esterna, che lo copre per meta' almeno
+          if (ids.includes(h.a) && ids.includes(h.b)) return false;
+          const P = state.points[h.a], Q = state.points[h.b]; if (!P || !Q || hid(h)) return false;
+          const dP = (P.x-A.x)*nx + (P.y-A.y)*ny, dQ = (Q.x-A.x)*nx + (Q.y-A.y)*ny;
+          if (Math.abs(dP-dQ) > 0.1 || dP < 0.03 || dP > WALL_FACE_MAX) return false;
+          const sP = (P.x-A.x)*ux + (P.y-A.y)*uy, sQ = (Q.x-A.x)*ux + (Q.y-A.y)*uy;
+          return Math.min(L, Math.max(sP,sQ)) - Math.max(0, Math.min(sP,sQ)) >= 0.5*L;
+        });
+        if (taken) continue;
+        const a = outPt(k), b = outPt(k2); if (!segExists(a, b)) { state.segments.push({a, b}); nOut++; }
+      }
+    }
     const n = state.ambienti.length;
     state.ambienti.push({ indices:ids, name:roomNameRead(v, null, nm0), h:hh, color:AMB_COLORS[n%AMB_COLORS.length], category:'utile' });
-    commit('Stanza creata: '+(w*d).toFixed(2)+' m². Trascina per la prossima, oppure Seleziona per finire.', true);
+    commit('Stanza creata: '+(w*d).toFixed(2)+' m²'+(nOut ? ', con muro di '+Math.round(tw*100)+' cm su '+nOut+(nOut===1 ? ' lato' : ' lati') : '')+'. Trascina per la prossima, oppure Seleziona per finire.', true);
   }, () => draw());
   roomNameUI();
 }
@@ -8484,8 +8521,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.35';
-const APP_NOTE = ["Volta a botte rifatta: ora poggia su due pareti d'imposta, ognuna con i suoi due punti estremi (anche punti fuori dal contorno dell'ambiente) e una quota in ciascun punto; l'asse in chiave corre tra le due pareti. Le quote possono essere diverse da un punto all'altro. Le botti fatte con la versione precedente si convertono da sole", "Volta sul disegno: dal menu dell'ambiente \"Volta sul disegno\" (o Inserisci, Volta a botte) si tocca l'ambiente e poi i quattro punti d'imposta; la volta nasce con quote provvisorie e le quote si mettono toccandole sul disegno, senza finestre che coprono la pianta. \"Rifai i punti sul disegno\" cambia i punti tenendo le quote", "Menu dell'ambiente con una volta: \"Modifica volta (finestra)\" e \"Togli volta\" (torna al soffitto piano). La quota in chiave non sta più al centro della stanza: toccando la stanza si apre di nuovo il suo menu", "La proposta automatica della botte sceglie il lato lungo dell'ambiente, anche quando le pareti sono spezzate dai piedritti; i punti si correggono a mano", "Nuovi strumenti \"Arco\" (tocca le due facce di imposta: nascono le due linee tratteggiate dell'arco) e \"Linea tratteggiata\" (unisce due punti). Seguono i punti se li sposti, si selezionano e si cancellano, escono in PDF, JPG e DXF (layer ARCHI, tratteggiato)"];
+const APP_VERSION = '2.36';
+const APP_NOTE = ["Stanza rettangolare: nella finestra c'è il nuovo campo \"Spessore del muro attorno\" (15 cm di partenza, 0 = solo il perimetro interno). Le misure restano quelle nette, interne; l'app aggiunge verso l'esterno la seconda linea del muro e ne legge lo spessore. Sui lati dove c'è già un muro parallelo entro 1 m la seconda linea non viene aggiunta", "Strumenti a punti (Ambiente da punti, Collega, Linea tratteggiata, Trilatera): i punti toccati si vedono con un cerchio giallo ben visibile e il numero d'ordine, non solo nel messaggio in basso"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
