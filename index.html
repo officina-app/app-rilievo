@@ -1882,6 +1882,18 @@ function autoWallThick() {
     if (d!==null) { g.thick = Math.round(d*100)/100; g.thAuto = true; }
     else if (g.thAuto) { delete g.thick; delete g.thAuto; delete g.thN; delete g.thF; }
   });
+  PARTNER = new Map();                                                    // facce esterne: la linea che non confina con un ambiente e ha, entro 1 m, la faccia che confina
+  state.segments.forEach((g, si) => {
+    if (hid(g) || GWS.has(g) || g.layer==='MURI_EST' || segBorders(g)) return;
+    const A = state.points[g.a], B = state.points[g.b]; if (!A || !B || Math.hypot(B.x-A.x, B.y-A.y) < 0.3) return;
+    const M = {x:(A.x+B.x)/2, y:(A.y+B.y)/2}, r = oppositeFace(si, M, M); if (!r) return;
+    const h = state.segments[r.k]; if (h && !hid(h) && segBorders(h)) PARTNER.set(g, h);
+  });
+}
+// indice della faccia opposta del muro (null se non c'e'): per una faccia che confina con un ambiente, la linea oltre il muro; per una esterna, la faccia che confina
+function wallPartnerIdx(si) {
+  const g = state.segments[si], A = g && state.points[g.a], B = g && state.points[g.b]; if (!A || !B || Math.hypot(B.x-A.x, B.y-A.y) < 0.05) return null;
+  const M = {x:(A.x+B.x)/2, y:(A.y+B.y)/2}, r = oppositeFace(si, M, M); return r ? r.k : null;
 }
 // lo spessore automatico si ricalcola anche mentre si trascina (il trascinamento non fa commit): basta che cambi la geometria
 let _awtSig = null;
@@ -1911,13 +1923,13 @@ function oppositeFace(si, P0, P1) {
     const sm = ((M.x-C.x)*vx + (M.y-C.y)*vy)/Lc; if (sm < 0 || sm > 1) return;
     const side = Math.sign(sd), T = {x:M.x+nx*side*0.01, y:M.y+ny*side*0.01};
     if (own.some(p => p.length>=3 && inPoly(p, T.x, T.y))) return;  // dal lato dell'ambiente non c'e' il muro
-    if (!best || d < best.d) best = {d, side, C, vx, vy, cx, cy, cs};
+    if (!best || d < best.d) best = {d, side, C, vx, vy, cx, cy, cs, k};
   });
   if (!best) return null;
   // ogni spalla parte perpendicolare al muro e si ferma esattamente sulla retta della faccia opposta: con facce non parallele le due spalle
   // hanno lunghezze diverse ma si chiudono entrambe sulla linea (nessun moncone, nessuno sbordo)
   const onFace = P => { const s2 = ((best.C.x-P.x)*best.cx + (best.C.y-P.y)*best.cy)/best.cs; return {x:P.x+nx*s2, y:P.y+ny*s2}; };
-  return { Q0:onFace(P0), Q1:onFace(P1), d:best.d, C:best.C, v:{x:best.vx, y:best.vy} };
+  return { Q0:onFace(P0), Q1:onFace(P1), d:best.d, C:best.C, v:{x:best.vx, y:best.vy}, k:best.k };
 }
 function wallCuts() {
   const gaps = new Map(), jambs = [], opp = [], off = [];
@@ -2200,6 +2212,75 @@ function wallRecalcAction(only) {
   const ok = idxs.filter(i => state.segments[i].thAuto).length, no = idxs.length-ok, pl = n => n===1 ? 'muro' : 'muri';
   commit('Ricalcolato dalla grafica: '+ok+' '+pl(ok)+' con lo spessore delle linee'+(no ? '; '+no+' senza una linea parallela entro 1 m: spessore da dare a mano.' : '.'), true);
 }
+// punto d'incontro di due rette (punto + direzione); null se parallele
+function lineX(P, u, Q, v) { const det = u.x*v.y - u.y*v.x; if (Math.abs(det) < 1e-6) return null; const t = ((Q.x-P.x)*v.y - (Q.y-P.y)*v.x)/det; return {x:P.x+u.x*t, y:P.y+u.y*t}; }
+// SPESSORE SCRITTO = SPESSORE DISEGNATO: lo spessore dato a una faccia sposta la linea opposta a quella distanza (o la disegna, se manca). Poi lo spessore resta
+// "dalla grafica" (thAuto): se sposti la linea, il numero si aggiorna. Gli estremi della linea spostata scorrono lungo le linee che ci arrivano, cosi' gli angoli restano com'erano.
+// Ritorna i muri a cui non si e' potuto disegnare (bloccati nel Progetto, nessun ambiente): lo spessore resta solo scritto.
+function wallSetThick(idxs, t) {
+  const seen = new Set(), plain = [], jobs = [];                          // jobs: {d: faccia che comanda, p: faccia che si sposta (o null)}
+  idxs.forEach(k => {
+    const g = state.segments[k]; if (!g) return;
+    const q = wallPartnerIdx(k), own = segBorders(g);
+    let d = k, p = q;
+    if (!own && q!==null && segBorders(state.segments[q])) { d = q; p = k; }          // scelta la faccia esterna: comanda quella che confina
+    if (seen.has(d)) return; seen.add(d); if (p!==null) seen.add(p);
+    jobs.push({d, p});
+  });
+  const normal = (d, toward) => {                                           // normale di d verso il punto toward
+    const g = state.segments[d], A = state.points[g.a], B = state.points[g.b], L = Math.hypot(B.x-A.x, B.y-A.y), u = {x:(B.x-A.x)/L, y:(B.y-A.y)/L};
+    let n = {x:-u.y, y:u.x}; const M = {x:(A.x+B.x)/2, y:(A.y+B.y)/2};
+    if ((toward.x-M.x)*n.x + (toward.y-M.y)*n.y < 0) n = {x:-n.x, y:-n.y};
+    return {A, B, u, n};
+  };
+  const creates = [];
+  jobs.forEach(({d, p}) => {
+    const gd = state.segments[d];
+    if (!gd || locked(gd)) { plain.push(d); return; }
+    if (p!==null) {                                                         // la faccia opposta esiste: si sposta
+      const gp = state.segments[p]; if (!gp || locked(gp) || [gp.a, gp.b].some(i => locked(state.points[i]))) { plain.push(d); return; }
+      const C = state.points[gp.a], D = state.points[gp.b], mid = {x:(C.x+D.x)/2, y:(C.y+D.y)/2}, {A, u, n} = normal(d, mid);
+      const O = {x:A.x+n.x*t, y:A.y+n.y*t};                                // un punto della nuova linea (parallela a d, a distanza t)
+      [gp.a, gp.b].forEach(i => {
+        const P = state.points[i];
+        const others = state.segments.filter((h, k) => k!==p && k!==d && (h.a===i || h.b===i) && !hid(h));
+        let N = null;
+        if (others.length===1) {
+          const h = others[0], o = h.a===i ? state.points[h.b] : state.points[h.a], Lh = Math.hypot(o.x-P.x, o.y-P.y) || 1, v = {x:(o.x-P.x)/Lh, y:(o.y-P.y)/Lh};
+          const X = lineX(O, u, P, v); if (X && Math.hypot(X.x-P.x, X.y-P.y) < 3) N = X;       // scorre sulla linea che arriva (l'angolo resta com'era)
+        }
+        if (!N) { const sh = (O.x-P.x)*n.x + (O.y-P.y)*n.y; N = {x:P.x+n.x*sh, y:P.y+n.y*sh}; }   // altrimenti si sposta in perpendicolare
+        P.x = N.x; P.y = N.y;
+      });
+      gd.thick = t; gd.thAuto = true;
+    } else if (segBorders(gd)) creates.push(d);
+    else plain.push(d);
+  });
+  // facce mancanti: si disegnano insieme, cosi' agli angoli le nuove linee si incontrano
+  if (creates.length) {
+    const info = new Map();                                                // d -> {u, n, O}
+    creates.forEach(d => {
+      const gd = state.segments[d], own = state.ambienti.find(a => live(a) && ringHasEdge(a, gd.a, gd.b)), pts = own.indices.map(i => state.points[i]).filter(Boolean);
+      const A = state.points[gd.a], B = state.points[gd.b], L = Math.hypot(B.x-A.x, B.y-A.y), u = {x:(B.x-A.x)/L, y:(B.y-A.y)/L}, M = {x:(A.x+B.x)/2, y:(A.y+B.y)/2};
+      let n = {x:-u.y, y:u.x}; if (inPoly(pts, M.x+n.x*0.01, M.y+n.y*0.01)) n = {x:-n.x, y:-n.y};      // verso l'esterno dell'ambiente
+      info.set(d, {u, n, O:{x:A.x+n.x*t, y:A.y+n.y*t}});
+    });
+    const vert = new Map();                                                // vertice -> nuovo punto
+    const newAt = (vi, d) => {
+      if (vert.has(vi)) return vert.get(vi);
+      const me = info.get(d), P = state.points[vi]; let N = null;
+      for (const [d2, o] of info) { if (d2===d) continue; const g2 = state.segments[d2]; if (g2.a!==vi && g2.b!==vi) continue; const X = lineX(me.O, me.u, o.O, o.u); if (X && Math.hypot(X.x-P.x, X.y-P.y) < 3) { N = X; break; } }
+      if (!N) N = {x:P.x+me.n.x*t, y:P.y+me.n.y*t};
+      const idx = newPoint(N.x, N.y); state.points[idx].fase = state.segments[d].fase; vert.set(vi, idx); return idx;
+    };
+    creates.forEach(d => {
+      const gd = state.segments[d], a = newAt(gd.a, d), b = newAt(gd.b, d);
+      if (a!==b && !segExists(a, b)) state.segments.push({a, b, fase:gd.fase});
+      gd.thick = t; gd.thAuto = true;
+    });
+  }
+  return plain;
+}
 function wallThickMenuAction(only) {
   hideAllMenus();
   const idxs = only || (state.selSeg ? [...state.selSeg] : []);
@@ -2212,6 +2293,7 @@ function wallThickMenuAction(only) {
   const nd = segs.filter(g => g.cv==='dubbio').length, sm = wallSummary(idxs);
   const hint = [
     idxs.length>1 ? 'Si applica a tutti i '+idxs.length+' muri selezionati.' : '',
+    'Lo spessore si disegna: la linea opposta si sposta (o nasce) a quella distanza; se la sposti tu, lo spessore si aggiorna.',
     sm ? 'Ora: '+sm.full+'.' : '',
     mixT || mixS ? 'Dove vedi "diversi" o vuoto, i muri hanno valori differenti: lasciandolo così restano invariati.' : '',
     !compiled && last ? 'Proposti i valori dell\'ultimo muro compilato.' : '',
@@ -2223,8 +2305,17 @@ function wallThickMenuAction(only) {
   ], hint, v => {
     const th = parseFloat(v.th), now = Date.now();
     saveHistory();
-    segs.forEach(g => { if (v.ct!=='__keep') g.commType = v.ct || undefined; if (isFinite(th) && th>0) { g.thick = th; delete g.thAuto; } delete g.cv; delete g.cvOp; g.wt = now; });
-    commit('Spessore/tipo aggiornato su '+idxs.length+' mur'+(idxs.length>1 ? 'i' : 'o')+'.', true);
+    // la classe vale per il muro intero: anche per l'altra faccia (se non e' bloccata nel Progetto)
+    const all = new Set(idxs);
+    idxs.forEach(i => { const q = wallPartnerIdx(i); if (q!==null && !locked(state.segments[q])) all.add(q); });
+    [...all].forEach(i => { const g = state.segments[i]; if (v.ct!=='__keep') g.commType = v.ct || undefined; delete g.cv; delete g.cvOp; g.wt = now; });
+    let plain = [];
+    if (isFinite(th) && th>0) {
+      plain = wallSetThick(idxs, th);                                         // lo spessore si disegna: la linea opposta si sposta (o nasce) a quella distanza
+      plain.forEach(i => { const g = state.segments[i]; if (g) { g.thick = th; delete g.thAuto; } });     // dove non si puo' disegnare resta solo scritto
+    }
+    autoWallThick();
+    commit('Spessore/tipo aggiornato su '+idxs.length+' mur'+(idxs.length>1 ? 'i' : 'o')+(plain.length ? '; su '+plain.length+' non c\'e\' una linea da spostare: spessore solo scritto.' : '.'), true);
   });
 }
 
@@ -2303,7 +2394,16 @@ function refreshGW() {
   });
   owner.forEach((o, g) => { if (o.every(x => x)) GWS.add(g); });
 }
-function wallClass(g) { return GWS.has(g) ? 'grafico' : g.cv==='dubbio' ? 'nd' : g.commType || (g.layer==='MURI_EST' ? 'perimetrale' : ''); }
+// la faccia esterna di un muro (linea che non confina con nessun ambiente) e' parte del muro della faccia che confina: ne ha la classe e non conta in proprio.
+// PARTNER: linea esterna -> faccia che confina con l'ambiente; si ricalcola con la geometria (autoWallThick)
+let PARTNER = new Map();
+function segBorders(g) { return state.ambienti.some(a => live(a) && ringHasEdge(a, g.a, g.b)); }
+function wallClass(g) {
+  if (GWS.has(g)) return 'grafico';
+  const h = PARTNER.get(g);
+  if (h) { if (h.cv==='dubbio') return 'nd'; if (h.commType) return h.commType; }
+  return g.cv==='dubbio' ? 'nd' : g.commType || (g.layer==='MURI_EST' ? 'perimetrale' : '');
+}
 function wallName(t) { return WALL_STYLE[t||''].name; }
 function wallCom(g) { return g.commType==='comunione' || g.commType==='nonrisc'; }      // al 50% nella superficie commerciale
 
@@ -6591,9 +6691,27 @@ function commTable() {
     });
     muriLordo = Math.max(0, aCont - aIn - corr);
   } else {
-    state.segments.forEach(g => {
-      if (!g.commType || !g.thick || !live(g) || GWS.has(g)) return;
-      const len = segLen(g);
+    // il calcolo nasce dall'ambiente: conta solo la faccia che confina con un ambiente (la faccia esterna e' lo stesso muro e non conta), un muro una volta sola
+    // anche se hai classificato le due facce. Lunghezza = lato + mezzo spessore del muro contato che lo incontra a 90 gradi, a ogni estremo (gli spigoli)
+    const cnt = g => !!g && !!g.commType && !!g.thick && live(g) && !GWS.has(g) && segBorders(g);
+    const segAt = (u, w) => state.segments.find(h => (h.a===u && h.b===w) || (h.a===w && h.b===u));
+    const ext = (g, v) => {                                                              // prolungamento al vertice v di g: mezzo spessore del muro contato che arriva in v a 90 gradi
+      const own = state.ambienti.find(a => live(a) && ringHasEdge(a, g.a, g.b)); if (!own) return 0;
+      const r = own.indices, n = r.length, A = state.points[g.a], B = state.points[g.b], L = Math.hypot(B.x-A.x, B.y-A.y) || 1;
+      let best = 0;
+      for (let k = 0; k < n; k++) {
+        const u = r[k], w = r[(k+1)%n]; if (u!==v && w!==v) continue;
+        const h = segAt(u, w); if (!h || h===g || !cnt(h)) continue;
+        const C = state.points[h.a], D = state.points[h.b], Lh = Math.hypot(D.x-C.x, D.y-C.y) || 1;
+        if (Math.abs(((B.x-A.x)*(D.x-C.x) + (B.y-A.y)*(D.y-C.y))/(L*Lh)) > 0.35) continue;      // non e' un angolo retto (o quasi): nessun prolungamento
+        best = Math.max(best, h.thick/2);
+      }
+      return best;
+    };
+    state.segments.forEach((g, k) => {
+      if (!cnt(g)) return;
+      const pi = wallPartnerIdx(k); if (pi!==null && pi < k && cnt(state.segments[pi])) return;          // l'altra faccia dello stesso muro e' gia' stata contata
+      const len = segLen(g) + ext(g, g.a) + ext(g, g.b);
       if (g.commType==='perimetrale') muriPerim += len * Math.min(g.thick, 0.50);
       if (wallCom(g))                 muriCom   += len * Math.min(g.thick*0.5, 0.25);    // meta' spessore, al massimo 25 cm
     });
@@ -9251,8 +9369,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.41';
-const APP_NOTE = ["Scala a U: due rampe una opposta all'altra, affiancate (anche con un vuoto fino a 40 cm) e ferme sulla stessa linea, si uniscono in una scala sola con il pianerottolo rettangolare che copre tutte e due. L'app lo propone da sola, come per le rampe a 90°. La profondità del pianerottolo si cambia con la sua maniglia; allungando o allargando le rampe, pianerottolo e rampa alta seguono. Altezza, alzate e freccia di salita (a U) come nelle altre scale", "Scala da 4 punti (menu Inserisci): per rampe storte o con gradini trapezoidali. Tocchi i quattro angoli in giro (anche punti trilaterati; i primi due sono il lato da cui si parte a salire), poi scrivi i gradini che hai contato: la pedata si calcola sulla linea di passo, a metà larghezza, e i gradini si dividono in parti uguali. I quattro angoli si trascinano; doppio clic per gradini e alzata", "Chiocciola (menu Inserisci): tocchi il centro e un punto sul bordo esterno, poi raggio interno, angolo totale (fino a 360°), verso e gradini. Maniglie per raggio esterno, raggio interno e fine del giro. Nel DXF gli archi sono spezzate da 4°", "Le nuove scale seguono le stesse regole delle altre: taglio a 1,50 m, etichetta con alzate, pedate e Blondel (pedata sulla linea di passo), freccia di salita, superficie scalata dall'ambiente, uguali a video, in PDF/JPG e nel DXF"];
+const APP_VERSION = '2.42';
+const APP_NOTE = ["Superficie commerciale, muri disegnati a mano: il calcolo parte dall'ambiente. Conta solo la linea che confina con un ambiente; la linea esterna dello stesso muro non conta più, anche se la classifichi, e un muro è contato una volta sola. Ogni lato è prolungato di mezzo spessore del muro contato che lo incontra a 90°, così gli spigoli non vanno persi (stanza 5x5 con muri da 30 cm: 31,36 mq lordi)", "Spessore e linea sempre uguali: lo spessore scritto sposta la linea opposta a quella distanza, oppure la disegna se manca (con gli angoli che si incontrano); se sposti tu la linea, lo spessore si aggiorna. Gli angoli restano com'erano", "Un muro è un elemento solo: la classe (Esterno, verso altre unità, vano scala) vale per tutte e due le facce, e la linea esterna prende il colore del suo muro invece di restare celeste"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
