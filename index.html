@@ -291,7 +291,9 @@
   <div class="menu-item tool-item" id="ti-opening-F" onclick="selectOpeningType('F')"><span class="ti">🪟</span><span class="tt"><b>Finestra (F)</b><small>Poi tocca il muro dove va</small></span></div>
   <div class="menu-item tool-item" id="ti-opening-PF" onclick="selectOpeningType('PF')"><span class="ti">🚪</span><span class="tt"><b>Porta-finestra (PF)</b><small>Poi tocca il muro dove va</small></span></div>
   <div class="menu-item tool-item" id="ti-opening-P" onclick="selectOpeningType('P')"><span class="ti">🚪</span><span class="tt"><b>Porta (P)</b><small>Poi tocca il muro dove va</small></span></div>
-  <div class="menu-item tool-item" id="ti-stair" onclick="pickTool('stair')"><span class="ti">🪜</span><span class="tt"><b>Scala</b><small>Trascina: un gradino ogni 30 cm. Due rampe a 90° che si toccano diventano una scala col pianerottolo</small></span></div>
+  <div class="menu-item tool-item" id="ti-stair" onclick="pickTool('stair')"><span class="ti">🪜</span><span class="tt"><b>Scala</b><small>Trascina: un gradino ogni 30 cm. Due rampe che si toccano (a 90° o una opposta all'altra) diventano una scala col pianerottolo</small></span></div>
+  <div class="menu-item tool-item" id="ti-stairq" onclick="pickTool('stairq')"><span class="ti">🪜</span><span class="tt"><b>Scala da 4 punti</b><small>Rampa storta o a gradini trapezoidali: tocchi i quattro angoli e dai i gradini contati</small></span></div>
+  <div class="menu-item tool-item" id="ti-spiral" onclick="pickTool('spiral')"><span class="ti">🌀</span><span class="tt"><b>Chiocciola</b><small>Tocca il centro e un punto sul bordo esterno; poi raggio interno, giro e verso</small></span></div>
   <div class="menu-item tool-item" id="ti-volta" onclick="pickTool('volta')"><span class="ti">⌒</span><span class="tt"><b>Volta a botte</b><small>Tocca l'ambiente e i quattro punti d'imposta; le quote le dai dopo, toccandole</small></span></div>
   <div class="menu-item tool-item" id="ti-pilastro" onclick="pickTool('pilastro')"><span class="ti">▪</span><span class="tt"><b>Pilastro o ingombro</b><small>Pilastro, camino, canna: su un punto; si toglie dalla superficie dell'ambiente</small></span></div>
   <div class="menu-item tool-item" id="ti-label" onclick="pickTool('label')"><span class="ti">🏷</span><span class="tt"><b>Etichetta</b><small>Testo libero sul disegno</small></span></div>
@@ -602,6 +604,7 @@ const state = {
   openingType:null, openingDrag:null,
   pilastroCounter:0, scalaCounter:0, pointCounter:0,
   rectDraw:null,          // {x0,y0,x1,y1} anteprima Scala
+  stairPts:null, spiralC:null, spiralPrev:null,   // Scala da 4 punti (angoli toccati finora) e Chiocciola (centro e punto sotto il dito)
   dragSnap:null,          // stato prima di un trascinamento, per l'Annulla
   drag:null,              // {kind,idx,...} trascinamento generico
   hoverScala:null, stairResize:null, exp:null,   // exp = selezione della zona da esportare
@@ -648,7 +651,7 @@ function opHb(op) { return op.hb ?? OPENING_DEF[op.type].hb; }
 function newPoint(x, y) { state.points.push({x, y, label:nextLabel(), note:'', photo:null}); return state.points.length-1; }
 // valori in sequenza: il nuovo elemento propone quelli dell'ultimo dello stesso tipo, si conferma con un tocco
 function lastAmbH()   { const a = state.ambienti[state.ambienti.length-1]; return a && a.h > 0 ? a.h : 2.70; }
-function lastStair()  { const s = state.scale[state.scale.length-1]; return s ? {p:s.pedata, a:s.alzata} : {p:STAIR_PEDATA, a:STAIR_ALZATA}; }
+function lastStair()  { const s = [...state.scale].reverse().find(q => q.tipo!=='Q' && q.tipo!=='C'); return s ? {p:s.pedata, a:s.alzata} : {p:STAIR_PEDATA, a:STAIR_ALZATA}; }   // pedata e alzata dell'ultima rampa dritta (quelle a 4 punti e a chiocciola hanno la pedata calcolata)
 function resetTril() { state.trilStep=0; state.trilPoints=[]; state.circles=[]; state.pending=null; state.cand=null; }
 
 function inPoly(pts, x, y) {
@@ -1140,16 +1143,127 @@ function stairSolve(s) {
   const G = state.scale.filter(q => q.grp===s.grp), byS = id => G.find(q => q.sid===id);
   for (let pass=0; pass<4; pass++) G.filter(q => q.tipo==='P' && q.from).forEach(P => {
     const L = byS(P.from), U = byS(P.to);
-    if (!L || !U) { delete P.from; delete P.to; return; }                       // una rampa e' stata cancellata: il pianerottolo resta libero
+    if (!L || !U) { delete P.from; delete P.to; delete P.u; return; }           // una rampa e' stata cancellata: il pianerottolo resta libero
+    if (P.u) {                                                                    // scala a U: la rampa alta riparte dalla fine della bassa, di fianco; il pianerottolo copre tutte e due
+      const bL = stairB(L), bU = stairB(U), aE = L.sgn>0 ? bL.a1 : bL.a0, len = U.n*U.pedata, dep = P.dep || Math.max(bL.c1-bL.c0, bU.c1-bU.c0);
+      stairSet(U, U.sgn>0 ? aE : aE-len, U.sgn>0 ? aE+len : aE, bU.c0, bU.c1);
+      P.ax = L.ax; P.sgn = L.sgn; P.dep = dep;
+      stairSet(P, L.sgn>0 ? aE : aE-dep, L.sgn>0 ? aE+dep : aE, Math.min(bL.c0, bU.c0), Math.max(bL.c1, bU.c1));
+      return;
+    }
     const bL = stairB(L), bU = stairB(U), aE = L.sgn>0 ? bL.a1 : bL.a0, aF = aE + L.sgn*(bU.c1-bU.c0), lo = Math.min(aE,aF), hi = Math.max(aE,aF);
     const side = U.sgn>0 ? bL.c1 : bL.c0, len = U.n*U.pedata;
     stairSet(U, U.sgn>0 ? side : side-len, U.sgn>0 ? side+len : side, lo, hi);
     P.ax = L.ax; stairSet(P, lo, hi, bL.c0, bL.c1);
   });
 }
-function stairHit(wx, wy, s) { return inRectWorld(wx, wy, s); }
-function stairArea(s) { return s.w*s.h; }
-function stairCenter(s) { return {x:s.x+s.w/2, y:s.y-s.h/2}; }   // punto mondo dentro la scala (per sapere in che ambiente cade)
+function stairHit(wx, wy, s) { return stairIsQC(s) ? inPoly(stairOutline(s), wx, wy) : inRectWorld(wx, wy, s); }
+function stairArea(s) {
+  if (s.tipo==='C') return Math.abs(s.da)/2*(s.r1*s.r1 - s.r0*s.r0);
+  if (s.tipo==='Q') { let a = 0; s.pts.forEach((p, i) => { const q = s.pts[(i+1)%4]; a += p.x*q.y - q.x*p.y; }); return Math.abs(a)/2; }
+  return s.w*s.h;
+}
+function stairCenter(s) { if (stairIsQC(s)) return stairMapper(s)(0.5, 0.5); return {x:s.x+s.w/2, y:s.y-s.h/2}; }   // punto mondo dentro la scala (per sapere in che ambiente cade)
+
+// ---- scale non ortogonali: rampa da 4 punti (tipo 'Q') e chiocciola (tipo 'C'). In tutti e due i casi c'e' una mappa (t,u) -> punto del mondo:
+//      t = 0..1 lungo la salita, u = 0..1 attraverso la larghezza. I gradini sono le linee t = j/n e il taglio a 1,50 m e' lo stesso delle rampe dritte.
+//      La pedata si misura sulla linea di passo (u = 0,5, a meta' della larghezza): pedata = lunghezza di quella linea / n.
+//      Q: pts = 4 angoli in giro [P0,P1,P2,P3]; la partenza e' il lato P0-P1, l'arrivo il lato P3-P2.   C: centro (cx,cy), raggi r0 < r1, angolo di partenza a0 e
+//      giro da = angolo con segno (positivo = antiorario), a0 = direzione del primo gradino.
+function stairIsQC(s) { return !!s && (s.tipo==='Q' || s.tipo==='C'); }
+function stairMapper(s) {
+  if (s.tipo==='C') return (t, u) => { const a = s.a0 + t*s.da, r = s.r0 + u*(s.r1-s.r0); return {x:s.cx + r*Math.cos(a), y:s.cy + r*Math.sin(a)}; };
+  const [A, B, C, D] = s.pts;
+  return (t, u) => {
+    const x0 = A.x + (D.x-A.x)*t, y0 = A.y + (D.y-A.y)*t, x1 = B.x + (C.x-B.x)*t, y1 = B.y + (C.y-B.y)*t;
+    return {x:x0 + (x1-x0)*u, y:y0 + (y1-y0)*u};
+  };
+}
+function stairPassoLen(s) {                 // L = lunghezza della linea di passo, W = larghezza a meta' salita
+  if (s.tipo==='C') return {L:(s.r0+s.r1)/2*Math.abs(s.da), W:s.r1-s.r0};
+  const m = stairMapper(s), a = m(0, 0.5), b = m(1, 0.5), p = m(0.5, 0), q = m(0.5, 1);
+  return {L:Math.hypot(b.x-a.x, b.y-a.y), W:Math.hypot(q.x-p.x, q.y-p.y)};
+}
+function stairQCRefresh(s) { s.pedata = stairPassoLen(s).L / s.n; }       // il numero di gradini lo conti in cantiere: la pedata ne discende
+function stairOutline(s) {                  // contorno (punti mondo) per riempimento, selezione e ingombro
+  if (s.tipo==='Q') return s.pts;
+  if (s.tipo==='C') {
+    const m = stairMapper(s), N = Math.max(4, Math.ceil(Math.abs(s.da)/(Math.PI/36))), out = [];
+    for (let i = 0; i <= N; i++) out.push(m(i/N, 1));
+    for (let i = N; i >= 0; i--) out.push(m(i/N, 0));
+    return out;
+  }
+  return [{x:s.x, y:s.y}, {x:s.x+s.w, y:s.y}, {x:s.x+s.w, y:s.y-s.h}, {x:s.x, y:s.y-s.h}];
+}
+function stairQValid(P) {                   // quadrilatero convesso, in giro (non incrociato), lati di almeno 20 cm
+  let sg = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = P[i], b = P[(i+1)%4], c = P[(i+2)%4], z = (b.x-a.x)*(c.y-b.y) - (b.y-a.y)*(c.x-b.x);
+    if (Math.hypot(b.x-a.x, b.y-a.y) < 0.2 || Math.abs(z) < 1e-6) return false;
+    const k = z > 0 ? 1 : -1; if (sg && k!==sg) return false; sg = k;
+  }
+  return true;
+}
+// geometria (segmenti mondo [x1,y1,x2,y2,spesso]) di Q e C: stessa logica di stairGeom, scritta in (t,u)
+function stairGeomTU(s, lvl) {
+  const m = stairMapper(s), out = {solid:[], dashed:[], cut:[]}, n = s.n, {L, W} = stairPassoLen(s), curved = s.tipo==='C';
+  const N = curved ? Math.max(2, Math.ceil(Math.abs(s.da)/(Math.PI/45))) : 1;                        // segmenti dell'arco: uno ogni 4 gradi
+  const seg = (arr, p, q, w) => arr.push([p.x, p.y, q.x, q.y, w]);
+  const edge = (arr, u, t0, t1) => { if (t1 <= t0) return; const k = Math.max(1, Math.ceil(N*(t1-t0))); for (let i = 0; i < k; i++) seg(arr, m(t0+(t1-t0)*i/k, u), m(t0+(t1-t0)*(i+1)/k, u), 1); };
+  const cross = (arr, t, u0, u1, w) => seg(arr, m(t, u0), m(t, u1), w);
+  const obl = (arr, t0, t1) => { const S = curved ? 8 : 1; for (let i = 0; i < S; i++) seg(arr, m(t0+(t1-t0)*i/S, i/S), m(t0+(t1-t0)*(i+1)/S, (i+1)/S), 1); };
+  const p = L/n, k = Math.min(0.2*W/L, 0.25), g = Math.min(0.06/L, 0.10);
+  let tc = s.alzata > 0 ? (((STAIR_CUT - (lvl || 0))/s.alzata - 0.5)*p)/L : Infinity;               // dove (0..1) la scala passa la quota di taglio
+  if (tc - k >= 1) tc = Infinity; else if (tc + k + g <= 0) tc = -Infinity; else tc = Math.max(k, Math.min(1-k-g, tc));
+  if (tc===Infinity || tc===-Infinity) {
+    const arr = tc===Infinity ? out.solid : out.dashed;
+    edge(arr, 0, 0, 1); edge(arr, 1, 0, 1); cross(arr, 0, 0, 1, 1); cross(arr, 1, 0, 1, 1);
+    for (let j = 1; j < n; j++) cross(arr, j/n, 0, 1, 0);
+    return out;
+  }
+  cross(out.solid, 0, 0, 1, 1); cross(out.dashed, 1, 0, 1, 1);
+  edge(out.solid, 0, 0, tc-k); edge(out.solid, 1, 0, tc+k);
+  edge(out.dashed, 0, tc-k+g, 1); edge(out.dashed, 1, tc+k+g, 1);
+  obl(out.cut, tc-k, tc+k); obl(out.cut, tc-k+g, tc+k+g);
+  const cl = v => Math.max(0, Math.min(1, v));
+  for (let j = 1; j < n; j++) {
+    const t = j/n, uA = cl((t-(tc-k))/(2*k)), uB = cl((t-(tc-k+g))/(2*k));                          // dove il gradino incontra le due oblique
+    if (1 - uA > 1e-6) cross(out.solid, t, uA, 1, 0);
+    if (uB > 1e-6) cross(out.dashed, t, 0, uB, 0);
+  }
+  return out;
+}
+// riferimento, copia e spostamento per il trascinamento della scala (rampe dritte: x,y; Q: angoli; C: centro)
+function stairOrigin(s) { return s.tipo==='Q' ? s.pts[0] : s.tipo==='C' ? {x:s.cx, y:s.cy} : {x:s.x, y:s.y}; }
+function stairSnap(s) { return s.tipo==='Q' ? s.pts.map(p => ({x:p.x, y:p.y})) : s.tipo==='C' ? {x:s.cx, y:s.cy} : {x:s.x, y:s.y}; }
+function stairShift(s, o, dx, dy) {
+  if (s.tipo==='Q') s.pts.forEach((p, i) => { p.x = o[i].x + dx; p.y = o[i].y + dy; });
+  else if (s.tipo==='C') { s.cx = o.x + dx; s.cy = o.y + dy; }
+  else { s.x = o.x + dx; s.y = o.y + dy; }
+}
+// maniglie: Q = i 4 angoli; C = raggio esterno, raggio interno e fine del giro; rampa dritta = 4 lati; pianerottolo a U = solo il lato lontano
+function stairHandleList(s) {
+  if (s.tipo==='Q') return s.pts.map((p, i) => ({k:i, x:p.x, y:p.y}));
+  if (s.tipo==='C') { const m = stairMapper(s); return [{k:'ro', ...m(0, 1)}, {k:'ri', ...m(0, 0)}, {k:'ae', ...m(1, 0.5)}]; }
+  const h = stairHandles(s), ks = s.tipo==='P' && s.u ? [s.sgn>0 ? 'a1' : 'a0'] : ['a0', 'a1', 'c0', 'c1'];
+  return ks.map(k => ({k, x:h[k].x, y:h[k].y}));
+}
+function stairResizeQC(s, side, w) {         // sposta un angolo (Q) o cambia raggi e giro (C); se il risultato non e' valido resta com'era
+  if (s.tipo==='Q') {
+    const old = s.pts[side]; s.pts[side] = {x:w.x, y:w.y};
+    if (!stairQValid(s.pts)) s.pts[side] = old;
+  } else {
+    const r = Math.hypot(w.x-s.cx, w.y-s.cy);
+    if (side==='ro') s.r1 = Math.max(s.r0 + 0.2, r);
+    else if (side==='ri') s.r0 = Math.max(0.02, Math.min(s.r1 - 0.2, r));
+    else {                                    // fine del giro: segue il puntatore senza salti (variazione piccola, normalizzata)
+      const d = Math.atan2(w.y-s.cy, w.x-s.cx) - (s.a0 + s.da), dd = Math.atan2(Math.sin(d), Math.cos(d));
+      const da = s.da + dd;                     // il verso non si inverte con la maniglia: giro minimo ~11 gradi, massimo 360
+      s.da = s.da < 0 ? Math.min(-0.2, Math.max(-2*Math.PI, da)) : Math.max(0.2, Math.min(2*Math.PI, da));
+    }
+  }
+  stairQCRefresh(s);
+}
 function stairSetPedata(s, p) {             // la lunghezza si adatta, la partenza resta ferma
   const b = stairB(s), st = s.sgn>0 ? b.a0 : b.a1, e = st + s.sgn*s.n*p;
   s.pedata = p; stairSet(s, Math.min(st,e), Math.max(st,e), b.c0, b.c1);
@@ -1177,14 +1291,30 @@ function stairLandingPlan(L, U) {
   const land = {ax:L.ax}; stairSet(land, lo, hi, bL.c0, bL.c1);
   return {L, U, lo, hi, side, land};
 }
-// dopo che una rampa e' stata spostata o creata: se tocca in un vertice un'altra rampa a 90 (non gia' della stessa scala), propone il pianerottolo
+// scala a U: due rampe parallele e opposte, affiancate (anche con un vuoto fino a 40 cm), che finiscono (L) e partono (U) sulla stessa linea.
+// Il pianerottolo sta oltre la fine di L e copre la larghezza di tutte e due; la profondita' parte dalla larghezza maggiore e si cambia con la maniglia.
+function stairUPlan(L, U) {
+  if (L.tipo || U.tipo || L.ax!==U.ax || L.sgn!==-U.sgn) return null;
+  const bL = stairB(L), bU = stairB(U), tol = 0.15, aE = L.sgn>0 ? bL.a1 : bL.a0, uS = U.sgn>0 ? bU.a0 : bU.a1;
+  if (Math.abs(uS-aE) > tol) return null;
+  const gap = Math.max(bU.c0-bL.c1, bL.c0-bU.c1);
+  if (gap < -0.05 || gap > 0.40) return null;                                  // sovrapposte o troppo lontane: non sono due rampe affiancate
+  return {L, U, u:true, dep:Math.max(bL.c1-bL.c0, bU.c1-bU.c0)};
+}
+// dopo che una rampa e' stata spostata o creata: se tocca in un vertice un'altra rampa a 90 (o e' opposta e affiancata, scala a U), propone il pianerottolo
 function stairLinkCheck(i) {
-  const A = state.scale[i]; if (!A || A.tipo==='P' || hid(A) || locked(A)) return;
+  const A = state.scale[i]; if (!A || A.tipo || hid(A) || locked(A)) return;
   for (let j=0; j<state.scale.length; j++) {
     const B = state.scale[j];
-    if (j===i || !B || B.tipo==='P' || hid(B) || locked(B) || B.ax===A.ax || (A.grp && A.grp===B.grp)) continue;
-    const plan = stairLandingPlan(A, B) || stairLandingPlan(B, A); if (!plan) continue;
-    askDialog('Pianerottolo', [], 'Le due rampe si toccano in un vertice. Creo il pianerottolo che le collega e ne faccio una sola scala?', () => stairLink(plan));
+    if (j===i || !B || B.tipo || hid(B) || locked(B) || (A.grp && A.grp===B.grp)) continue;
+    let plan, txt = 'Le due rampe si toccano in un vertice. Creo il pianerottolo che le collega e ne faccio una sola scala?';
+    if (B.ax===A.ax) {
+      const [F, S] = j<i ? [B, A] : [A, B];                                    // la rampa disegnata per prima e' la bassa; se non combacia, l'altro verso
+      plan = stairUPlan(F, S) || stairUPlan(S, F);
+      txt = 'Le due rampe sono una opposta all\'altra e partono dalla stessa linea. Creo il pianerottolo a U che le collega e ne faccio una sola scala?';
+    } else plan = stairLandingPlan(A, B) || stairLandingPlan(B, A);
+    if (!plan) continue;
+    askDialog('Pianerottolo', [], txt, () => stairLink(plan));
     return;
   }
 }
@@ -1196,6 +1326,7 @@ function stairLink(plan) {
   state.scale.forEach(q => { if (q.grp && old.has(q.grp)) q.grp = gid; });
   L.grp = U.grp = gid;
   const P = {tipo:'P', ax:L.ax, sgn:L.sgn, n:0, pedata:L.pedata, alzata:L.alzata, x:0, y:0, w:0, h:0, grp:gid, label:L.label, from:L.sid, to:U.sid, sid:nextSid()};
+  if (plan.u) { P.u = 1; P.dep = plan.dep; }                                   // pianerottolo a U: la profondita' e' un dato suo
   state.scale.push(P);
   state.scale.forEach(q => { if (q.grp===gid) q.label = L.label; });
   stairSolve(P);
@@ -1209,15 +1340,19 @@ function stairHandles(s) {                   // centri (mondo) dei 4 lati
 }
 function hitStairHandle(sx, sy) {
   if (!state.sel || state.sel.kind!=='scala') return null;
-  const s = state.scale[state.sel.idx]; if (!s || (s.tipo==='P' && s.from)) return null;          // il pianerottolo agganciato segue le rampe
-  const h = stairHandles(s);
-  for (const k of ['a0','a1','c0','c1']) {
-    const q = w2s(h[k].x, h[k].y);
-    if (Math.hypot(sx-q.x, sy-q.y) <= HIT_HANDLE_PX) return {idx:state.sel.idx, side:k};
+  const s = state.scale[state.sel.idx]; if (!s || (s.tipo==='P' && s.from && !s.u)) return null;          // il pianerottolo agganciato segue le rampe (a U: solo la profondita')
+  for (const h of stairHandleList(s)) {
+    const q = w2s(h.x, h.y);
+    if (Math.hypot(sx-q.x, sy-q.y) <= HIT_HANDLE_PX) return {idx:state.sel.idx, side:h.k};
   }
   return null;
 }
 function stairResize(s, side, w) {           // w = punto mondo del puntatore
+  if (stairIsQC(s)) { stairResizeQC(s, side, w); return; }
+  if (s.tipo==='P' && s.u) {                  // pianerottolo a U: si cambia solo la profondita' (oltre la fine della rampa bassa)
+    const b = stairB(s), v = s.ax==='x' ? w.x : w.y;
+    s.dep = Math.max(0.30, s.sgn>0 ? v-b.a0 : b.a1-v); return;
+  }
   if (s.tipo==='P') {                         // pianerottolo: lati liberi, nessun gradino
     const b = stairB(s), v = side[0]==='a' ? (s.ax==='x' ? w.x : w.y) : (s.ax==='x' ? w.y : w.x), MIN = 0.30;
     let {a0, a1, c0, c1} = b;
@@ -1255,7 +1390,7 @@ function stairInfo(s) {
   const cm = v => String(Math.round(v*1000)/10).replace('.', ','), land = UL[0];
   const aDiv = [...new Set(T.G.map(q => cm(q.alzata)))], pDiv = [...new Set(R.map(q => cm(q.pedata)))], bl = 200*a + 100*p;
   const rows = ['Alzate: '+nAlz+' x '+cm(a)+' cm'+(aDiv.length>1 ? ' (!) diverse: '+aDiv.join(' / ') : a>0.18 ? ' (!) oltre 18 cm' : ''),
-                'Pedate: '+R.map(q => q.n).join(' + ')+' x '+cm(p)+' cm'+(pDiv.length>1 ? ' (!) diverse: '+pDiv.join(' / ') : p<0.25 ? ' (!) sotto 25 cm' : '')];
+                'Pedate: '+R.map(q => q.n).join(' + ')+' x '+cm(p)+' cm'+(R.some(stairIsQC) ? ' sulla linea di passo' : '')+(pDiv.length>1 ? ' (!) diverse: '+pDiv.join(' / ') : p<0.25 ? ' (!) sotto 25 cm' : '')];
   if (land) rows.push(UL.length===1 ? 'Pianerottolo: '+Math.round(land.w*100)+' x '+Math.round(land.h*100)+' cm' : UL.length+' pianerottoli');
   if (bl<62 || bl>64) rows.push('(!) Blondel: 2a+p = '+Math.round(bl)+' cm, fuori da 62-64');          // solo avviso, se non e' rispettato
   return rows;
@@ -1263,8 +1398,20 @@ function stairInfo(s) {
 // freccia di salita: per una scala composta UNA linea sola che attraversa rampa, pianerottolo e rampa successiva (punta solo in fondo);
 // una rampa singola, o un gruppo non agganciato, ha la sua freccia
 function rampPath(q) {
+  if (stairIsQC(q)) {                          // sulla linea di passo, dal 12% all'88% della salita (la chiocciola e' una curva)
+    const m = stairMapper(q), S = q.tipo==='C' ? Math.max(4, Math.ceil(Math.abs(q.da)/(Math.PI/18))) : 1, out = [];
+    for (let i = 0; i <= S; i++) out.push(m(0.12 + 0.76*i/S, 0.5));
+    return out;
+  }
   const b = stairB(q), st = q.sgn>0 ? b.a0 : b.a1, cm = (b.c0+b.c1)/2, L = q.n*q.pedata, f0 = st+q.sgn*L*0.12, f1 = st+q.sgn*L*0.88;
   return q.ax==='x' ? [{x:f0,y:cm},{x:f1,y:cm}] : [{x:cm,y:f0},{x:cm,y:f1}];
+}
+// punti della freccia sul pianerottolo: il centro; nella scala a U si va sull'asse della rampa bassa fino a meta' pianerottolo e si rientra sull'asse dell'alta
+function stairWay(P, L, U) {
+  if (!P.u || !L || !U) return [stairCenter(P)];
+  const bL = stairB(L), bU = stairB(U), bP = stairB(P), am = (bP.a0+bP.a1)/2, cl = (bL.c0+bL.c1)/2, cu = (bU.c0+bU.c1)/2;
+  const pt = (a, c) => L.ax==='x' ? {x:a, y:c} : {x:c, y:a};
+  return [pt(am, cl), pt(am, cu)];
 }
 // la scala puo' dividersi: da un pianerottolo partono piu' rampe (scala a due ali). La freccia segue l'albero: un tratto comune col pallino
 // alla partenza fino al pianerottolo, poi una linea con la punta per ogni ala. Ogni elemento: {pts, head, dot}
@@ -1284,7 +1431,7 @@ function stairArrows() {
             if (seen.has(cur.sid) || depth > 12) break; seen.add(cur.sid);
             const kids = Ls.filter(q => q.from===cur.sid && bySid(q.to) && !seen.has(q.to));
             if (!kids.length) { pts.push(rampPath(cur)[1]); res.push({pts, head:true, dot}); return; }
-            const c = stairCenter(kids[0]); pts.push(c);
+            const way = stairWay(kids[0], cur, bySid(kids[0].to)), c = way[way.length-1]; pts.push(...way);
             if (kids.length===1) { cur = bySid(kids[0].to); continue; }
             res.push({pts, head:false, dot});                                       // tratto comune, poi un ramo per ogni ala
             kids.forEach(P => walk([c], bySid(P.to), false, depth+1));
@@ -1319,6 +1466,7 @@ function stairLevels() {                    // Map: rampa -> quota di partenza, 
 }
 // segmenti in coordinate mondo [x1,y1,x2,y2,spesso]: sotto il taglio (solid), sopra (dashed), doppia linea obliqua (cut)
 function stairGeom(s, lvl) {
+  if (stairIsQC(s)) return stairGeomTU(s, lvl);
   const b = stairB(s), out = {solid:[], dashed:[], cut:[]}, P = (a, c) => s.ax==='x' ? [a, c] : [c, a];
   const seg = (arr, a1, c1, a2, c2, w) => arr.push([...P(a1, c1), ...P(a2, c2), w]);
   if (s.tipo==='P') {
@@ -1373,14 +1521,20 @@ function drawStairText(s, cw) {             // etichetta sempre visibile, come q
   });
   ctx.restore();
 }
+function stairPath(s) {                      // contorno della scala come percorso del canvas (rettangolo, quadrilatero o corona circolare)
+  if (!stairIsQC(s)) return rectPath(s);
+  const p = stairOutline(s).map(q => w2s(q.x, q.y));
+  ctx.beginPath(); ctx.moveTo(p[0].x, p[0].y); for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y); ctx.closePath();
+  return p;
+}
 function drawStair(s, mode, lvl) {          // lvl = quota di partenza (rampa) o del pianerottolo, da stairLevels: decide il taglio a 1,50 m
-  rectPath(s);
+  stairPath(s);
   if (!PRINT) { ctx.fillStyle = 'rgba(120,160,200,.14)'; ctx.fill(); }
   const G = stairGeom(s, lvl), ln = q => { const a = w2s(q[0],q[1]), b = w2s(q[2],q[3]); ctx.lineWidth = q[4] ? prLw(2, 0.25) : prLw(1, 0.13); ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); };
   ctx.save(); ctx.strokeStyle = C.stair;
   G.solid.forEach(ln); G.cut.forEach(ln);
   ctx.setLineDash([prU(5), prU(4)]); G.dashed.forEach(ln); ctx.setLineDash([]);
-  if (mode==='sel') { rectPath(s); ctx.strokeStyle = '#ffe066'; ctx.lineWidth = prLw(2, 0.25); ctx.stroke(); }
+  if (mode==='sel') { stairPath(s); ctx.strokeStyle = '#ffe066'; ctx.lineWidth = prLw(2, 0.25); ctx.stroke(); }
   ctx.restore();
 }
 
@@ -1545,6 +1699,7 @@ function drawNow() {
   drawCircles();
   drawWallPreview();
   drawRectPreview();
+  drawStairToolPreview();
   drawMeasure();
   drawVoltaPick();
   drawLabels();
@@ -1964,12 +2119,30 @@ function drawScale() {
     const key = s.grp || s; if (done.has(key)) return; done.add(key);
     const T = stairTotals(s); drawStairText(s, stairCenter(T.G.find(q => q.tipo==='P') || T.R[0] || s));
   });
-  if (!PRINT && sel && !(sel.tipo==='P' && sel.from)) {                                // maniglie del pezzo selezionato
-    const h = stairHandles(sel);
+  if (!PRINT && sel && !(sel.tipo==='P' && sel.from && !sel.u)) {                      // maniglie del pezzo selezionato
     const hs = COARSE ? 9 : 6;
     ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#e94560'; ctx.lineWidth=2;
-    ['a0','a1','c0','c1'].forEach(k => { const q = w2s(h[k].x, h[k].y); ctx.fillRect(q.x-hs,q.y-hs,hs*2,hs*2); ctx.strokeRect(q.x-hs,q.y-hs,hs*2,hs*2); });
+    stairHandleList(sel).forEach(h => { const q = w2s(h.x, h.y); ctx.fillRect(q.x-hs,q.y-hs,hs*2,hs*2); ctx.strokeRect(q.x-hs,q.y-hs,hs*2,hs*2); });
     ctx.restore();
+  }
+}
+// anteprima degli strumenti Scala da 4 punti (angoli toccati finora) e Chiocciola (centro, raggio sotto il dito)
+function drawStairToolPreview() {
+  const mark = (p, k) => { const q = w2s(p.x, p.y); ctx.beginPath(); ctx.arc(q.x, q.y, COARSE ? 9 : 6, 0, Math.PI*2); ctx.fillStyle = '#ffe066'; ctx.fill(); ctx.fillStyle = '#1a1a2e'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(k), q.x, q.y); };
+  const sp = state.stairPts;
+  if (sp && sp.length) {
+    ctx.save(); ctx.strokeStyle = 'rgba(255,224,102,.8)'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath();
+    sp.forEach((p, i) => { const q = w2s(p.x, p.y); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }); if (sp.length===4) ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+    sp.forEach((p, i) => mark(p, i+1)); ctx.restore();
+  }
+  const c = state.spiralC;
+  if (c) {
+    ctx.save(); ctx.strokeStyle = 'rgba(255,224,102,.8)'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+    if (state.spiralPrev) {
+      const a = w2s(c.x, c.y), b = w2s(state.spiralPrev.x, state.spiralPrev.y), r = Math.hypot(b.x-a.x, b.y-a.y);
+      ctx.beginPath(); ctx.arc(a.x, a.y, r, 0, Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    ctx.setLineDash([]); mark(c, 'C'); ctx.restore();
   }
 }
 
@@ -2708,7 +2881,9 @@ const TIPS = {
   split:    'Clicca su una linea per spezzarla con un nuovo punto; trascina i punti per correggere le inclinazioni.',
   opening:  'Clicca sulla parete dove inserire il serramento.',
   pilastro: 'Clicca un punto rilevato (il pilastro si aggancia) oppure un punto qualsiasi della pianta.',
-  stair:    'Trascina nel verso di salita: un gradino ogni 30 cm. Poi maniglie per allargare o allungare, doppio clic per pedata e alzata. Avvicina due rampe a 90° fino a toccarle in un vertice: l\'app propone il pianerottolo.',
+  stair:    'Trascina nel verso di salita: un gradino ogni 30 cm. Poi maniglie per allargare o allungare, doppio clic per pedata e alzata. Avvicina due rampe a 90° fino a toccarle in un vertice, oppure una opposta all\'altra (scala a U) sulla stessa linea: l\'app propone il pianerottolo.',
+  stairq:   'Scala non ortogonale: tocca i quattro angoli in giro (anche punti trilaterati). I primi due sono il lato da cui si parte a salire. Poi dai i gradini che hai contato.',
+  spiral:   'Chiocciola: tocca il centro, poi un punto sul bordo esterno (da lì parte il primo gradino). Poi raggio interno, giro e verso.',
   label:    'Clicca per l\'etichetta. In Seleziona la trascini e col doppio click la modifichi.',
   pencil:   'Trascina per disegnare a mano libera.',
   roompts:  'Tocca i vertici dell\'ambiente in ordine, poi di nuovo il primo per chiuderlo. Nel Progetto serve per le stanze unite o divise.',
@@ -2719,9 +2894,9 @@ const TIPS = {
 };
 
 // strumento attivo: il pulsante del suo gruppo ne prende icona e nome, la voce nella lista si evidenzia
-const TOOL_ICON  = {volta:'⌒', tratto:'┈', arco:'⌒', paste:'⎗', pasteOp:'⎗', inherit:'⇉', boundary:'⬚', roompts:'⬠',wall:'▭', room:'⬚', point:'+', connect:'/', trilatere:'◎', measure:'📏', split:'✂', opening:'🚪', pilastro:'▪', stair:'🪜', label:'🏷', pencil:'✏'};
-const TOOL_NAME  = {volta:'Volta', tratto:'Tratteggio', arco:'Arco', paste:'Incolla', pasteOp:'Incolla serramento', inherit:'Eredita proprietà', boundary:'Ambiente da area', roompts:'Ambiente da punti',wall:'Muro', room:'Stanza', point:'Punto', connect:'Collega', trilatere:'Trilatera', measure:'Misura', split:'Spezza', opening:'Serramento', pilastro:'Pilastro', stair:'Scala', label:'Etichetta', pencil:'Matita'};
-const TOOL_GROUP = {pasteOp:'edit', paste:'edit', inherit:'edit', split:'edit', boundary:'draw', roompts:'draw',wall:'draw', room:'draw', point:'draw', connect:'draw', trilatere:'draw', measure:'draw', tratto:'draw', arco:'draw', pencil:'draw', opening:'ins', volta:'ins', pilastro:'ins', stair:'ins', label:'ins'};
+const TOOL_ICON  = {volta:'⌒', tratto:'┈', arco:'⌒', paste:'⎗', pasteOp:'⎗', inherit:'⇉', boundary:'⬚', roompts:'⬠',wall:'▭', room:'⬚', point:'+', connect:'/', trilatere:'◎', measure:'📏', split:'✂', opening:'🚪', pilastro:'▪', stair:'🪜', stairq:'🪜', spiral:'🌀', label:'🏷', pencil:'✏'};
+const TOOL_NAME  = {volta:'Volta', tratto:'Tratteggio', arco:'Arco', paste:'Incolla', pasteOp:'Incolla serramento', inherit:'Eredita proprietà', boundary:'Ambiente da area', roompts:'Ambiente da punti',wall:'Muro', room:'Stanza', point:'Punto', connect:'Collega', trilatere:'Trilatera', measure:'Misura', split:'Spezza', opening:'Serramento', pilastro:'Pilastro', stair:'Scala', stairq:'Scala da 4 punti', spiral:'Chiocciola', label:'Etichetta', pencil:'Matita'};
+const TOOL_GROUP = {pasteOp:'edit', paste:'edit', inherit:'edit', split:'edit', boundary:'draw', roompts:'draw',wall:'draw', room:'draw', point:'draw', connect:'draw', trilatere:'draw', measure:'draw', tratto:'draw', arco:'draw', pencil:'draw', opening:'ins', volta:'ins', pilastro:'ins', stair:'ins', stairq:'ins', spiral:'ins', label:'ins'};
 const GROUP_DEF  = {draw:{icon:'📐', name:'Disegna'}, ins:{icon:'🧱', name:'Inserisci'}, edit:{icon:'🛠', name:'Modifica'}};
 function markTool(t) {
   document.querySelectorAll('.tool-btn, .tool-item').forEach(b => b.classList.remove('active'));
@@ -2747,6 +2922,7 @@ function setTool(t) {
   resetTril();
   state.wallOrigin=null; state.wallPreview=null; state.wallSnapAngle=null; state.wallSnapPoint=null;
   state.openingDrag=null; state.drag=null; state.rectDraw=null; state.roomDraw=null; state.selBox=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null;
+  state.stairPts=null; state.spiralC=null; state.spiralPrev=null;
   state.multi=false; state.moveSel=false; state.roomPts=null; state.inherit=null; state.merge=null;
   state.moveBase=false; state.handMode=false;       // cambiare strumento chiude lo spostamento della base e la mano: altrimenti ogni tocco li ripete
   if (state.pencilCurrent) {
@@ -3423,6 +3599,69 @@ function finishStair() {
   state.sel = {kind:'scala', idx:state.scale.length-1};
   commit('Scala creata: '+s.n+' gradini. Trascina le maniglie per cambiarla, doppio clic per pedata e alzata. Per il pianerottolo avvicina un\'altra rampa a 90°.');
   stairLinkCheck(state.scale.length-1);
+}
+
+// scala da 4 punti e chiocciola: creazione e modifica con una finestra (il numero di gradini lo conti in cantiere, la pedata si calcola)
+const STAIRQ_TIPS = ['', 'Angolo 2: l\'altro angolo del lato di partenza.', 'Angolo 3: sul lato di arrivo, di fronte all\'angolo 2.', 'Angolo 4: l\'ultimo, di fronte all\'angolo 1.'];
+function stairNewCommon(s) {
+  stairQCRefresh(s);
+  state.scalaCounter++; s.label = 'SCALA '+state.scalaCounter; s.sid = nextSid();
+  state.scale.push(s);
+  state.sel = {kind:'scala', idx:state.scale.length-1};
+}
+function askStairQ(P) {
+  if (!stairQValid(P)) { setTip('Scala non creata: i quattro angoli devono girare nello stesso verso, senza incrociarsi, e ogni lato misura almeno 20 cm. I primi due sono il lato di partenza.', 'warn'); draw(); return; }
+  const Lc = stairPassoLen({tipo:'Q', pts:P}).L, ls = lastStair(), n0 = Math.max(1, Math.round(Lc/ls.p));
+  askDialog('Scala da 4 punti', [
+    {label:'Gradini', id:'n', value:String(n0), type:'number'},
+    {label:'Alzata (cm)', id:'alz', value:String(Math.round(ls.a*100)), type:'number'},
+  ], 'La linea di passo (a metà larghezza) misura '+Math.round(Lc*100)+' cm: la pedata si calcola su quella.', v => {
+    const n = Math.round(parseFloat(v.n)), alz = parseFloat(v.alz)/100;
+    if (!isFinite(n) || n<1 || n>99 || !isFinite(alz) || alz<=0.05) return;
+    saveHistory();
+    stairNewCommon({tipo:'Q', pts:P.map(p => ({x:p.x, y:p.y})), n, alzata:alz, pedata:0});
+    const s = state.scale[state.scale.length-1];
+    commit('Scala creata: '+n+' gradini, pedata '+Math.round(s.pedata*1000)/10+' cm. Trascina gli angoli per correggerla, doppio clic per gradini e alzata.');
+  });
+}
+function askSpiral(c, r1, a0) {
+  const ls = lastStair(), r0 = 0.10, n0 = Math.max(3, Math.min(40, Math.round((r0+r1)/2*2*Math.PI/0.28)));
+  askDialog('Scala a chiocciola', [
+    {label:'Gradini', id:'n', value:String(n0), type:'number'},
+    {label:'Alzata (cm)', id:'alz', value:String(Math.round(ls.a*100)), type:'number'},
+    {label:'Raggio interno (cm)', id:'r0', value:String(Math.round(r0*100)), type:'number'},
+    {label:'Angolo totale (gradi, massimo 360)', id:'ang', value:'360', type:'number'},
+    {label:'Verso di salita', id:'dir', type:'select', value:'ccw', options:[{value:'ccw', label:'Antiorario'}, {value:'cw', label:'Orario'}]},
+  ], 'Raggio esterno '+Math.round(r1*100)+' cm. La pedata si calcola sulla linea di passo, a metà tra i due raggi.', v => {
+    const n = Math.round(parseFloat(v.n)), alz = parseFloat(v.alz)/100, ri = parseFloat(v.r0)/100, ang = parseFloat(v.ang);
+    if (!isFinite(n) || n<2 || n>99 || !isFinite(alz) || alz<=0.05 || !isFinite(ri) || ri<0.02 || ri>r1-0.2 || !isFinite(ang) || ang<10 || ang>360) { setTip('Chiocciola non creata: controlla i valori (il raggio interno deve restare minore di quello esterno meno 20 cm).', 'warn'); return; }
+    saveHistory();
+    stairNewCommon({tipo:'C', cx:c.x, cy:c.y, r0:ri, r1, a0, da:(v.dir==='cw' ? -1 : 1)*ang*Math.PI/180, n, alzata:alz, pedata:0});
+    const s = state.scale[state.scale.length-1];
+    commit('Chiocciola creata: '+n+' gradini, pedata '+Math.round(s.pedata*1000)/10+' cm. Trascina le maniglie per raggi e giro, doppio clic per i dati.');
+  });
+}
+function stairQCDialog(c) {                  // modifica di una scala da 4 punti o a chiocciola
+  const fields = [
+    {label:'Gradini', id:'n', value:String(c.n), type:'number'},
+    {label:'Alzata (cm)', id:'alz', value:String(Math.round(c.alzata*100)), type:'number'},
+  ];
+  if (c.tipo==='C') fields.push(
+    {label:'Raggio interno (cm)', id:'r0', value:String(Math.round(c.r0*100)), type:'number'},
+    {label:'Raggio esterno (cm)', id:'r1', value:String(Math.round(c.r1*100)), type:'number'},
+    {label:'Angolo totale (gradi, negativo = orario)', id:'ang', value:String(Math.round(c.da*180/Math.PI)), type:'number'});
+  askDialog('Modifica '+c.label, fields, 'Pedata '+Math.round(c.pedata*1000)/10+' cm sulla linea di passo: se cambi i gradini si ricalcola. L\'alzata vale per tutta la scala.', v => {
+    const n = Math.round(parseFloat(v.n)), alz = parseFloat(v.alz)/100;
+    if (!isFinite(n) || n<1 || n>99 || !isFinite(alz) || alz<=0.05) return;
+    let r0 = c.r0, r1 = c.r1, da = c.da;
+    if (c.tipo==='C') {
+      r0 = parseFloat(v.r0)/100; r1 = parseFloat(v.r1)/100; const ang = parseFloat(v.ang);
+      if (!isFinite(r0) || !isFinite(r1) || !isFinite(ang) || r0<0.02 || r1-r0<0.2 || Math.abs(ang)<10 || Math.abs(ang)>360) { setTip('Valori non validi: il raggio esterno supera quello interno di almeno 20 cm, l\'angolo sta tra 10 e 360 gradi.', 'warn'); return; }
+      da = ang*Math.PI/180;
+    }
+    saveHistory(); c.n = n; c.alzata = alz; c.r0 = r0; c.r1 = r1; c.da = da; if (c.tipo!=='C') { delete c.r0; delete c.r1; delete c.da; }
+    stairQCRefresh(c); commit('Scala aggiornata.');
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4533,6 +4772,7 @@ function entityMenuAction(action) {
   }
   if (s.kind==='scala') {
     const c = state.scale[s.idx]; if (!c) return;
+    if (stairIsQC(c)) { stairQCDialog(c); return; }
     const land = c.tipo==='P';
     askDialog('Modifica '+c.label, (land ? [] : [{label:'Pedata (cm)', id:'ped', value:String(Math.round(c.pedata*100)), type:'number'}]).concat([
       {label:'Alzata (cm)', id:'alz', value:String(Math.round(c.alzata*100)), type:'number'},
@@ -4809,6 +5049,21 @@ function handleClick(sx, sy, clientX, clientY, shift) {
     if (rp.includes(pi)) return;
     rp.push(pi); setTip('Vertice '+rp.length+(rp.length<3 ? ': tocca il prossimo.' : ': tocca il prossimo, o il primo per chiudere.')); draw(); return;
   }
+  case 'stairq': {                     // scala da 4 punti: gli angoli in giro, i primi due sono il lato da cui si parte a salire
+    const a = pi!==null ? state.points[pi] : (baseSnap(sx,sy) || s2w(sx,sy));
+    const sp = state.stairPts || (state.stairPts = []);
+    if (sp.some(p => Math.hypot(p.x-a.x, p.y-a.y) < 0.05)) return;
+    sp.push({x:a.x, y:a.y});
+    if (sp.length < 4) { setTip(STAIRQ_TIPS[sp.length]); draw(); return; }
+    state.stairPts = null; draw(); askStairQ(sp); return;
+  }
+  case 'spiral': {                     // chiocciola: il centro, poi un punto sul bordo esterno (da li' parte il primo gradino)
+    const a = pi!==null ? state.points[pi] : (baseSnap(sx,sy) || s2w(sx,sy));
+    if (!state.spiralC) { state.spiralC = {x:a.x, y:a.y}; state.spiralPrev = null; setTip('Ora tocca un punto sul bordo esterno: da lì parte il primo gradino e si legge il raggio.'); draw(); return; }
+    const c = state.spiralC, r1 = Math.hypot(a.x-c.x, a.y-c.y);
+    if (r1 < 0.3) { setTip('Raggio troppo piccolo: tocca un punto più lontano dal centro.', 'warn'); return; }
+    state.spiralC = null; state.spiralPrev = null; draw(); askSpiral(c, r1, Math.atan2(a.y-c.y, a.x-c.x)); return;
+  }
   case 'connect': {
     if (pi===null) return;
     if (state.connectFrom===null) { state.connectFrom=pi; setTip('Ora clicca il secondo punto.'); draw(); return; }
@@ -5007,7 +5262,7 @@ canvas.addEventListener('pointerdown', e => {
       const qi = hitPilastro(sx,sy);
       if (qi!==null && !locked(state.pilastri[qi])) { const w=s2w(sx,sy); state.drag={kind:'pilastro', idx:qi, ox:w.x-state.pilastri[qi].x, oy:w.y-state.pilastri[qi].y}; return; }
       const ci = hitScala(sx,sy);
-      if (ci!==null && !locked(state.scale[ci])) { const w=s2w(sx,sy), sc=state.scale[ci]; state.drag={kind:'scala', idx:ci, ox:w.x-sc.x, oy:w.y-sc.y, x0:sc.x, y0:sc.y, mem:stairGroup(sc).filter(q => !locked(q)).map(q => ({q, x:q.x, y:q.y}))}; return; }
+      if (ci!==null && !locked(state.scale[ci])) { const w=s2w(sx,sy), sc=state.scale[ci], o=stairOrigin(sc); state.drag={kind:'scala', idx:ci, ox:w.x-o.x, oy:w.y-o.y, x0:o.x, y0:o.y, mem:stairGroup(sc).filter(q => !locked(q)).map(q => ({q, o:stairSnap(q)}))}; return; }
       state.selBox={x0:sx,y0:sy,x1:sx,y1:sy,keep,base};   // vuoto: riquadro di selezione
       return;
     }
@@ -5026,6 +5281,7 @@ canvas.addEventListener('pointermove', e => {
   if (!state.pointers.has(e.pointerId)) {
     if (state.tool==='wall' && state.wallOrigin!==null) { const p=evtPos(e); updateWallPreview(p.x,p.y); }
     if (state.tool==='measure' && state.measA) { const p=evtPos(e); updateMeasurePreview(p.x,p.y); }
+    if (state.tool==='spiral' && state.spiralC) { const p=evtPos(e); state.spiralPrev = s2w(p.x,p.y); draw(); }
     if (state.tool==='paste' && state.paste) { const p=evtPos(e), pi=hitPoint(p.x,p.y); state.paste.at = pi!==null ? {x:state.points[pi].x, y:state.points[pi].y} : s2w(p.x,p.y); draw(); }
     if (e.pointerType==='mouse' && state.tool==='select') {         // col mouse sopra la scala compare la sua etichetta
       const q = evtPos(e), h = hitScala(q.x,q.y);
@@ -5064,7 +5320,11 @@ canvas.addEventListener('pointermove', e => {
   if (state.stairResize) {                   // maniglie della scala: la lunghezza va a gradini interi
     const r = state.stairResize, sc = state.scale[r.idx];
     dragSnap();
-    if (sc) { stairResize(sc, r.side, s2w(sx,sy)); stairSolve(sc); showTooltip(sc.tipo==='P' ? 'Pianerottolo '+sc.w.toFixed(2)+' x '+sc.h.toFixed(2)+' m' : sc.n+' gradini', e.clientX, e.clientY); }
+    if (sc) {
+      const npi = sc.tipo==='Q' ? nearestPoint(sx, sy, -1) : null;                      // gli angoli della scala da 4 punti si agganciano ai punti rilevati
+      stairResize(sc, r.side, npi!==null ? {x:state.points[npi].x, y:state.points[npi].y} : s2w(sx,sy)); stairSolve(sc);
+      showTooltip(sc.tipo==='P' ? (sc.u ? 'Pianerottolo '+Math.round(sc.w*100)+' x '+Math.round(sc.h*100)+' cm' : 'Pianerottolo '+sc.w.toFixed(2)+' x '+sc.h.toFixed(2)+' m') : stairIsQC(sc) ? sc.n+' gradini, pedata '+Math.round(sc.pedata*1000)/10+' cm' : sc.n+' gradini', e.clientX, e.clientY);
+    }
     draw(); return;
   }
   if (state.openingResize) {                 // maniglia: un estremo resta fermo, l'altro segue il puntatore
@@ -5114,7 +5374,7 @@ canvas.addEventListener('pointermove', e => {
     }
     if (d.kind==='label')    { state.labels[d.idx].x=w.x-d.ox; state.labels[d.idx].y=w.y-d.oy; }
     if (d.kind==='pilastro') { state.pilastri[d.idx].x=w.x-d.ox; state.pilastri[d.idx].y=w.y-d.oy; }
-    if (d.kind==='scala')    { const dx = w.x-d.ox-d.x0, dy = w.y-d.oy-d.y0; d.mem.forEach(m => { m.q.x = m.x+dx; m.q.y = m.y+dy; }); }       // la scala composta si sposta tutta
+    if (d.kind==='scala')    { const dx = w.x-d.ox-d.x0, dy = w.y-d.oy-d.y0; d.mem.forEach(m => stairShift(m.q, m.o, dx, dy)); }       // la scala composta si sposta tutta
     draw(); return;
   }
 
@@ -5552,7 +5812,8 @@ function drawingBounds() {
   const add = p => { if (p.x<b.minX) b.minX=p.x; if (p.x>b.maxX) b.maxX=p.x; if (p.y<b.minY) b.minY=p.y; if (p.y>b.maxY) b.maxY=p.y; };
   state.points.forEach(add); state.labels.forEach(add);
   state.pencilLines.forEach(l => l.pts.forEach(add));
-  state.pilastri.concat(state.scale).forEach(r => { add({x:r.x, y:r.y}); add({x:r.x+r.w, y:r.y-r.h}); });
+  state.pilastri.forEach(r => { add({x:r.x, y:r.y}); add({x:r.x+r.w, y:r.y-r.h}); });
+  state.scale.forEach(s => stairOutline(s).forEach(add));
   return b.minX===Infinity ? null : b;
 }
 function startExport(kind) {
@@ -8641,6 +8902,8 @@ var TIPS_SHORT = {
   wall:'Tocca il punto di partenza, poi ogni vertice. Per finire tocca di nuovo l\'ultimo punto.',
   room:'Trascina da un angolo all\'angolo opposto.',
   stair:'Trascina nel verso di salita.',
+  stairq:'Tocca i quattro angoli in giro: i primi due sono la partenza.',
+  spiral:'Tocca il centro, poi un punto sul bordo esterno.',
   trilatere:'Tocca il primo punto e scrivi la distanza misurata.',
   measure:'Tocca il punto di partenza e quello di arrivo.',
   inherit:'Tocca l\'elemento da cui copiare, poi quelli che ricevono.',
@@ -8988,8 +9251,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.40';
-const APP_NOTE = ["Muri campiti: lo spessore dei muri è riempito in grigio, a video (trasparente, la base resta leggibile) e in PDF/JPG (pieno). Il riempimento si interrompe sui serramenti e chiude da solo angoli e innesti; si spegne da Vista, \"Muri campiti\". Nel DXF non c'è", "Dati del rilievo (menu File), facoltativi: oggetto, indirizzo, dati catastali, piano, committente, tecnico, data del sopralluogo. Se compilati compaiono nel piede della tavola, in testa alle tabelle e nel nome del file .json; se lasciati vuoti la tavola resta com'era, senza righe né spazi in più", "Tavola in PDF/JPG: le quote verificate in loco sono in nero, quelle lette dalla planimetria in grigio tra parentesi, con la nota nel piede. Quote senza \"m\" ripetuto e con la virgola. I nomi dei serramenti esterni non vengono più tagliati dal bordo e le quote dei muri non finiscono sopra quelle degli spessori", "Verifica rilievo (menu File): l'elenco di cosa manca prima di esportare (quote non verificate, muri non assegnati, ambienti senza nome o con lo stesso nome, rapporto aeroilluminante, serramenti senza dati energetici). Toccando una riga la vedi sul disegno", "Ripeti: dopo un Annulla compare a destra il pulsante ↪ (Ctrl+Y sul computer) per rifare il passo annullato", "Salvataggio: la barra in basso distingue la bozza nel browser dal file .json (\"da salvare\" o \"salvato\"). Chiudendo con una base caricata e il file non salvato il browser chiede conferma", "Barra dei comandi con il nome sotto ogni icona anche su tablet e computer; su telefono i nomi non sono più troncati. Lo strumento attivo è azzurro: il rosso resta a Elimina e al Progetto", "Aprendo un progetto il pannello Base resta chiuso (si apre da Vista); su telefono in verticale i pannelli Base e Ricalco stanno in basso e non coprono il disegno", "Il menu che si apre toccando un elemento dice in prima riga che cosa hai toccato (muro, serramento, ambiente, con le sue misure)", "Messaggi in basso più corti e a tutta larghezza: il testo completo compare toccandoli; gli esiti hanno il bordo verde. Barra metrica a video, pulsante ⌂ Centra vista a destra, quote e nomi leggibili anche sopra la base", "Carattere unico in tutta l'app, nelle tavole, nelle tabelle e nel DXF: Calibri (sui dispositivi che non lo hanno, un carattere con le stesse misure incluso nell'app)", "Tabelle in PDF/JPG: note a piè di tabella con le abbreviazioni; la tabella dei serramenti non riporta più la colonna \"Vetri\" (resta nel CSV); incidenza della superficie commerciale in percentuale", "Corretto: nelle note, nei nomi e nelle etichette la prima virgola diventava un punto", "Menu: \"Tabella serramenti\" passa in Modifica, \"Pannello serramenti\" diventa \"Schema delle specchiature\", \"Esporta PDF/JPG\" diventano \"Esporta disegno (PDF/JPG)\""];
+const APP_VERSION = '2.41';
+const APP_NOTE = ["Scala a U: due rampe una opposta all'altra, affiancate (anche con un vuoto fino a 40 cm) e ferme sulla stessa linea, si uniscono in una scala sola con il pianerottolo rettangolare che copre tutte e due. L'app lo propone da sola, come per le rampe a 90°. La profondità del pianerottolo si cambia con la sua maniglia; allungando o allargando le rampe, pianerottolo e rampa alta seguono. Altezza, alzate e freccia di salita (a U) come nelle altre scale", "Scala da 4 punti (menu Inserisci): per rampe storte o con gradini trapezoidali. Tocchi i quattro angoli in giro (anche punti trilaterati; i primi due sono il lato da cui si parte a salire), poi scrivi i gradini che hai contato: la pedata si calcola sulla linea di passo, a metà larghezza, e i gradini si dividono in parti uguali. I quattro angoli si trascinano; doppio clic per gradini e alzata", "Chiocciola (menu Inserisci): tocchi il centro e un punto sul bordo esterno, poi raggio interno, angolo totale (fino a 360°), verso e gradini. Maniglie per raggio esterno, raggio interno e fine del giro. Nel DXF gli archi sono spezzate da 4°", "Le nuove scale seguono le stesse regole delle altre: taglio a 1,50 m, etichetta con alzate, pedate e Blondel (pedata sulla linea di passo), freccia di salita, superficie scalata dall'ambiente, uguali a video, in PDF/JPG e nel DXF"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
