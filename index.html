@@ -216,6 +216,10 @@
     #imp-ctl { display:none; pointer-events:auto; gap:10px; align-items:center; flex-wrap:wrap; margin-top:5px; color:#ddd; }
     #imp-ctl select { background:#0f3460; color:#eee; border:1px solid #1a5a9a; border-radius:6px; padding:5px 8px; font-size:13px; max-width:100%; }
     #imp-ctl input[type=range] { width:130px; accent-color:#e94560; vertical-align:middle; }
+    #imp-vec .vcol { display:inline-flex; align-items:center; gap:4px; margin:2px 10px 2px 0; cursor:pointer; white-space:nowrap; }
+    #imp-vec .vcol input { width:18px; height:18px; margin:0; }
+    #imp-vec .vcol i { display:inline-block; width:14px; height:14px; border:1px solid #888; border-radius:3px; }
+    #busy-box { position:fixed; left:50%; top:42%; transform:translate(-50%,-50%); z-index:350; display:none; background:#16213e; border:1px solid #ffe066; border-radius:10px; padding:16px 22px; color:#eee; font-size:15px; max-width:86vw; text-align:center; box-shadow:0 4px 20px rgba(0,0,0,.6); }
     @media (pointer:coarse) { .mouse-only { display:none !important; } }
     #imp-canvas { position:absolute; left:0; top:46px; width:100vw; height:calc(var(--vh,100vh) - 46px); cursor:crosshair; touch-action:none; display:block; }
     /* telefono in verticale: barra in basso come nell'app, con le didascalie sotto le icone, e istruzioni sopra la barra */
@@ -464,6 +468,7 @@
     <button id="imp-m-pan" class="mouse-only" title="Sposta la pagina" onclick="impSetMode('pan')"><span class="ic">✋</span><span class="cap">Sposta</span></button>
     <button id="imp-m-quad"  title="Raddrizza foglio (solo per le foto)" onclick="impSetMode('quad')"><span class="ic">📐</span><span class="cap">Raddrizza</span></button>
     <button id="imp-m-calib" title="Calibra scala" onclick="impSetMode('calib')"><span class="ic">📏</span><span class="cap">Scala</span></button>
+    <button id="imp-m-ratio" style="display:none" title="Scala del disegno dal rapporto (1:50, 1:100...)" onclick="impRatioAsk()"><span class="ic" style="font-weight:bold">1:</span><span class="cap" id="imp-ratio-cap">Rapporto</span></button>
     <button id="imp-m-ok" class="ok" style="display:none" title="Conferma i punti" onclick="impPointsOk()"><span class="ic">✔</span><span class="cap">Conferma</span></button>
     <button class="mouse-only" title="Ingrandisci" onclick="impZoom(1.3)"><span class="ic">＋</span><span class="cap">Zoom</span></button>
     <button class="mouse-only" title="Riduci" onclick="impZoom(1/1.3)"><span class="ic">－</span><span class="cap">Zoom</span></button>
@@ -475,6 +480,7 @@
       <select id="imp-ink" style="display:none"><option value="photo">Foto di un foglio di carta</option></select>
       <label><input type="checkbox" id="imp-prev" checked onchange="impPrevSchedule()"> Mostra tratti</label>
       <span id="imp-thr-wrap">Soglia <input type="range" id="imp-thr" min="10" max="250" value="140" oninput="impThrChange(+this.value)"></span>
+      <div id="imp-vec" style="display:none;width:100%"></div>
     </div>
   </div>
   <canvas id="imp-canvas"></canvas>
@@ -7847,11 +7853,11 @@ function importPlan() { hideAllMenus(); const i=$id('file-plan'); i.value=''; i.
 $id('file-plan').addEventListener('change', async e => {
   const f = e.target.files && e.target.files[0]; if (!f) return;
   try {
-    imp.mpp=null; imp.sel=null; imp.calib=[]; imp.quad=[]; imp.mode='rect'; imp.note=''; imp.ink=null;
+    imp.mpp=null; imp.sel=null; imp.calib=[]; imp.quad=[]; imp.mode='rect'; imp.note=''; imp.ink=null; impPdfReset();
     imp.photo = !(/\.pdf$/i.test(f.name) || f.type==='application/pdf');
-    if (!imp.photo) await impLoadPdf(f); else await impLoadImage(f);
+    if (!imp.photo) { if (await impLoadPdf(f)===false) return; } else await impLoadImage(f);
     impOpen();
-  } catch (err) { alert('Import non riuscito: '+err.message); }
+  } catch (err) { busy(null); impPdfReset(); alert('Import non riuscito: '+err.message); }
 });
 
 // ── foto della planimetria cartacea: scatto, raddrizzo il foglio toccando i 4 angoli, scala dal formato
@@ -7859,7 +7865,7 @@ function photoPlan() { hideAllMenus(); const i=$id('file-plan-cam'); i.value='';
 $id('file-plan-cam').addEventListener('change', async e => {
   const f = e.target.files && e.target.files[0]; if (!f) return;
   try {
-    imp.mpp=null; imp.sel=null; imp.calib=[]; imp.quad=[]; imp.note=''; imp.photo=true; imp.ink='photo';
+    imp.mpp=null; imp.sel=null; imp.calib=[]; imp.quad=[]; imp.note=''; imp.photo=true; imp.ink='photo'; impPdfReset();
     await impLoadImage(f);
     imp.note = 'Tocca i 4 angoli del foglio per raddrizzarlo (oppure salta e usa Calibra scala).';
     impOpen(); impSetMode('quad');
@@ -7947,8 +7953,30 @@ async function impLoadImage(f) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-// PDF catastale: pagina = immagine 1-bit + cornice e barra di scala blu vettoriali ("10 metri")
-async function impLoadPdf(f) {
+// ── PDF (2.44): lettura unica della pagina ──────────────────
+// Una sola passata sulle operazioni della pagina (pdf.js getOperatorList): linee in punti di carta (1 pt = 25,4/72 mm,
+// coordinate della pagina con y verso il basso) con colore e spessore, curve spezzate in tratti (e riconosciute come archi),
+// immagini con il loro riquadro, barra di scala del catasto. Poi si decide: pagina a immagine (catastale, scansione) =
+// ricalco a pixel come prima; pagina vettoriale = linee esatte al motore del DXF, nessun limite di risoluzione.
+const PT_M = 0.0254/72;                                  // 1 pt di carta in metri
+const VEC_CAP = COARSE ? 800000 : 3000000;               // linee lette al massimo (telefono / computer): ~400 MB di memoria per milione
+const VEC_SEL_MAX = COARSE ? 60000 : 150000;             // linee della selezione al motore al massimo
+const THIN_WALL = 0.08, LOWRES_PX = 2.7;                 // una tramezza da 8 cm deve fare circa 3 pixel (10% di margine: le catastali a 2,7 cm/px restano buone)
+const fmtN = v => Math.round(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+let _busyT = null, _busy0 = 0;
+// avviso di lavoro in corso con i secondi trascorsi: i PDF grandi non devono sembrare un blocco
+function busy(msg) {
+  let el = $id('busy-box');
+  if (!msg) { if (el) el.style.display = 'none'; clearInterval(_busyT); _busyT = null; return; }
+  if (!el) { el = document.createElement('div'); el.id = 'busy-box'; document.body.appendChild(el); }
+  if (!_busyT) { _busy0 = performance.now(); _busyT = setInterval(busyPaint, 1000); }
+  el.dataset.msg = msg; el.style.display = 'block'; busyPaint();
+}
+function busyPaint() { const el = $id('busy-box'); if (!el) return; const s = Math.round((performance.now()-_busy0)/1000); el.textContent = el.dataset.msg + (s >= 2 ? '  ('+s+' s)' : ''); }
+const pause = (ms) => new Promise(r => setTimeout(r, ms||0));
+const askP = (title, fields, hint) => new Promise(ok => askDialog(title, fields, hint, v => ok(v), () => ok(null)));
+
+async function pdfLib() {
   // prima la cartella lib locale; se non raggiungibile (es. file aperto dallo smartphone come content://) scarica pdf.js da internet
   const CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
   if (!window.pdfjsLib) {
@@ -7959,55 +7987,507 @@ async function impLoadPdf(f) {
     }
   }
   pdfjsLib.GlobalWorkerOptions.workerSrc = (window._pdfBase || 'lib/') + 'pdf.worker.min.js';
-  const doc  = await pdfjsLib.getDocument({data: await f.arrayBuffer()}).promise;
-  const page = await doc.getPage(1);
-  const vp1  = page.getViewport({scale:1});
-  const ol = await page.getOperatorList(), OPS = pdfjsLib.OPS;
+}
+// cerchio per tre punti (null se quasi allineati)
+function circ3(ax, ay, bx, by, cx, cy) {
+  const d = 2*(ax*(by-cy) + bx*(cy-ay) + cx*(ay-by)); if (Math.abs(d) < 1e-9) return null;
+  const a2 = ax*ax+ay*ay, b2 = bx*bx+by*by, c2 = cx*cx+cy*cy;
+  const x = (a2*(by-cy) + b2*(cy-ay) + c2*(ay-by))/d, y = (a2*(cx-bx) + b2*(ax-cx) + c2*(bx-ax))/d;
+  return {x, y, r:Math.hypot(ax-x, ay-y)};
+}
 
-  // scorro le operazioni: dimensione dell'immagine e linea blu piu' spessa (= barra di scala)
-  let imgW = 0, ctm=[1,0,0,1,0,0], lw=1; const stack=[]; let bar=null, cur=null;
+async function pdfScan(page) {
+  const OPS = pdfjsLib.OPS, vp = page.getViewport({scale:1}), t0 = performance.now();
+  busy('Leggo il disegno del PDF...'); await pause(30);
+  const ol = await page.getOperatorList();
+  const fnA = ol.fnArray, arA = ol.argsArray, N = fnA.length;
   const mul = (m,n) => [n[0]*m[0]+n[1]*m[2], n[0]*m[1]+n[1]*m[3], n[2]*m[0]+n[3]*m[2], n[2]*m[1]+n[3]*m[3], n[4]*m[0]+n[5]*m[2]+m[4], n[4]*m[1]+n[5]*m[3]+m[5]];
-  ol.fnArray.forEach((fn,i) => {
-    const a = ol.argsArray[i];
-    if (fn===OPS.save) stack.push({ctm:ctm.slice(), lw});
-    else if (fn===OPS.restore) { const s=stack.pop(); if (s) { ctm=s.ctm; lw=s.lw; } }
-    else if (fn===OPS.transform) ctm = mul(ctm, a);
-    else if (fn===OPS.setLineWidth) lw = a[0];
-    else if (fn===OPS.paintImageXObject) imgW = Math.max(imgW, a[1]||0);
-    else if (fn===OPS.constructPath) {
-      const ops=a[0], co=a[1]; let k=0, last=null, start=null;
-      const P = (x,y) => ({x:ctm[0]*x+ctm[2]*y+ctm[4], y:ctm[1]*x+ctm[3]*y+ctm[5]});
-      for (const op of ops) {
-        if (op===OPS.moveTo)      { last=P(co[k],co[k+1]); start=last; k+=2; }
-        else if (op===OPS.lineTo) { const q=P(co[k],co[k+1]); k+=2;
-          const sc = Math.sqrt(Math.abs(ctm[0]*ctm[3]-ctm[1]*ctm[2])), L=Math.hypot(q.x-last.x,q.y-last.y);
-          const vert = Math.abs(q.x-last.x) < 0.01*L || Math.abs(q.y-last.y) < 0.01*L;
-          if (vert && lw*sc >= 0.6 && L>20 && L<600 && (!bar || L>bar.L)) bar={L, w:lw*sc};
-          last=q; }
-        else if (op===OPS.curveTo)  k+=6;
-        else if (op===OPS.curveTo2 || op===OPS.curveTo3) k+=4;
-        else if (op===OPS.rectangle) k+=4;
+  let cap = 1<<15, S = new Float32Array(cap*4), SP = new Int32Array(cap), SA = new Int32Array(cap), n = 0, np = 0;
+  const pSt = [], pK = [], pS0 = [], pS1 = [], pBB = [], styles = [], stKey = new Map(), arcs = [], imgs = [];
+  const add = (x0, y0, x1, y1, arc) => {
+    if (n >= cap) {
+      if (n >= VEC_CAP) throw new Error('VEC_CAP');
+      cap = Math.min(cap*2, VEC_CAP); const S2 = new Float32Array(cap*4); S2.set(S); S = S2;
+      const P2 = new Int32Array(cap); P2.set(SP); SP = P2; const A2 = new Int32Array(cap); A2.set(SA); SA = A2;
+    }
+    const k = n*4; S[k] = x0; S[k+1] = y0; S[k+2] = x1; S[k+3] = y1; SP[n] = np; SA[n] = arc; n++;
+  };
+  const styleOf = (rgb, w, pat) => {
+    const r = rgb[0]|0, g = rgb[1]|0, b = rgb[2]|0, key = pat ? 'pat' : r+','+g+','+b+'|'+Math.round(w*100);
+    let i = stKey.get(key);
+    if (i===undefined) { i = styles.length; stKey.set(key, i); styles.push({r, g, b, w, pat:!!pat, ck: pat ? 'pat' : (r>>5)+','+(g>>5)+','+(b>>5)}); }
+    return i;
+  };
+  let ctm = vp.transform.slice(), lw = 1, sc = [0,0,0], fc = [0,0,0], spat = false, fpat = false; const stack = [];
+  let bar = null, imgW = 0;
+  // tracciato in costruzione: puo' continuare su piu' constructPath, finisce con l'operazione che lo disegna
+  let p0 = 0, cx = 0, cy = 0, sx = 0, sy = 0, has = false, subN = 0, closedAny = false, curves = false; const subs = [];
+  const P = (x, y) => [ctm[0]*x+ctm[2]*y+ctm[4], ctm[1]*x+ctm[3]*y+ctm[5]];
+  const endSub = () => { if (has && subN) subs.push([sx, sy, cx, cy]); subN = 0; };
+  const reset = () => { p0 = n; has = false; subN = 0; closedAny = false; curves = false; subs.length = 0; };
+  const bez = (x1, y1, x2, y2, x3, y3) => {
+    const x0 = cx, y0 = cy; curves = true;
+    const L = Math.hypot(x1-x0, y1-y0) + Math.hypot(x2-x1, y2-y1) + Math.hypot(x3-x2, y3-y2);
+    const m = Math.max(2, Math.min(24, Math.ceil(L/2)));
+    const B = t => { const u = 1-t, a = u*u*u, b = 3*u*u*t, c = 3*u*t*t, d = t*t*t; return [a*x0+b*x1+c*x2+d*x3, a*y0+b*y1+c*y2+d*y3]; };
+    let arc = -1;
+    const pm = B(0.5), c = circ3(x0, y0, pm[0], pm[1], x3, y3);
+    if (c && c.r > 1) {                                   // arco di cerchio? (porte): controllo a 1/4 e 3/4
+      const q1 = B(0.25), q3 = B(0.75), tol = 0.02*c.r;
+      const sw = Math.acos(Math.max(-1, Math.min(1, ((x0-c.x)*(x3-c.x) + (y0-c.y)*(y3-c.y))/(c.r*c.r))))*180/Math.PI;
+      if (Math.abs(Math.hypot(q1[0]-c.x, q1[1]-c.y)-c.r) < tol && Math.abs(Math.hypot(q3[0]-c.x, q3[1]-c.y)-c.r) < tol && sw >= 15 && sw <= 120) {
+        arc = arcs.length; arcs.push({x:c.x, y:c.y, r:c.r, sx:x0, sy:y0, ex:x3, ey:y3});
       }
     }
-  });
-  // testo "NN metri" accanto alla barra
+    let px = x0, py = y0;
+    for (let i=1; i<=m; i++) { const q = B(i/m); add(px, py, q[0], q[1], arc); px = q[0]; py = q[1]; }
+    cx = x3; cy = y3; subN++;
+  };
+  const commit = (fill, stroke, close) => {
+    if (close && has && subN && (cx!==sx || cy!==sy)) { add(cx, cy, sx, sy, -1); cx = sx; cy = sy; closedAny = true; }
+    if (fill) {                                           // il riempimento chiude ogni pezzo aperto
+      endSub();
+      subs.forEach(s => { if (s[0]!==s[2] || s[1]!==s[3]) add(s[2], s[3], s[0], s[1], -1); });
+    }
+    if (n===p0 || (!fill && !stroke)) { n = p0; reset(); return; }        // tracciato vuoto o solo ritaglio: niente
+    const pat = stroke ? spat : fpat, st = stroke ? styleOf(sc, lw*Math.sqrt(Math.abs(ctm[0]*ctm[3]-ctm[1]*ctm[2])), pat) : styleOf(fc, 0, pat);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i=p0; i<n; i++) { const k = i*4; for (let e=0; e<4; e+=2) { const x = S[k+e], y = S[k+e+1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+    if (!closedAny && n-p0 > 2) { const a = p0*4, b = (n-1)*4; if (Math.abs(S[a]-S[b+2]) < 0.01 && Math.abs(S[a+1]-S[b+3]) < 0.01) closedAny = true; }
+    pSt.push(st); pK.push((stroke ? 1 : 0) | (fill ? 2 : 0) | (closedAny || fill ? 4 : 0) | (curves ? 8 : 0) | (pat ? 16 : 0));
+    pS0.push(p0); pS1.push(n); pBB.push(x0, y0, x1, y1); np++;
+    reset();
+  };
+  const img = (w) => {
+    const c = [P(0,0), P(1,0), P(0,1), P(1,1)], xs = c.map(p => p[0]), ys = c.map(p => p[1]);
+    imgs.push({x0:Math.min(...xs), y0:Math.min(...ys), x1:Math.max(...xs), y1:Math.max(...ys), ptpx: w ? Math.hypot(ctm[0], ctm[1])/w : 0});
+  };
+  const PAINT = new Map([[OPS.stroke,[0,1,0]], [OPS.closeStroke,[0,1,1]], [OPS.fill,[1,0,0]], [OPS.eoFill,[1,0,0]], [OPS.fillStroke,[1,1,0]], [OPS.eoFillStroke,[1,1,0]],
+    [OPS.closeFillStroke,[1,1,1]], [OPS.closeEOFillStroke,[1,1,1]], [OPS.endPath,[0,0,0]]]);
+  const IMG = new Set([OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject, OPS.paintSolidColorImageMask, OPS.paintJpegXObject,
+    OPS.paintImageXObjectRepeat, OPS.paintImageMaskXObjectGroup, OPS.paintImageMaskXObjectRepeat, OPS.paintInlineImageXObjectGroup].filter(v => v!==undefined));
+  for (let i=0; i<N; i++) {
+    if (i && !(i & 32767)) { busy('Leggo il disegno del PDF: '+Math.round(i/N*100)+'% ('+fmtN(n)+' linee)'); await pause(); }
+    const fn = fnA[i], a = arA[i];
+    if (fn===OPS.constructPath) {
+      const ops = a[0], co = a[1]; let k = 0;
+      for (const op of ops) {
+        if (op===OPS.moveTo) { endSub(); const q = P(co[k], co[k+1]); k += 2; cx = sx = q[0]; cy = sy = q[1]; has = true; }
+        else if (op===OPS.lineTo) {
+          const q = P(co[k], co[k+1]); k += 2;
+          if (!has) { cx = sx = q[0]; cy = sy = q[1]; has = true; continue; }
+          const L = Math.hypot(q[0]-cx, q[1]-cy);
+          if (L > 0) {
+            add(cx, cy, q[0], q[1], -1); subN++;
+            // barra di scala del catasto: linea dritta orizzontale o verticale, spessa, tra 20 e 600 pt (come prima)
+            const scl = Math.sqrt(Math.abs(ctm[0]*ctm[3]-ctm[1]*ctm[2])), vert = Math.abs(q[0]-cx) < 0.01*L || Math.abs(q[1]-cy) < 0.01*L;
+            if (vert && lw*scl >= 0.6 && L > 20 && L < 600 && (!bar || L > bar.L)) bar = {L, w:lw*scl};
+          }
+          cx = q[0]; cy = q[1];
+        }
+        else if (op===OPS.curveTo)  { const c1 = P(co[k], co[k+1]), c2 = P(co[k+2], co[k+3]), e = P(co[k+4], co[k+5]); k += 6; if (has) bez(c1[0], c1[1], c2[0], c2[1], e[0], e[1]); else { cx = sx = e[0]; cy = sy = e[1]; has = true; } }
+        else if (op===OPS.curveTo2) { const c2 = P(co[k], co[k+1]), e = P(co[k+2], co[k+3]); k += 4; if (has) bez(cx, cy, c2[0], c2[1], e[0], e[1]); else { cx = sx = e[0]; cy = sy = e[1]; has = true; } }
+        else if (op===OPS.curveTo3) { const c1 = P(co[k], co[k+1]), e = P(co[k+2], co[k+3]); k += 4; if (has) bez(c1[0], c1[1], e[0], e[1], e[0], e[1]); else { cx = sx = e[0]; cy = sy = e[1]; has = true; } }
+        else if (op===OPS.rectangle) {
+          endSub(); const x = co[k], y = co[k+1], w = co[k+2], h = co[k+3]; k += 4;
+          const c = [P(x,y), P(x+w,y), P(x+w,y+h), P(x,y+h)];
+          for (let j=0; j<4; j++) add(c[j][0], c[j][1], c[(j+1)%4][0], c[(j+1)%4][1], -1);
+          cx = sx = c[0][0]; cy = sy = c[0][1]; has = true; subN = 0; closedAny = true;
+        }
+        else if (op===OPS.closePath) { if (has && subN && (cx!==sx || cy!==sy)) add(cx, cy, sx, sy, -1); if (has && subN) closedAny = true; cx = sx; cy = sy; subN = 0; }
+      }
+    }
+    else if (PAINT.has(fn)) { const f = PAINT.get(fn); commit(f[0], f[1], f[2]); }
+    else if (fn===OPS.save) stack.push({ctm:ctm.slice(), lw, sc, fc, spat, fpat});
+    else if (fn===OPS.restore) { const s = stack.pop(); if (s) ({ctm, lw, sc, fc, spat, fpat} = s); }
+    else if (fn===OPS.transform) ctm = mul(ctm, a);
+    else if (fn===OPS.paintFormXObjectBegin) { stack.push({ctm:ctm.slice(), lw, sc, fc, spat, fpat}); if (a && a[0] && a[0].length===6) ctm = mul(ctm, a[0]); }
+    else if (fn===OPS.paintFormXObjectEnd) { const s = stack.pop(); if (s) ({ctm, lw, sc, fc, spat, fpat} = s); }
+    else if (fn===OPS.setLineWidth) lw = a[0];
+    else if (fn===OPS.setGState) { (a[0]||[]).forEach(e => { if (e[0]==='LW') lw = e[1]; }); }
+    else if (fn===OPS.setStrokeRGBColor) { sc = [a[0], a[1], a[2]]; spat = false; }
+    else if (fn===OPS.setFillRGBColor) { fc = [a[0], a[1], a[2]]; fpat = false; }
+    else if (fn===OPS.setStrokeColorN) spat = true;     // motivo (pattern) o sfumatura: campitura
+    else if (fn===OPS.setFillColorN) fpat = true;
+    else if (IMG.has(fn)) {
+      if (fn===OPS.paintImageXObject || fn===OPS.paintJpegXObject) { imgW = Math.max(imgW, a[1]||0); img(a[1]); }
+      else if (fn===OPS.paintInlineImageXObject || fn===OPS.paintImageMaskXObject) img(a[0] && a[0].width);
+      else img(0);
+    }
+  }
+  return {S, SP, SA, n, np, pSt, pK, pS0, pS1, pBB:new Float32Array(pBB), styles, arcs, imgs, bar, imgW, W:vp.width, H:vp.height, ops:N, ms:performance.now()-t0};
+}
+
+// PDF: pagina a immagine (catastale) come prima, pagina vettoriale con le linee esatte
+async function impLoadPdf(f) {
+  busy('Apro il PDF...'); await pause(30);
+  try {
+    await pdfLib();
+    const data = await f.arrayBuffer();
+    let doc;
+    try { doc = await pdfjsLib.getDocument({data}).promise; }
+    catch (e) { throw new Error(/password/i.test(e.message||'') ? 'il PDF è protetto da password.' : 'il file non è un PDF leggibile ('+(e.message||e)+').'); }
+    let pn = 1;
+    if (doc.numPages > 1) {                                // PDF di piu' pagine: si sceglie quale
+      busy(null);
+      const opts = []; for (let i=1; i<=Math.min(doc.numPages, 200); i++) opts.push({value:String(i), label:'Pagina '+i});
+      const v = await askP('PDF di '+doc.numPages+' pagine', [{label:'Pagina da importare', id:'p', type:'select', value:'1', options:opts}], 'Si importa una pagina alla volta: per un\'altra pagina ripeti l\'importazione.');
+      if (!v) { doc.destroy(); return false; }
+      pn = Math.max(1, Math.min(doc.numPages, parseInt(v.p, 10) || 1));
+      busy('Apro la pagina '+pn+'...'); await pause(30);
+    }
+    const page = await doc.getPage(pn);
+    let sc;
+    try { sc = await pdfScan(page); }
+    catch (e) {
+      doc.destroy();
+      if (e.message==='VEC_CAP') throw new Error('il PDF contiene più di '+fmtN(VEC_CAP)+' linee: troppo per questo dispositivo. Esporta dal CAD solo la tavola o la pianta che ti serve (oppure prova da computer) e riprova.');
+      if (e instanceof RangeError || /memory|allocation/i.test(e.message||'')) throw new Error('memoria insufficiente per questo PDF. Esporta dal CAD solo la pianta che ti serve, oppure prova da computer.');
+      throw e;
+    }
+    imp.doc = doc; imp.page = page; imp.pdf = true; imp.pageN = pn; imp.pages = doc.numPages;
+    let imgA = 0; sc.imgs.forEach(im => { imgA += (im.x1-im.x0)*(im.y1-im.y0); });
+    const vector = sc.n >= 2000 || (sc.n >= 30 && imgA < 0.5*sc.W*sc.H);       // linee e niente immagine di pagina = disegno vettoriale
+    if (vector) await impVecLoad(page, sc); else await impRasterLoad(page, sc);
+    return true;
+  } finally { busy(null); }
+}
+
+// pagina a immagine (catastale): immagine 1-bit + cornice e barra di scala blu vettoriali ("10 metri"), come prima
+async function impRasterLoad(page, sc) {
+  const vp1 = page.getViewport({scale:1}), bar = sc.bar;
   let metri = 10;
   try {
     const tc = await page.getTextContent();
     for (const t of tc.items) { const m = /(\d+(?:[.,]\d+)?)\s*metri/i.exec(t.str); if (m) { metri = parseFloat(m[1].replace(',','.')); break; } }
   } catch (e) {}
-
-  let scale = imgW ? imgW/vp1.width : 3;
+  let scale = sc.imgW ? sc.imgW/vp1.width : 3;
   scale = Math.min(Math.max(scale, 2), 5);
   while (vp1.width*scale*vp1.height*scale > 16e6) scale *= 0.9;
   const vp = page.getViewport({scale});
+  busy('Disegno la pagina...'); await pause(30);
   const c = document.createElement('canvas'); c.width=Math.round(vp.width); c.height=Math.round(vp.height);
   const cx = c.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,c.width,c.height);
   await page.render({canvasContext:cx, viewport:vp}).promise;
-  imp.src = c;
+  imp.src = c; imp.pxPerPt = scale;
+  let big = null; sc.imgs.forEach(im => { const A = (im.x1-im.x0)*(im.y1-im.y0); if (im.ptpx && (!big || A > big.A)) big = {A, ptpx:im.ptpx}; });
+  imp.rasterPtPx = big ? big.ptpx : 0;                   // pt di carta per pixel dell'immagine originale: la risoluzione vera
   if (bar) { imp.mpp = metri/(bar.L*scale); imp.note = 'Scala letta dal PDF: '+metri+' m = '+Math.round(bar.L*scale)+' px (1 px = '+(imp.mpp*100).toFixed(2)+' cm).'; }
-  else imp.note = 'Barra di scala non trovata: usa "Calibra scala" e clicca due punti di distanza nota.';
+  else imp.note = 'Barra di scala non trovata: scegli il rapporto (1:...) se il PDF è in scala, oppure usa "Calibra scala" e clicca due punti di distanza nota.';
+  if (imp.pages > 1) imp.note = 'Pagina '+imp.pageN+' di '+imp.pages+'. '+imp.note;
 }
+
+// pagina vettoriale: anteprima leggera di tutta la tavola, solo per scegliere il disegno
+async function impVecLoad(page, sc) {
+  const s = Math.min(2500/Math.max(sc.W, sc.H), 4);
+  busy('Disegno l\'anteprima della tavola ('+fmtN(sc.n)+' linee)...'); await pause(30);
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(sc.W*s)); c.height = Math.max(1, Math.round(sc.H*s));
+  const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);
+  const tr = performance.now();
+  await page.render({canvasContext:cx, viewport:page.getViewport({scale:s})}).promise;
+  sc.prevMs = performance.now()-tr;
+  try { page.cleanup(); } catch (e) {}                   // libera la lista delle operazioni mentre si sceglie: il riquadro la rilegge
+  imp.src = c; imp.vec = sc; imp.pxPerPt = s; imp.mpp = null; imp.ratio = null; imp.vcol = {}; imp.vfilt = true;
+  window.VEC_STAT = {read:Math.round(sc.ms), prev:Math.round(sc.prevMs), lines:sc.n, paths:sc.np, ops:sc.ops};
+  // scala scritta nel PDF come testo vero (non in curve): "1:100", se ce n'e' una sola
+  try {
+    const tc = await page.getTextContent(), seen = new Set();
+    tc.items.forEach(t => { const re = /(?:^|[^\d])1\s*:\s*(20|25|50|100|200|500)(?!\d)/g; let m; while ((m = re.exec(t.str))) seen.add(+m[1]); });
+    if (seen.size===1) impSetRatio([...seen][0], ' (letta nel PDF: controllala)');
+  } catch (e) {}
+  const nImg = sc.imgs.length;
+  imp.note = (imp.pages > 1 ? 'Pagina '+imp.pageN+' di '+imp.pages+'. ' : '')+'PDF vettoriale: '+fmtN(sc.n)+' linee lette in '+(sc.ms/1000).toFixed(1).replace('.', ',')+' s'+(nImg ? ', '+nImg+(nImg===1 ? ' immagine' : ' immagini') : '')+'.';
+}
+function impSetRatio(r, src) {
+  if (!(r > 0) || !imp.pxPerPt) return;
+  imp.ratio = r; imp.ratioSrc = src || ''; imp.mpp = r*PT_M/imp.pxPerPt;
+}
+function impRatioAsk() {
+  const std = ['20','50','100','200','500'], cur = imp.ratio ? String(imp.ratio) : '100';
+  askDialog('Scala del disegno', [
+    {label:'Rapporto', id:'r', type:'select', value:std.includes(cur) ? cur : '100', options:std.map(v => ({value:v, label:'1:'+v}))},
+    {label:'Altro rapporto 1: (facoltativo)', id:'x', type:'number', value:''},
+  ], 'Le misure di un PDF sono millimetri di carta esatti: con il rapporto giusto la scala è precisa. Se il disegno è stato salvato "adatta alla pagina" o non è in scala, usa Scala su una misura nota.', v => {
+    const x = parseFloat(v.x), r = x > 0 ? x : parseFloat(v.r);
+    impSetRatio(r, ''); if (!imp.vec) imp.note = '';           // la nota della barra di scala o della taratura non vale piu'
+    impUpdateBar(); impPrevSchedule(); impDraw();
+  }, () => { impUpdateBar(); impDraw(); });
+}
+// calibra scala sul PDF vettoriale: il punto va sull'estremo di linea piu' vicino (misura esatta, non il pixel dell'anteprima)
+function impSnapVec(p) {
+  const V = imp.vec; if (!V || !p) return;
+  const G = 4;
+  if (!imp.vgrid) {
+    imp.vgrid = new Map();
+    for (let i=0; i<V.n*2; i++) { const x = V.S[i*2], y = V.S[i*2+1], k = Math.floor(x/G)+','+Math.floor(y/G), l = imp.vgrid.get(k); if (l) l.push(i); else imp.vgrid.set(k, [i]); }
+  }
+  const x = p.x/imp.pxPerPt, y = p.y/imp.pxPerPt, r = (COARSE ? 22 : 12)/imp.v.s/imp.pxPerPt;
+  let best = -1, bd = r;
+  for (let gx=Math.floor((x-r)/G); gx<=Math.floor((x+r)/G); gx++) for (let gy=Math.floor((y-r)/G); gy<=Math.floor((y+r)/G); gy++) {
+    const l = imp.vgrid.get(gx+','+gy); if (!l) continue;
+    for (const i of l) { const d = Math.hypot(V.S[i*2]-x, V.S[i*2+1]-y); if (d < bd) { bd = d; best = i; } }
+  }
+  if (best >= 0) { p.x = V.S[best*2]*imp.pxPerPt; p.y = V.S[best*2+1]*imp.pxPerPt; }
+}
+function impSelPt() {
+  const s = imp.sel; if (!s || !imp.pxPerPt) return null;
+  const k = imp.pxPerPt, r = {x0:Math.min(s.x0,s.x1)/k, x1:Math.max(s.x0,s.x1)/k, y0:Math.min(s.y0,s.y1)/k, y1:Math.max(s.y0,s.y1)/k};
+  return (r.x1-r.x0)*k >= 20 && (r.y1-r.y0)*k >= 20 ? r : null;
+}
+function colName(r, g, b) {
+  const mx = Math.max(r,g,b)/255, mn = Math.min(r,g,b)/255, l = (mx+mn)/2, s = mx-mn;
+  if (s < 0.15) return l < 0.2 ? 'nero' : l < 0.8 ? 'grigio' : 'grigio chiaro';
+  let h; const R = r/255, G = g/255, B = b/255;
+  if (mx===R) h = ((G-B)/s + 6) % 6; else if (mx===G) h = (B-R)/s + 2; else h = (R-G)/s + 4;
+  h *= 60;
+  if (h < 15 || h >= 345) return 'rosso';
+  if (h < 40) return l < 0.45 ? 'marrone' : 'arancio';
+  if (h < 70) return 'giallo';
+  if (h < 165) return 'verde';
+  if (h < 200) return 'azzurro';
+  if (h < 260) return 'blu';
+  return h < 300 ? 'viola' : 'rosa';
+}
+
+// linee della selezione: colori scelti, poi via testi in curve, quote e tratteggi. Nel dubbio la linea resta
+function vecPick(V, sp, colOn, filt) {
+  const S = V.S, SP = V.SP, st = V.styles, pSt = V.pSt, pK = V.pK, pS0 = V.pS0, pS1 = V.pS1, BB = V.pBB;
+  const MM = 72/25.4, stat = {sel:0, col:0, pat:0, text:0, dims:0, hatch:0};
+  const idx = [], colLen = new Map();
+  for (let i=0; i<V.n; i++) {
+    const k = i*4, x0 = S[k], y0 = S[k+1], x1 = S[k+2], y1 = S[k+3];
+    if ((x0 < sp.x0 && x1 < sp.x0) || (x0 > sp.x1 && x1 > sp.x1) || (y0 < sp.y0 && y1 < sp.y0) || (y0 > sp.y1 && y1 > sp.y1)) continue;
+    stat.sel++;
+    const s = st[pSt[SP[i]]];
+    if (s.pat) { stat.pat++; continue; }
+    if (!s.nm) s.nm = colName(s.r, s.g, s.b);            // colori raggruppati per nome: una casella per "nero", "rosso", "giallo"...
+    const L = Math.hypot(x1-x0, y1-y0), c = colLen.get(s.nm);
+    if (c) c.len += L; else colLen.set(s.nm, {key:s.nm, r:s.r, g:s.g, b:s.b, len:L, def:s.nm==='nero'});
+    idx.push(i);
+  }
+  const cols = [...colLen.values()].sort((a, b) => b.len-a.len), tot = cols.reduce((a, c) => a+c.len, 0) || 1;
+  const defLen = cols.filter(c => c.def).reduce((a, c) => a+c.len, 0);
+  cols.forEach(c => { c.pc = c.len/tot*100; c.name = c.key; if (defLen < 0.15*tot) c.def = true; c.on = colOn[c.key]!==undefined ? colOn[c.key] : c.def; });   // poco nero: di partenza tutte
+  const on = new Map(cols.map(c => [c.key, c.on]));
+  let keep = idx.filter(i => on.get(st[pSt[SP[i]]].nm));
+  stat.col = idx.length - keep.length;
+  if (filt && keep.length) {
+    const drop = new Set();                                // tracciati tolti
+    const paths = [...new Set(keep.map(i => SP[i]))];
+    const bw = p => BB[p*4+2]-BB[p*4], bh = p => BB[p*4+3]-BB[p*4+1], nseg = p => pS1[p]-pS0[p];
+    // a) testi in curve: tracciati piccoli (sotto 5 mm di carta), chiusi o di piu' tratti, fitti uno accanto all'altro
+    const T = 5*MM, cand = paths.filter(p => Math.max(bw(p), bh(p)) <= T && ((pK[p] & 6) || nseg(p) >= 3));
+    const cg = new Map(), CG = T, key = (x, y) => Math.floor(x/CG)+','+Math.floor(y/CG);
+    cand.forEach(p => { const k = key((BB[p*4]+BB[p*4+2])/2, (BB[p*4+1]+BB[p*4+3])/2), l = cg.get(k); if (l) l.push(p); else cg.set(k, [p]); });
+    const complex = p => nseg(p) >= 6 || (pK[p] & 8);
+    cand.forEach(p => {
+      const mx = (BB[p*4]+BB[p*4+2])/2, my = (BB[p*4+1]+BB[p*4+3])/2, sp_ = Math.max(bw(p), bh(p)), gx = Math.floor(mx/CG), gy = Math.floor(my/CG);
+      for (let i=-1; i<=1; i++) for (let j=-1; j<=1; j++) {
+        const l = cg.get((gx+i)+','+(gy+j)); if (!l) continue;
+        for (const q of l) {
+          if (q===p) continue;
+          const sq = Math.max(bw(q), bh(q)), big = Math.max(sp_, sq);
+          if (Math.min(sp_, sq) < big/2.5 || !(complex(p) || complex(q))) continue;
+          const gapx = Math.max(0, Math.max(BB[p*4], BB[q*4]) - Math.min(BB[p*4+2], BB[q*4+2])), gapy = Math.max(0, Math.max(BB[p*4+1], BB[q*4+1]) - Math.min(BB[p*4+3], BB[q*4+3]));
+          if (Math.max(gapx, gapy) <= 0.6*big) { drop.add(p); stat.text += nseg(p); return; }
+        }
+      }
+    });
+    // b) quote: linea dritta (un tratto, almeno 3 mm) con un terminale a ciascun capo: pallino o freccia piena, oppure trattino obliquo
+    const term = paths.filter(p => !drop.has(p) && Math.max(bw(p), bh(p)) <= 2.5*MM && (pK[p] & 2) && nseg(p)!==4);
+    const ticks = paths.filter(p => !drop.has(p) && nseg(p)===1 && (pK[p] & 1)).filter(p => { const k = pS0[p]*4; return Math.hypot(S[k+2]-S[k], S[k+3]-S[k+1]) <= 3*MM; });
+    const tg = new Map(), TG = 3*MM, tk = (x, y) => Math.floor(x/TG)+','+Math.floor(y/TG);
+    const tput = (x, y, v) => { const k = tk(x, y), l = tg.get(k); if (l) l.push(v); else tg.set(k, [v]); };
+    term.forEach(p => tput((BB[p*4]+BB[p*4+2])/2, (BB[p*4+1]+BB[p*4+3])/2, p));
+    ticks.forEach(p => { const k = pS0[p]*4; tput((S[k]+S[k+2])/2, (S[k+1]+S[k+3])/2, p); });
+    const termAt = (x, y, ux, uy) => {
+      const gx = Math.floor(x/TG), gy = Math.floor(y/TG), m = 0.3*MM;
+      for (let i=-1; i<=1; i++) for (let j=-1; j<=1; j++) {
+        const l = tg.get((gx+i)+','+(gy+j)); if (!l) continue;
+        for (const q of l) {
+          if (nseg(q)===1 && (pK[q] & 1) && !(pK[q] & 2)) {
+            const k = pS0[q]*4, tx = S[k+2]-S[k], ty = S[k+3]-S[k+1], tl = Math.hypot(tx, ty) || 1;
+            const ang = Math.acos(Math.min(1, Math.abs(tx*ux+ty*uy)/tl))*180/Math.PI;
+            if (ang >= 30 && ang <= 60 && Math.hypot((S[k]+S[k+2])/2-x, (S[k+1]+S[k+3])/2-y) <= 0.5*MM) return q;
+          } else if (x >= BB[q*4]-m && x <= BB[q*4+2]+m && y >= BB[q*4+1]-m && y <= BB[q*4+3]+m) return q;
+        }
+      }
+      return -1;
+    };
+    paths.forEach(p => {
+      if (drop.has(p) || nseg(p)!==1 || !(pK[p] & 1)) return;
+      const k = pS0[p]*4, L = Math.hypot(S[k+2]-S[k], S[k+3]-S[k+1]); if (L < 3*MM) return;
+      const ux = (S[k+2]-S[k])/L, uy = (S[k+3]-S[k+1])/L, a = termAt(S[k], S[k+1], ux, uy); if (a < 0 || a===p) return;
+      const b = termAt(S[k+2], S[k+3], ux, uy); if (b < 0 || b===p || b===a) return;
+      drop.add(p); drop.add(a); drop.add(b); stat.dims++;
+    });
+    // c) tratteggi: famiglie di almeno 5 linee parallele, stesso stile, a passo regolare entro 2,5 mm
+    const fam = new Map();
+    keep.forEach(i => {
+      const p = SP[i]; if (drop.has(p) || !(pK[p] & 1)) return;
+      const k = i*4, dx = S[k+2]-S[k], dy = S[k+3]-S[k+1], L = Math.hypot(dx, dy); if (L < 0.3*MM) return;
+      let th = Math.atan2(dy, dx); if (th < 0) th += Math.PI; if (th >= Math.PI) th -= Math.PI;
+      const c = Math.cos(th), s = Math.sin(th), t0 = S[k]*c+S[k+1]*s, t1 = S[k+2]*c+S[k+3]*s;
+      const g = pSt[p]+'|'+(Math.round(th*360/Math.PI) % 360), o = {i, o:-S[k]*s+S[k+1]*c, a:Math.min(t0, t1), b:Math.max(t0, t1)};
+      const l = fam.get(g); if (l) l.push(o); else fam.set(g, [o]);
+    });
+    const D = 2.5*MM, hatch = new Set();
+    fam.forEach(l => {
+      if (l.length < 5) return;
+      l.sort((p, q) => p.o-q.o);
+      for (let a=0; a<l.length; a++) {
+        const A = l[a], offs = [];
+        for (const dir of [-1, 1]) for (let b=a+dir; b>=0 && b<l.length; b+=dir) {
+          const B = l[b], d = B.o-A.o; if (Math.abs(d) > 4*D) break;
+          if (Math.abs(d) < 0.05*MM) continue;
+          if (Math.min(A.b, B.b)-Math.max(A.a, B.a) >= 0.3*Math.min(A.b-A.a, B.b-B.a)) offs.push(d);
+        }
+        if (offs.length < 4) continue;
+        const d0 = Math.min(...offs.map(Math.abs)); if (d0 > D) continue;
+        const tol = Math.max(0.05*MM, 0.15*d0); let m = 0;
+        for (const mm of [-4,-3,-2,-1,1,2,3,4]) if (offs.some(d => Math.abs(d-mm*d0) <= tol)) m++;
+        if (m >= 4) hatch.add(A.i);
+      }
+    });
+    stat.hatch = hatch.size;
+    keep = keep.filter(i => !drop.has(SP[i]) && !hatch.has(i));
+  }
+  return {keep, cols, stat};
+}
+// tratto dentro il rettangolo (Liang-Barsky); null se fuori
+function clipSeg(x0, y0, x1, y1, r) {
+  let t0 = 0, t1 = 1; const dx = x1-x0, dy = y1-y0;
+  const pq = [[-dx, x0-r.x0], [dx, r.x1-x0], [-dy, y0-r.y0], [dy, r.y1-y0]];
+  for (const [p, q] of pq) {
+    if (p===0) { if (q < 0) return null; continue; }
+    const t = q/p; if (p < 0) { if (t > t1) return null; if (t > t0) t0 = t; } else { if (t < t0) return null; if (t < t1) t1 = t; }
+  }
+  return [x0+t0*dx, y0+t0*dy, x0+t1*dx, y0+t1*dy];
+}
+// archi delle porte disegnati come spezzata (CAD che esporta le curve in tratti): tratti brevi che girano sempre dallo stesso verso
+function polyArcs(rel, pid) {
+  const arcs = [], drop = new Uint8Array(rel.length), len = s => Math.hypot(s[2]-s[0], s[3]-s[1]);
+  const turn = (a, b) => { const ax = a[2]-a[0], ay = a[3]-a[1], bx = b[2]-b[0], by = b[3]-b[1]; return Math.atan2(ax*by-ay*bx, ax*bx+ay*by)*180/Math.PI; };
+  let i = 0;
+  while (i < rel.length) {
+    let j = i, sg = 0, tot = 0;
+    while (j+1 < rel.length && pid[j+1]===pid[i] && Math.abs(rel[j][2]-rel[j+1][0]) < 1e-4 && Math.abs(rel[j][3]-rel[j+1][1]) < 1e-4 && len(rel[j]) < 0.3 && len(rel[j+1]) < 0.3) {
+      const a = turn(rel[j], rel[j+1]);
+      if (Math.abs(a) < 1 || Math.abs(a) > 30 || (sg && Math.sign(a)!==sg)) break;
+      sg = Math.sign(a); tot += a; j++;
+    }
+    if (j-i+1 >= 4 && Math.abs(tot) >= 50 && Math.abs(tot) <= 135) {
+      const m = (i+j+1) >> 1, c = circ3(rel[i][0], rel[i][1], rel[m][0], rel[m][1], rel[j][2], rel[j][3]);
+      if (c && c.r >= 0.5 && c.r <= 1.3) {
+        let ok = true; for (let q=i; q<=j && ok; q++) ok = Math.abs(Math.hypot(rel[q][2]-c.x, rel[q][3]-c.y)-c.r) <= Math.max(0.01, 0.03*c.r);
+        if (ok) { arcs.push({x:c.x, y:c.y, r:c.r, a0:Math.atan2(rel[i][1]-c.y, rel[i][0]-c.x)*180/Math.PI, a1:Math.atan2(rel[j][3]-c.y, rel[j][2]-c.x)*180/Math.PI}); for (let q=i; q<=j; q++) drop[q] = 1; }
+      }
+    }
+    i = j+1;
+  }
+  return {arcs, drop};
+}
+// controlli della selezione sul PDF vettoriale: colori trovati, filtro, conteggio
+function impVecCtl(r) {
+  const box = $id('imp-vec'); if (!box) return;
+  if (!r) { box.innerHTML = ''; return; }
+  const cols = r.cols.slice(0, 8);
+  box.innerHTML = '<div style="margin:2px 0">Linee da usare (colori trovati nella selezione; giallo = demolizioni, rosso = costruzioni):</div>' +
+    cols.map(c => '<label class="vcol"><input type="checkbox" '+(c.on ? 'checked' : '')+' data-k="'+c.key+'" onchange="impVecCol(this)"><i style="background:rgb('+c.r+','+c.g+','+c.b+')"></i>'+c.name+' '+(c.pc < 1 ? '<1' : Math.round(c.pc))+'%</label>').join('') +
+    '<label class="vcol"><input type="checkbox" '+(imp.vfilt ? 'checked' : '')+' onchange="imp.vfilt=this.checked; impPrevSchedule()">Togli testi, quote e tratteggi</label>' +
+    '<div>'+fmtN(r.keep.length)+' linee al ricalco'+(r.stat.text || r.stat.dims || r.stat.hatch ? ' (tolte: '+[r.stat.text ? fmtN(r.stat.text)+' di testi' : '', r.stat.dims ? r.stat.dims+' quote' : '', r.stat.hatch ? fmtN(r.stat.hatch)+' di tratteggi' : ''].filter(Boolean).join(', ')+')' : '')+'</div>';
+}
+function impVecCol(el) { imp.vcol[el.dataset.k] = el.checked; impPrevSchedule(); }
+function impVecPrev() {
+  const sp = impSelPt(); imp.prev = null;
+  if (!sp) { impVecCtl(null); return; }
+  const r = vecPick(imp.vec, sp, imp.vcol, imp.vfilt); imp.vpick = r;
+  impVecCtl(r);
+  if (!$id('imp-prev').checked) return;
+  const k = imp.pxPerPt, w = Math.round((sp.x1-sp.x0)*k), h = Math.round((sp.y1-sp.y0)*k), z = Math.min(2, 1800/Math.max(w, h));
+  const o = document.createElement('canvas'); o.width = Math.max(1, Math.round(w*z)); o.height = Math.max(1, Math.round(h*z));
+  const ox = o.getContext('2d'), S = imp.vec.S; ox.strokeStyle = 'rgba(255,120,0,.95)'; ox.lineWidth = 1.6; ox.beginPath();
+  r.keep.forEach(i => { const c = clipSeg(S[i*4], S[i*4+1], S[i*4+2], S[i*4+3], sp); if (!c) return; ox.moveTo((c[0]-sp.x0)*k*z, (c[1]-sp.y0)*k*z); ox.lineTo((c[2]-sp.x0)*k*z, (c[3]-sp.y0)*k*z); });
+  ox.stroke();
+  imp.prev = {cv:o, x0:sp.x0*k, y0:sp.y0*k, w, h};
+}
+
+// Usa, PDF vettoriale: linee della selezione al motore del DXF, base ridisegnata nitida solo nel riquadro
+async function impConfirmVec() {
+  if (!imp.mpp) { alert('Scala non impostata: tocca "1:..." e scegli il rapporto del disegno (1:50, 1:100...), oppure usa "Scala" su una misura nota.'); return; }
+  const sp = impSelPt(); if (!sp) { alert('Seleziona con un trascinamento il disegno da importare (per esempio lo stato di fatto).'); return; }
+  const V = imp.vec, k = imp.mpp*imp.pxPerPt, hm = (sp.y1-sp.y0)*k, wm = (sp.x1-sp.x0)*k;   // k = metri reali per pt di carta
+  if (wm > 400 || hm > 400) { alert('Selezione troppo estesa: '+wm.toFixed(0)+' x '+hm.toFixed(0)+' m. Controlla la scala.'); return; }
+  // immagine dentro la selezione (pianta raster incollata nel PDF): ricalco a pixel su quella parte
+  let imA = 0, nat = 0; V.imgs.forEach(im => { const ix = Math.max(0, Math.min(im.x1, sp.x1)-Math.max(im.x0, sp.x0)), iy = Math.max(0, Math.min(im.y1, sp.y1)-Math.max(im.y0, sp.y0)); if (ix*iy > 0) { imA += ix*iy; if (im.ptpx && (!nat || im.ptpx < nat)) nat = im.ptpx; } });
+  if (imA > 0.3*(sp.x1-sp.x0)*(sp.y1-sp.y0)) { await impConfirmPdfRaster(sp, k, nat); return; }
+  const t0 = performance.now();
+  const r = vecPick(V, sp, imp.vcol, imp.vfilt), tPick = performance.now()-t0;
+  if (!r.keep.length) { alert('Nella selezione non ci sono linee dei colori scelti.'); return; }
+  if (r.keep.length > VEC_SEL_MAX) { alert('Troppe linee nella selezione ('+fmtN(r.keep.length)+', il massimo su questo dispositivo è '+fmtN(VEC_SEL_MAX)+'): restringi il rettangolo al solo disegno che ti serve, oppure togli i colori che non servono.'); return; }
+  busy('Ricalco '+fmtN(r.keep.length)+' linee...'); await pause(40);
+  try {
+    const S = V.S, wx = x => (x-sp.x0)*k, wy = y => hm-(y-sp.y0)*k;
+    const doorArc = a => a >= 0 && V.arcs[a].r*k >= 0.5 && V.arcs[a].r*k <= 1.3;
+    const rel = [], pid = [], arcs = [], usedArc = new Set();
+    r.keep.forEach(i => {
+      const a = V.SA[i];
+      if (doorArc(a)) { usedArc.add(a); return; }                                // arco di porta: va al motore come arco, non come linee
+      const c = clipSeg(S[i*4], S[i*4+1], S[i*4+2], S[i*4+3], sp); if (!c) return;
+      const s = [wx(c[0]), wy(c[1]), wx(c[2]), wy(c[3])]; if (Math.hypot(s[2]-s[0], s[3]-s[1]) < 0.002) return;
+      rel.push(s); pid.push(V.SP[i]);
+    });
+    usedArc.forEach(a => { const A = V.arcs[a], X = wx(A.x), Y = wy(A.y); arcs.push({x:X, y:Y, r:A.r*k, a0:Math.atan2(wy(A.sy)-Y, wx(A.sx)-X)*180/Math.PI, a1:Math.atan2(wy(A.ey)-Y, wx(A.ex)-X)*180/Math.PI}); });
+    const pa = polyArcs(rel, pid), segs = rel.filter((_, q) => !pa.drop[q]); arcs.push(...pa.arcs);
+    const t1 = performance.now(), P = dxfPlan(segs, arcs), tPlan = performance.now()-t1;
+    // base: il solo riquadro ridisegnato dal PDF, circa mezzo centimetro per pixel (meno se la memoria non basta)
+    busy('Disegno la base del riquadro...'); await pause(30);
+    let mppU = 0.005; const MAXPX = COARSE ? 4e6 : 9e6;
+    while ((wm/mppU)*(hm/mppU) > MAXPX) mppU *= 1.25;
+    const w = Math.max(1, Math.ceil(wm/mppU)), h = Math.max(1, Math.ceil(hm/mppU)), s = k/mppU, t2 = performance.now();
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const cx = cv.getContext('2d', {willReadFrequently:true}); cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h);
+    await imp.page.render({canvasContext:cx, viewport:imp.page.getViewport({scale:s, offsetX:-sp.x0*s, offsetY:-sp.y0*s})}).promise;
+    const px = cx.getImageData(0, 0, w, h).data, mask = new Uint8Array(w*h);
+    for (let q=0; q<mask.length; q++) mask[q] = (px[q*4]+px[q*4+1]+px[q*4+2]) < 570 ? 1 : 0;
+    const tRen = performance.now()-t2;
+    const u = {mask, w, h, mpp:mppU, x:0, y:hm, alpha:0.6, visible:true};
+    buildUnderlayView(u); u.color = cv; u.showColor = false;
+    u.vec = dxfPrev(P); u.vec.ms = Math.round(tPlan);
+    const deg = new Array(P.nodes.length).fill(0); P.edges.forEach(e => { if (!e.dead) { deg[e.a]++; deg[e.b]++; } });
+    u._corners = []; P.nodes.forEach((nd, q) => { if (deg[q] >= 2) u._corners.push({px:nd.x/mppU, py:(hm-nd.y)/mppU}); });   // angoli per la calamita: dai nodi esatti, non dai pixel
+    const ratio = Math.round(k/PT_M);
+    window.VEC_STAT = Object.assign(window.VEC_STAT || {}, {pick:Math.round(tPick), plan:Math.round(tPlan), render:Math.round(tRen), segs:segs.length, arcs:arcs.length, stat:r.stat, rooms:u.vec.rooms.length,
+      doors:u.vec.ops.filter(o => o.type==='P').length, wins:u.vec.ops.filter(o => o.type==='F').length, pil:u.vec.pil.length, w, h, mpp:mppU, ratio});
+    state.underlay = u; state.wallsPrev = null; state.moveBase = false;
+    busy(null); impClose(); refreshBasePanel(); fitUnderlay();
+    if (prog()) { setTip('PDF importato come base. Il ricalco crea il rilievo: si fa nello Stato di fatto.'); return; }
+    wallsOpen();
+    setTip('PDF vettoriale importato (1:'+ratio+', '+fmtN(segs.length)+' linee esatte): ambienti, porte (arancione), finestre (azzurro) e pilastri (verde) proposti. Controlla e premi Applica.');
+  } finally { busy(null); }
+}
+// immagine dentro un PDF vettoriale: il riquadro ridisegnato alla risoluzione dell'immagine, poi ricalco a pixel come per le catastali
+async function impConfirmPdfRaster(sp, k, nat) {
+  busy('Nella selezione c\'è un\'immagine: la preparo per il ricalco a pixel...'); await pause(30);
+  try {
+    const wm = (sp.x1-sp.x0)*k, hm = (sp.y1-sp.y0)*k;
+    let mpp = Math.max(0.005, nat ? nat*k : 0.01); const MAXPX = COARSE ? 6e6 : 16e6;
+    while ((wm/mpp)*(hm/mpp) > MAXPX) mpp *= 1.2;
+    const w = Math.max(1, Math.ceil(wm/mpp)), h = Math.max(1, Math.ceil(hm/mpp)), s = k/mpp;
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const cx = cv.getContext('2d', {willReadFrequently:true}); cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h);
+    await imp.page.render({canvasContext:cx, viewport:imp.page.getViewport({scale:s, offsetX:-sp.x0*s, offsetY:-sp.y0*s})}).promise;
+    const d = cx.getImageData(0, 0, w, h).data, mask = inkMask(d, w, h, mpp, imp.ink || 'photo', imp.thr);
+    const u = {mask, w, h, mpp, x:0, y:hm, alpha:0.6, visible:true};
+    buildUnderlayView(u); u.color = cv; u.showColor = false;
+    const eff = Math.max(mpp, nat*k); u.effPx = THIN_WALL/eff; u.lowRes = u.effPx < LOWRES_PX;
+    state.underlay = u; state.wallsPrev = null; state.moveBase = false;
+    busy(null); impClose(); refreshBasePanel(); fitUnderlay();
+    setTimeout(() => { try { underlayCorners(); } catch (e) {} }, 400);
+    setTip(u.lowRes ? lowResMsg(u.effPx) : 'Base importata dall\'immagine contenuta nel PDF. Usa "Ricalca ambienti" nel pannello a sinistra.', u.lowRes ? 'warn' : undefined);
+  } finally { busy(null); }
+}
+function lowResMsg(px) { return 'Risoluzione insufficiente: il ricalco non è affidabile. Una tramezza da 8 cm qui è '+px.toFixed(1).replace('.', ',')+' px, ne servono circa 3: usa un file più definito, oppure disegna a mano sulla base.'; }
 
 // ── finestra di selezione ───────────────────────────────────
 // imp.ink = come leggere i tratti: 'dark' tratti scuri su fondo chiaro (catasto), 'light' tratti chiari su fondo scuro, 'photo' foto di carta
@@ -8019,7 +8499,12 @@ function impOpen() {
   imp.prev = null; imp.ptrs.clear(); imp.pinch = null; imp.drag = null; imp.tap = null; imp.loupe = null;
   impResize(); impFit(); impUpdateBar(); impDraw();
 }
-function impClose() { $id('imp-overlay').classList.remove('show'); imp.src=null; imp.prev=null; imp.ink=null; }
+function impClose() { $id('imp-overlay').classList.remove('show'); imp.src=null; imp.prev=null; imp.ink=null; impPdfReset(); }
+// dati del PDF aperto (2.44): documento, pagina, linee lette; si liberano chiudendo la finestra
+function impPdfReset() {
+  if (imp.doc) { try { imp.doc.destroy(); } catch (e) {} }
+  imp.doc = null; imp.page = null; imp.vec = null; imp.vpick = null; imp.vgrid = null; imp.pdf = false; imp.ratio = null; imp.ratioSrc = ''; imp.pxPerPt = null; imp.rasterPtPx = 0; imp.pages = 1; imp.pageN = 1;
+}
 function impResize() { $id('imp-overlay').classList.toggle('bottom', window.innerHeight > window.innerWidth); const r=impCv.getBoundingClientRect(); impCv.width=Math.round(r.width); impCv.height=Math.round(r.height); impDraw(); }
 function impFit() {
   if (!imp.src) return;
@@ -8125,15 +8610,18 @@ function impHitQuote(p) {
 }
 function impPoints() { return imp.mode==='calib' ? imp.calib : imp.mode==='quad' ? imp.quad : null; }
 function impUpdateBar() {
-  $id('imp-info').textContent = (imp.note||'') + (imp.mpp ? '' : '  Scala non impostata.');
+  $id('imp-info').textContent = (imp.note||'') + (imp.ratio ? ' Scala 1:'+imp.ratio+(imp.ratioSrc||'')+'.' : '') + (imp.mpp ? '' : '  Scala non impostata.');
+  $id('imp-m-ratio').style.display = imp.pdf ? '' : 'none';                // PDF: le misure sono millimetri di carta, la scala si sceglie dal rapporto
+  $id('imp-ratio-cap').textContent = imp.ratio ? '1:'+imp.ratio : imp.mpp && imp.pxPerPt ? '≈1:'+Math.round(imp.mpp*imp.pxPerPt/PT_M) : 'Rapporto';
   ['rect','pan','quad','calib'].forEach(m => $id('imp-m-'+m).classList.toggle('active', imp.mode===m));
   // mostra solo i comandi che servono: Raddrizza per le foto, Scala se non e' stata trovata (o per le foto)
   $id('imp-m-quad').style.display  = imp.photo ? '' : 'none';
-  $id('imp-m-calib').style.display = (imp.photo || !imp.mpp) ? '' : 'none';
+  $id('imp-m-calib').style.display = (imp.photo || !imp.mpp || imp.vec) ? '' : 'none';
   const nQ = imp.quad.length, nC = imp.calib.length;
   $id('imp-m-ok').style.display = (imp.mode==='calib' && nC===2) || (imp.mode==='quad' && nQ===4) ? '' : 'none';
   const dist = nC===2 ? ' Distanza sull\'immagine: '+Math.hypot(imp.calib[0].x-imp.calib[1].x, imp.calib[0].y-imp.calib[1].y).toFixed(1)+' px.' : '';
-  $id('imp-hint').textContent = imp.mode==='rect' ? 'Trascina per selezionare l\'appartamento, poi tocca Usa. Con due dita ingrandisci e sposti la pagina.'
+  $id('imp-hint').textContent = imp.mode==='rect' ? (imp.vec ? 'Trascina per selezionare il disegno da importare (per esempio lo stato di fatto), scegli la scala con "1:..." e tocca Usa. Con due dita ingrandisci e sposti la tavola.'
+        : 'Trascina per selezionare l\'appartamento, poi tocca Usa. Con due dita ingrandisci e sposti la pagina.')
     : imp.mode==='pan' ? 'Trascina per spostare la pagina. Torna ad Area per selezionare.'
     : imp.mode==='quad' ? (nQ<4 ? 'Tocca i 4 angoli del foglio ('+nQ+'/4). Con due dita ingrandisci.' : 'Trascina i punti per regolarli, poi tocca Conferma.')
     : (nC<2 ? (imp.quotesBusy ? 'Cerco le linee di quota...' : imp.quotes && imp.quotes.length ? 'Ho trovato '+imp.quotes.length+' possibili linee di quota (verdi, numerate): tocca quella giusta, oppure tocca due punti a mano.'
@@ -8141,7 +8629,8 @@ function impUpdateBar() {
         : 'Trascina i punti per regolarli, poi tocca Conferma.'+dist);
   const ctl = !!imp.sel && !(imp.drag && imp.drag.kind==='rect');
   $id('imp-ctl').style.display = ctl ? 'flex' : 'none';
-  if (ctl) { $id('imp-ink').value = imp.ink; $id('imp-thr-wrap').style.display = imp.ink==='photo' ? 'none' : ''; }
+  if (ctl) { $id('imp-ink').value = imp.ink; $id('imp-thr-wrap').style.display = imp.ink==='photo' || imp.vec ? 'none' : ''; }
+  $id('imp-vec').style.display = imp.vec ? '' : 'none';
   $id('imp-text').style.display = (($id('imp-info').textContent + $id('imp-hint').textContent).trim()) || ctl ? 'block' : 'none';
 }
 
@@ -8161,6 +8650,7 @@ function impDefaultThr(c) {
   return DARK_THRESH;
 }
 function impSelChanged() {
+  if (imp.vec) { impUpdateBar(); impPrevSchedule(); return; }          // PDF vettoriale: niente soglia, si scelgono i colori delle linee
   imp.thr = impDefaultThr(impCrop(600));
   $id('imp-thr').value = imp.thr;
   impUpdateBar(); impPrevSchedule();
@@ -8171,6 +8661,7 @@ let _impPrevT = null;
 function impPrevSchedule() { clearTimeout(_impPrevT); _impPrevT = setTimeout(impPrevRun, 60); }
 function impPrevRun() {
   imp.prev = null;
+  if (imp.vec) { impVecPrev(); impDraw(); return; }
   const c = $id('imp-prev').checked ? impCrop(1100) : null;
   if (c) {
     const m = inkMask(c.d, c.pw, c.ph, (imp.mpp||0.01)/c.k, imp.ink, imp.thr);
@@ -8310,6 +8801,7 @@ function impPtrEnd(e) {
     if (qi!==null) { const q = imp.quotes[qi]; imp.calib = [{x:q.x0, y:q.y0}, {x:q.x1, y:q.y1}]; }     // linea di quota proposta: i due estremi, ancora regolabili
     else if (list && list.length<max) list.push(impToSrc(tap));
   }
+  if (imp.vec && imp.mode==='calib') imp.calib.forEach(impSnapVec);                 // PDF vettoriale: il punto va sull'estremo della linea
   if (d && d.kind==='rect') { if (e.type==='pointerup') impSelChanged(); else { imp.sel = d.prevSel; impUpdateBar(); } }
   else impUpdateBar();
   impDraw();
@@ -8328,7 +8820,7 @@ function impCalibAsk() {
   askDialog('Calibra scala', [{label:'Distanza reale tra i due punti (m)', id:'d', value:'', type:'number'}],
     'Distanza sull\'immagine: '+px.toFixed(1)+' px. Esempio: il numero scritto sopra la linea di quota.', v => {
       const d = parseFloat(v.d);
-      if (isFinite(d) && d>0 && px>1) { imp.mpp = d/px; imp.note = 'Scala impostata a mano: 1 px = '+(imp.mpp*100).toFixed(2)+' cm.'; }
+      if (isFinite(d) && d>0 && px>1) { imp.mpp = d/px; imp.ratio = null; imp.note = 'Scala impostata a mano: 1 px = '+(imp.mpp*100).toFixed(2)+' cm.'; }
       imp.calib=[]; impSetMode('rect');
     }, () => { impUpdateBar(); impDraw(); });                // annullo la domanda: i punti restano, si possono ancora regolare
 }
@@ -8348,16 +8840,31 @@ function dxfPlan(raw, arcs) {
     const d = Math.hypot(p[0]-(s.ax+t*dx), p[1]-(s.ay+t*dy)), L = Math.sqrt(L2);
     if (d < EPS && t*L > EPS && (1-t)*L > EPS) ts[i].push(t);
   };
-  for (let i=0; i<n; i++) for (let j=i+1; j<n; j++) {
-    const a = bb[i], b = bb[j]; if (a.x1 < b.x0 || b.x1 < a.x0 || a.y1 < b.y0 || b.y1 < a.y0) continue;
+  // griglia (2.44): ogni linea va nelle celle che il suo riquadro tocca; una coppia si confronta una volta sola, nella cella
+  // dove comincia la sovrapposizione dei due riquadri. Stessi calcoli del doppio ciclo di prima, senza le coppie lontane
+  let gx0 = Infinity, gy0 = Infinity, gx1 = -Infinity, gy1 = -Infinity;
+  bb.forEach(b => { if (b.x0 < gx0) gx0 = b.x0; if (b.y0 < gy0) gy0 = b.y0; if (b.x1 > gx1) gx1 = b.x1; if (b.y1 > gy1) gy1 = b.y1; });
+  let GS = Math.max(0.05, Math.sqrt(Math.max((gx1-gx0)*(gy1-gy0), 1e-6)/Math.max(n, 1))*2);
+  while (n && ((gx1-gx0)/GS+1)*((gy1-gy0)/GS+1) > 4e6) GS *= 1.5;
+  const GC = n ? Math.floor((gx1-gx0)/GS)+1 : 0, GR = n ? Math.floor((gy1-gy0)/GS)+1 : 0, grid = new Map();
+  const gcx = x => Math.min(GC-1, Math.floor((x-gx0)/GS)), gcy = y => Math.min(GR-1, Math.floor((y-gy0)/GS));
+  for (let i=0; i<n; i++) { const b = bb[i]; for (let cx=gcx(b.x0); cx<=gcx(b.x1); cx++) for (let cy=gcy(b.y0); cy<=gcy(b.y1); cy++) { const k = cx*GR+cy, l = grid.get(k); if (l) l.push(i); else grid.set(k, [i]); } }
+  const pair = (i, j) => {
     const si = S[i], sj = S[j];
     onSeg([sj.ax, sj.ay], si, i); onSeg([sj.bx, sj.by], si, i); onSeg([si.ax, si.ay], sj, j); onSeg([si.bx, si.by], sj, j);
     const dix = si.bx-si.ax, diy = si.by-si.ay, djx = sj.bx-sj.ax, djy = sj.by-sj.ay, d = dix*djy - diy*djx;
-    if (Math.abs(d) < 1e-12) continue;
+    if (Math.abs(d) < 1e-12) return;
     const t = ((sj.ax-si.ax)*djy - (sj.ay-si.ay)*djx)/d, u = ((sj.ax-si.ax)*diy - (sj.ay-si.ay)*dix)/d;
     const Li = Math.hypot(dix, diy), Lj = Math.hypot(djx, djy);
     if (t*Li > EPS && (1-t)*Li > EPS && u*Lj > EPS && (1-u)*Lj > EPS) { ts[i].push(t); ts[j].push(u); }
-  }
+  };
+  grid.forEach((l, key) => {
+    for (let p=0; p<l.length; p++) for (let q=p+1; q<l.length; q++) {
+      const i = l[p], j = l[q], a = bb[i], b = bb[j];                 // nella cella gli indici sono crescenti: i < j come prima
+      if (a.x1 < b.x0 || b.x1 < a.x0 || a.y1 < b.y0 || b.y1 < a.y0) continue;
+      if (gcx(Math.max(a.x0, b.x0))*GR + gcy(Math.max(a.y0, b.y0)) === key) pair(i, j);
+    }
+  });
   // 2. nodi (1 mm) e lati senza doppioni
   const nodeId = new Map(), nodes = [];
   const cell = 0.003, nid = (x, y) => {                  // nodo gia' presente entro 1,5 mm (griglia con controllo delle celle vicine: niente salti da arrotondamento)
@@ -8520,9 +9027,11 @@ function dxfPlan(raw, arcs) {
   const compEdges = new Array(nc).fill(0); live().forEach(e => compEdges[comp[e.a]]++);
   const pip = (poly, x, y) => { let r = false; for (let i=0, j=poly.length-1; i<poly.length; j=i++) { const A = poly[i], B = poly[j]; if ((A.y>y)!==(B.y>y) && x < (B.x-A.x)*(y-A.y)/(B.y-A.y)+A.x) r = !r; } return r; };
   const pos = faces.filter(f => f.area > 1e-4).map(f => Object.assign(f, {poly:f.cyc.map(i => nodes[i]), set:new Set(f.cyc)}));
+  pos.forEach(f => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; f.poly.forEach(p => { if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x; if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y; }); f.bx = [x0, y0, x1, y1]; });
   pos.forEach(f => {                                  // quanto spazio occupano, dentro di loro, altre figure di altri pezzi del disegno
     f.inside = 0;
-    pos.forEach(g => { if (g===f || g.area >= f.area) return; const v = g.cyc.find(i => !f.set.has(i)); if (v!==undefined && pip(f.poly, nodes[v].x, nodes[v].y) && comp[g.cyc[0]]!==comp[f.cyc[0]]) f.inside += g.area; });
+    pos.forEach(g => { if (g===f || g.area >= f.area) return; if (g.bx[2] < f.bx[0] || g.bx[0] > f.bx[2] || g.bx[3] < f.bx[1] || g.bx[1] > f.bx[3]) return;      // fuori dal riquadro: fuori di sicuro (2.44, solo velocita')
+      const v = g.cyc.find(i => !f.set.has(i)); if (v!==undefined && pip(f.poly, nodes[v].x, nodes[v].y) && comp[g.cyc[0]]!==comp[f.cyc[0]]) f.inside += g.area; });
   });
   const rooms = pos.filter(f => f.area >= 0.8 && f.area/f.per >= 0.18 && f.inside < 1.0 && !f.cyc.some((p, i) => { const q = f.cyc[(i+1)%f.cyc.length]; return false; }));
   // 6. pilastri: quadrati chiusi isolati, 15-80 cm
@@ -8533,10 +9042,10 @@ function dxfPlan(raw, arcs) {
     if (w >= 0.15 && w <= 0.8 && h >= 0.15 && h <= 0.8 && f.area >= 0.8*w*h) pil.push({x:Math.min(...xs), y:Math.max(...ys), w, h});
   });
   // 7. finestre: celle sottili chiuse dentro lo spessore del muro (anche divise in piu' strisce)
-  const cells = [];
+  const cells = [], bridges = new Set(); edges.forEach(e => { if (e.bridge) { bridges.add(e.a+'_'+e.b); bridges.add(e.b+'_'+e.a); } });
   pos.forEach(f => {
     if (rooms.includes(f) || f.area < 0.01 || f.area >= 0.8 || compEdges[comp[f.cyc[0]]] <= 8) return;
-    if (f.cyc.some((p, i) => { const q = f.cyc[(i+1)%f.cyc.length]; return edges.some(e => e.bridge && ((e.a===p && e.b===q) || (e.a===q && e.b===p))); })) return;      // il varco di una porta
+    if (f.cyc.some((p, i) => bridges.has(p+'_'+f.cyc[(i+1)%f.cyc.length]))) return;      // il varco di una porta
     // lato lungo = direzione del muro
     let ux = 1, uy = 0, bl = 0; f.cyc.forEach((p, i) => { const q = f.cyc[(i+1)%f.cyc.length], l = len(p, q); if (l > bl) { bl = l; ux = (nodes[q].x-nodes[p].x)/l; uy = (nodes[q].y-nodes[p].y)/l; } });
     const us = f.poly.map(p => p.x*ux+p.y*uy), vs = f.poly.map(p => -p.x*uy+p.y*ux);
@@ -8721,11 +9230,15 @@ function dxfPrev(P) {
 
 function impConfirm() {
   if (!imp.src) return;
+  if (imp.vec) { impConfirmVec().catch(err => { busy(null); alert('Import non riuscito: '+(err && err.message || err)); }); return; }
   if (!imp.mpp) { alert('Scala non impostata: usa "Scala".'); return; }
   const c = impCrop(Infinity);
   if (!c) { alert('Seleziona con un trascinamento l\'area dell\'appartamento.'); return; }
   const mask = inkMask(c.d, c.pw, c.ph, imp.mpp, imp.ink, imp.thr);
   const u = {mask, w:c.pw, h:c.ph, mpp:imp.mpp, x:0, y:c.ph*imp.mpp, alpha:0.6, visible:true};
+  // risoluzione vera: il pixel dell'immagine originale del PDF (la pagina disegnata piu' grande non aggiunge dettaglio)
+  const eff = Math.max(imp.mpp, imp.rasterPtPx && imp.pxPerPt ? imp.rasterPtPx*imp.pxPerPt*imp.mpp : 0);
+  u.effPx = THIN_WALL/eff; u.lowRes = u.effPx < LOWRES_PX;
   buildUnderlayView(u);
   if (c.pw*c.ph <= 16e6) {                                // la base si vede anche com'era, a colori: tratti sottili, testi, nomi
     const col = document.createElement('canvas'); col.width=c.pw; col.height=c.ph;
@@ -8735,7 +9248,7 @@ function impConfirm() {
   state.underlay = u; state.wallsPrev = null; state.moveBase = false;
   impClose(); refreshBasePanel(); fitUnderlay();
   setTimeout(() => { try { underlayCorners(); } catch (e) {} }, 400);       // angoli della base per la calamita, pronti prima del primo uso
-  setTip('Base importata. Usa "Ricalca ambienti" nel pannello a sinistra.');
+  setTip(u.lowRes ? lowResMsg(u.effPx) : 'Base importata. Usa "Ricalca ambienti" nel pannello a sinistra.', u.lowRes ? 'warn' : undefined);
 }
 
 // ── proposta muri ───────────────────────────────────────────
@@ -8765,6 +9278,12 @@ function wallsRun() {
     state.wallsPrev = u.vec;
     const nD = u.vec.ops.filter(o => o.type==='P').length, nF = u.vec.ops.length - nD;
     $id('walls-count').textContent = u.vec.rooms.length+' ambienti, '+nD+' porte, '+nF+' finestre, '+u.vec.pil.length+' pilastri ('+u.vec.ms+' ms). Togli la spunta agli ambienti che non servono.';
+    wallsList(); draw(); return;
+  }
+  const effPx = u.effPx || THIN_WALL/u.mpp;                              // tramezza da 8 cm sotto i 3 pixel: niente risultati inventati
+  if (!u.forceRun && (u.lowRes || effPx < LOWRES_PX)) {
+    state.wallsPrev = null; document.querySelectorAll('.wp-raster').forEach(el => { el.style.display = 'none'; });
+    $id('walls-count').innerHTML = lowResMsg(effPx)+' <button onclick="wallsForce()">Prova comunque</button>';
     wallsList(); draw(); return;
   }
   const lev = ROOM_LEVELS[+$id('w-lev').value] || ROOM_LEVELS[3];
@@ -8797,6 +9316,7 @@ function wallsRun() {
   $id('walls-count').textContent = r.rooms.length+' ambienti, '+nP+' porte, '+(ops.length-nP)+' finestre, '+r.segs.length+' linee, muri esterni ~'+(r.wallTcm||0)+' cm ('+Math.round(performance.now()-t)+' ms)';
   wallsList(); draw();
 }
+function wallsForce() { const u = state.underlay; if (!u) return; u.forceRun = true; document.querySelectorAll('.wp-raster').forEach(el => { el.style.display = ''; }); wallsSchedule(); }
 function wallsApply() {
   const P = state.wallsPrev; if (!P || !P.segs.length) return;
   if (prog()) { setTip('Il ricalco crea il rilievo: si fa nello Stato di fatto.'); return; }
@@ -9577,8 +10097,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.43';
-const APP_NOTE = ["Tabella della superficie commerciale: in fondo un promemoria \"Metodo di calcolo\" con come si arriva alla cifra (superficie utile e coefficienti, muri con o senza contorno esterno, lati contati con gli spigoli), per verificare il calcolo", "Lunghezza con la tastiera: mentre traccii un muro basta scrivere un numero (anche con la virgola) e Invio; il muro va nella direzione del cursore, con gli angoli guidati. Valgono anche le linee di costruzione. Quando ricalchi continui a toccare il disegno", "Linee di costruzione (menu Disegna): linea, cerchio e quadrato (o rettangolo, scrivendo LxH) di appoggio, con angoli guidati e lunghezze scritte. Estremi, punti medi, centri, angoli e incroci si agganciano con la calamita: muri, punti e altre costruzioni partono da lì. Non sono muri, non entrano nei calcoli né in PDF, JPG e DXF; si nascondono da Vista e si cancellano toccandole o da Modifica", "Incolla: dopo una copia il pulsante compare vicino alla selezione (nella barra della selezione, oppure in un riquadro accanto al punto toccato) e come voce nei menu del muro, del punto, dell'ambiente e del serramento. Non resta più in alto a destra, sotto la lente"];
+const APP_VERSION = '2.44';
+const APP_NOTE = ["PDF vettoriali (tavole esportate dal CAD, anche A0 e A1 con stato di fatto, progetto e raffronto): l'app legge le linee vere del disegno, non i pixel. Vedi tutta la tavola in anteprima, selezioni con il rettangolo solo il disegno che ti serve e tocca Usa: le linee della selezione vanno al ricalco come per il DXF (ambienti, porte, finestre, pilastri), con la precisione del disegno", "Scala dei PDF: nuovo pulsante \"1:\" con 1:20, 1:50, 1:100, 1:200, 1:500 (o un altro rapporto); le misure di un PDF sono millimetri di carta esatti. In alternativa resta Scala su una misura nota: sul PDF vettoriale i punti si agganciano agli estremi delle linee. Sui PDF vettoriali non si cerca più la barra di scala", "Linee da usare: nella selezione compaiono i colori trovati (nero, grigio, rosso, giallo...) da spuntare; di partenza solo il nero. Per lo stato di fatto di un raffronto aggiungi il giallo (demolizioni), per il progetto il rosso (costruzioni). La casella \"Togli testi, quote e tratteggi\" scarta le scritte trasformate in curve, le quote con pallini o trattini e le campiture a linee fitte; le linee arancioni in anteprima sono quelle che vanno al ricalco", "Archi delle porte riconosciuti anche nei PDF (curve o spezzate) e passati al ricalco come nel DXF", "Dopo Usa la base è il solo riquadro scelto, ridisegnato nitido a mezzo centimetro per pixel circa (meno sui telefoni), con l'originale a colori nel pannello Base", "PDF di più pagine: si sceglie la pagina da importare. PDF grandi: messaggio con l'avanzamento e i secondi trascorsi; oltre il limite del dispositivo (800.000 linee su telefono, 3 milioni su computer) un avviso chiaro invece di un blocco", "Pianta a immagine incollata dentro un PDF vettoriale: se la selezione cade sull'immagine si usa il ricalco a pixel", "Catastali, scansioni e foto: se la risoluzione è troppo bassa (una tramezza da 8 cm sotto i 3 pixel circa) l'app dice \"Risoluzione insufficiente: il ricalco non è affidabile\" invece di proporre ambienti inventati; c'è comunque \"Prova comunque\". Anche i PDF a immagine non catastali possono prendere la scala dal rapporto", "Ricalco del DXF più veloce sui disegni grandi, con lo stesso risultato di prima"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
