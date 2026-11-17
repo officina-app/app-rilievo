@@ -267,6 +267,38 @@
     #oppanel.strip .op-msg { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:10px; }
     #oppanel.strip .op-empty { padding:6px; }
     body.opstrip #info-tip { bottom:calc(36px + 104px + var(--tb-h,0px)); }
+    /* 2.48: il pulsante del menu resta sempre sopra la striscia/colonna delle specchiature (prima ci finiva sotto e la barra non si riapriva piu') */
+    #menu-tab { z-index:172 !important; }
+    body.opstrip #menu-tab { bottom:calc(36px + 104px); }
+    body:not(.bm) #toolbar.hidden ~ #oppanel, body:not(.bm):has(#toolbar.hidden) #oppanel { top:52px; }
+    /* 2.48: rilievo in loco */
+    #btn-loco .ic { font-size:12px; font-weight:bold; }
+    #btn-loco.on { background:#1a6a3a; border-color:#5ef38c; }
+    body.loco #canvas { box-shadow:inset 0 0 0 3px #5ef38c; }
+    #loco-bar { position:fixed; left:var(--tb-w,0px); right:0; bottom:calc(28px + var(--tb-h,0px)); z-index:158; display:none; flex-direction:column; gap:6px; background:rgba(22,33,62,.97); border-top:2px solid #5ef38c; padding:6px 8px; font-size:15px; color:#ddd; }
+    #loco-bar .lb-r { display:flex; gap:6px; align-items:center; min-width:0; }
+    #loco-bar .lb-g { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #loco-bar button { min-height:48px; min-width:48px; padding:0 12px; font-size:15px; border-radius:8px; background:#0f3460; color:#eee; border:1px solid #1a5a9a; cursor:pointer; white-space:nowrap; }
+    #loco-bar button.ok { background:#1a6a3a; border-color:#2a9a5a; color:#fff; }
+    #loco-bar button:disabled { opacity:.45; }
+    #loco-bar input { width:118px; height:48px; font-size:20px; text-align:right; border-radius:8px; border:1px solid #4a9eff; background:#0f3460; color:#fff; padding:0 8px; flex:none; }
+    #loco-bar input.lk { border-color:#5ef38c; background:#123a2a; }
+    #loco-bar #lb-pos { color:#ffe066; white-space:nowrap; }
+    body.opstrip #loco-bar { bottom:calc(30px + 104px + var(--tb-h,0px)); }
+    body.loco #info-tip { bottom:calc(36px + var(--loco-h,0px) + var(--tb-h,0px)); }
+    @media (min-width:760px) { #loco-bar { left:auto; right:12px; width:440px; bottom:40px; border:2px solid #5ef38c; border-radius:10px; } body.loco #info-tip { bottom:calc(36px + var(--tb-h,0px)); } }
+    #selx-pop { flex-direction:column; gap:4px; padding:4px; min-width:200px; border-color:#4a9eff; }
+    #selx-pop .sx-h { font-size:12px; color:#9fb3d1; padding:4px 8px 0; }
+    #selx-pop button { min-height:48px; padding:0 14px; text-align:left; font-size:16px; color:#fff; background:#0f3460; border:1px solid #1a5a9a; border-radius:8px; cursor:pointer; }
+    #wr-bar { position:fixed; left:var(--tb-w,0px); right:0; bottom:calc(28px + var(--tb-h,0px)); z-index:159; display:none; flex-direction:column; gap:6px; background:rgba(22,33,62,.97); border-top:2px solid #ff8df7; padding:8px 10px; font-size:14px; color:#ddd; }
+    #wr-bar .wr-t { font-size:15px; color:#fff; } #wr-bar .wr-s { color:#ffb347; font-size:13px; }
+    #wr-bar .wr-why { font-size:14px; color:#ffc4f8; line-height:1.3; }
+    #wr-bar .wr-b, #wr-bar .wr-l { display:flex; gap:8px; }
+    #wr-bar .wr-b button { flex:1; min-height:48px; font-size:17px; border-radius:8px; border:1px solid #1a5a9a; background:#0f3460; color:#fff; cursor:pointer; }
+    #wr-bar .wr-b button.ok { background:#1a6a3a; border-color:#2a9a5a; } #wr-bar .wr-b button.no { background:#6a1c2a; border-color:#b5384f; }
+    #wr-bar .wr-l button { min-height:40px; padding:0 12px; font-size:14px; border-radius:8px; border:1px solid #1a5a9a; background:transparent; color:#9fd0ff; cursor:pointer; }
+    body.wrev #walls-panel { display:none !important; }
+    .wr-go { width:100%; min-height:40px; margin:2px 0 6px; font-size:14px; border-radius:8px; border:1px solid #ff8df7; background:#3a1a4a; color:#fff; cursor:pointer; }
     .vr-all { margin-top:8px; padding:9px 14px; border-radius:8px; border:1px solid #2a9a5a; background:#1a6a3a; color:#fff; font-size:14px; cursor:pointer; }
     @media (max-width:600px) { #sb-points, #sb-segments, #sb-ambienti, #sb-zoom, #sb-tool, #sb-save { display:none; } #info-tip { font-size:13px; } }
     @media (max-width:600px) and (orientation:portrait) {                     /* pannelli Base e Ricalco: foglio in basso, il disegno resta libero */
@@ -289,6 +321,7 @@
   <button class="tool-btn green" title="Annulla" onclick="undo()"><span class="ic">↩</span><span class="cap">Annulla</span></button>
   <button class="tool-btn green" id="btn-file" title="File" onclick="toggleMenu('file-submenu',this)"><span class="ic">💾</span><span class="cap">File</span></button>
   <button class="tool-btn" id="btn-view" title="Stato di fatto / Progetto: tocca per cambiare" onclick="toggleView()"><span class="ic">SdF</span><span class="cap">Di fatto</span></button>
+  <button class="tool-btn" id="btn-loco" title="Rilievo in loco: misure stanza per stanza, le stanze vicine restano ferme; poi Riassembla" onclick="toggleLoco()"><span class="ic">LOCO</span><span class="cap">In loco</span></button>
 </div>
 <button id="menu-tab" title="Mostra il menu" onclick="toggleMenuBar(true)">☰</button>
 
@@ -444,6 +477,7 @@
 <div id="amb-context" class="floating-menu ctx smart"><div class="ctx-in">
   <div class="menu-item" data-demo onclick="ambMenuAction('demo')"></div>
   <div class="menu-item" data-lock onclick="ambMenuAction('edit')">✎ Modifica ambiente<small class="md">Nome, altezza e categoria; mostra superficie e pareti</small></div>
+  <div class="menu-item" data-lock id="am-move" onclick="ambMenuAction('move')">✥ Sposta ambiente<small class="md">Trascina l'ambiente con i suoi muri; al rilascio si aggancia alla stanza vicina</small></div>
   <div class="menu-item" id="am-wpon" onclick="ambMenuAction('wpon')">⟲ Torna parametrico<small class="md">Le misure di adesso valgono come misure nette; tornano maniglie e legami con i vicini</small></div>
   <div class="menu-item" data-lock id="am-vgraf" onclick="ambMenuAction('vgraf')">⌒ Volta sul disegno<small class="md">Tocchi i quattro punti d'imposta sul disegno, poi le quote</small></div>
   <div class="menu-item" data-lock id="am-volta" onclick="ambMenuAction('volta')">⌒ Volta<small class="md">A botte o a crociera: quote d'imposta e in chiave, tratteggio in pianta, H min e H max</small></div>
@@ -553,6 +587,11 @@
 <div id="guide-card"></div>
 <button id="move-base-btn"  class="fab" onclick="toggleMoveBase()"      style="bottom:calc(144px + var(--tb-h,0px));background:#1a6a3a;border:1px solid #2a9a5a">✥ Base in spostamento - tocca per finire</button>
 <div id="wp-bar"></div>
+<div id="loco-bar"></div>
+<div id="wr-bar"></div>
+<div id="selx-pop" class="floating-menu"></div>
+<button id="moveroom-btn" class="fab" onclick="moveRoomStop()" style="bottom:calc(144px + var(--loco-h,0px) + var(--tb-h,0px));background:#1a6a3a;border:1px solid #2a9a5a">✥ Sposta ambiente: trascina - tocca qui per finire</button>
+<button id="snap-undo" class="fab" onclick="snapUndoTap()" style="bottom:calc(200px + var(--loco-h,0px) + var(--tb-h,0px));background:#6a4a1a;border:1px solid #c98a2a">↩ Togli aggancio</button>
 <div id="sel-bar">
   <span id="selb-n" title="Elementi selezionati"></span>
   <button id="selb-add" title="Ogni tocco aggiunge o toglie un elemento" onclick="toggleMulti()">➕ Aggiungi</button>
@@ -2501,8 +2540,9 @@ function assignFase() { const f = prog() ? 'nuovo' : 'es'; FASE_KEYS.forEach(k =
 function toggleView() {
   hideAllMenus(); assignFase();                 // chi e' nato in questa vista prende la sua fase prima del cambio
   state.view = prog() ? 'sdf' : 'prog';
+  if (prog() && state.loco) { state.loco = false; state.locoF = null; }        // il rilievo in loco si fa sullo stato di fatto
   setTool('select'); state.sel = null;
-  updateViewUI();
+  updateViewUI(); updateLocoUI();
   commit(prog() ? 'Progetto: tocca un muro o un serramento esistente per la demolizione (giallo), disegna le costruzioni (rosso).' : 'Stato di fatto: il rilievo com\'è oggi.', true);
 }
 function updateViewUI() {
@@ -2686,6 +2726,7 @@ function ambMenuAction(action) {
   const amb = state.ambienti[s.idx]; if (!amb) return;
   if (action==='demo') { setDemo([], [], [s.idx], amb.fase!=='demo'); return; }
   if (action==='wpon') { wpRestore(s.idx); return; }
+  if (action==='move') { moveRoomStart(s.idx); return; }
   if (action==='volta') { voltaDialog(s.idx); return; }
   if (action==='vgraf') { voltaGraf(s.idx); return; }
   if (action==='novolta') { const a = state.ambienti[s.idx]; if (!a || !a.volta) return; saveHistory(); delete a.volta; state.sel = null; commit('Volta tolta da '+a.name+': soffitto piano.'); return; }
@@ -3068,7 +3109,7 @@ function isSel(kind, idx) { return state.sel && state.sel.kind===kind && state.s
 // ═══════════════════════════════════════════════════════════
 const TIPS = {
   select:   'Tocca un\'entità per il menu. Trascina nel vuoto = selezione a riquadro. Vista: due dita, oppure il pulsante ✋ in alto a destra.',
-  room:     'Trascina da un angolo all\'angolo opposto: nasce l\'ambiente con i suoi muri (spessori standard). Vicino a un\'altra stanza si attacca da sola con la tramezza standard. Puoi disegnarne altre di seguito.',
+  room:     'Trascina da un angolo all\'angolo opposto, oppure tocca dove sta la stanza e scrivi le misure nette: nasce l\'ambiente con i suoi muri (spessori standard). Entro 1 m da un\'altra stanza si aggancia da sola: tramezza standard e lati a filo. Puoi disegnarne altre di seguito.',
   wall:     'Muro come polilinea: clic sul punto di partenza, poi un clic per ogni vertice (angolo guidato ogni 5°, forte sui 15°, sugli angoli della base e sui punti esistenti). Fine: clic sull\'ultimo punto, doppio clic o ESC.',
   point:    'Clicca per aggiungere punti, quanti ne vuoi. Seleziona per uscire.',
   connect:  'Clicca il punto A, poi il punto B.',
@@ -3125,7 +3166,7 @@ function setTool(t) {
   state.wallOrigin=null; state.wallPreview=null; state.wallSnapAngle=null; state.wallSnapPoint=null;
   state.openingDrag=null; state.drag=null; state.rectDraw=null; state.roomDraw=null; state.selBox=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null;
   state.stairPts=null; state.spiralC=null; state.spiralPrev=null; state.cPick=null; state.cPrev=null;
-  state.multi=false; state.moveSel=false; state.roomPts=null; state.inherit=null; state.merge=null;
+  state.multi=false; state.moveSel=false; state.roomPts=null; state.inherit=null; state.merge=null; state.moveRoom=null;
   state.moveBase=false; state.handMode=false;       // cambiare strumento chiude lo spostamento della base e la mano: altrimenti ogni tocco li ripete
   if (state.pencilCurrent) {
     if (state.pencilCurrent.pts.length>1) { saveHistory(); state.pencilLines.push(state.pencilCurrent); }
@@ -4186,12 +4227,12 @@ function wpSync(newRid) {
     if (!(A.rid < B.rid) || (A.a.fase || 'es')!==(B.a.fase || 'es')) return;
     const nw = newRid!==undefined && newRid!==null && (A.rid===newRid || B.rid===newRid);
     for (let ka = 0; ka < A.m; ka++) for (let kb = 0; kb < B.m; kb++) {
-      const f = wpFace(A, ka, B, kb, nw ? -0.6 : 0.02); if (!f) continue;
+      let l = old.find(o => o.a===A.rid && o.b===B.rid && o.ka===ka && o.kb===kb);
+      const f = wpFace(A, ka, B, kb, nw || l ? -0.6 : 0.02); if (!f) continue;
       if (f.g > 0.04) {                                      // in mezzo non deve esserci un altro ambiente
         const q = {x:f.M.x + A.S[ka].nx*f.g/2, y:f.M.y + A.S[ka].ny*f.g/2};
         if (polys.some(p => p.length >= 3 && inPoly(p, q.x, q.y))) continue;
       }
-      let l = old.find(o => o.a===A.rid && o.b===B.rid && o.ka===ka && o.kb===kb);
       if (!l) l = {a:A.rid, b:B.rid, ka, kb, t: nw && f.g <= 0.5 ? wpStd().int : Math.max(0.02, Math.round(f.g*1000)/1000)};
       l.g = wpR4(f.g);
       keep.push(l); L.push({l, A, ka, B, kb, f});
@@ -4218,12 +4259,16 @@ function wpGauss(N, b) {
 }
 // RISOLUTORE: ogni ambiente parametrico trasla (due incognite), la forma resta. fixed = rid degli ambienti che non si muovono.
 // Gerarchia dei pesi: ambiente fermo e tramezza misurata non cedono; la tramezza standard cede; "resta dove sei" e' debolissimo.
-function wpSolve(fixed, newRid) {
+// G0 = fili esterni (wpFili, solo Riassembla): ogni filo e' un'incognita, i lati esterni che ne fanno parte ci stanno sopra (peso come la tramezza misurata).
+// Nel Rilievo in loco, senza fili, nessuno si sposta: le tramezze mostrano lo scostamento.
+function wpSolve(fixed, newRid, G0) {
+  if (locoOn() && !G0) { wpSync(newRid); return; }
   const FIX = 1e9, LOCK = 1e6, SOFT = 1, STAY = 1e-4, fx = new Set(fixed || []);
-  for (let pass = 0; pass < 2; pass++) {
-    const {rooms, L} = wpSync(newRid); if (!rooms.length || !L.length) break;
+  for (let pass = 0; pass < (G0 ? 3 : 2); pass++) {
+    const {rooms, L} = wpSync(newRid), G = G0 ? wpFiliNow(G0, rooms) : [];
+    if (!rooms.length || (!L.length && !G.length)) break;
     rooms.forEach(R => { if (locked(R.a)) fx.add(R.rid); });      // nel Progetto il rilievo esistente non si sposta
-    const ix = new Map(rooms.map((R, i) => [R.rid, i])), n = rooms.length*2;
+    const nR = rooms.length, ix = new Map(rooms.map((R, i) => [R.rid, i])), n = nR*2 + G.length;
     const N = Array.from({length:n}, () => new Array(n).fill(0)), b = new Array(n).fill(0);
     const eq = (terms, rhs, w) => { terms.forEach(([i, ci]) => { b[i] += w*ci*rhs; terms.forEach(([j, cj]) => { N[i][j] += w*ci*cj; }); }); };
     rooms.forEach((R, i) => { const w = fx.has(R.rid) ? FIX : STAY; eq([[2*i, 1]], 0, w); eq([[2*i+1, 1]], 0, w); });
@@ -4231,6 +4276,7 @@ function wpSolve(fixed, newRid) {
       const i = ix.get(e.A.rid), j = ix.get(e.B.rid), w = e.f.w;
       eq([[2*j, w.x], [2*j+1, w.y], [2*i, -w.x], [2*i+1, -w.y]], e.l.t - e.f.g, e.l.lk ? LOCK : SOFT);
     });
+    G.forEach((g, gi) => g.mem.forEach(m => { const i = ix.get(m.R.rid); eq([[2*i, g.nx], [2*i+1, g.ny], [2*nR+gi, -1]], -m.c, LOCK); }));
     const x = wpGauss(N, b); let mv = 0;
     rooms.forEach((R, i) => {
       const dx = wpR4(x[2*i]), dy = wpR4(x[2*i+1]); if (!isFinite(dx) || !isFinite(dy) || (!dx && !dy)) return;
@@ -4396,7 +4442,7 @@ function rebuildWalls(fase) {
   const used = new Set(); state.segments.forEach((g, i) => { if (!segDel.has(i)) { used.add(g.a); used.add(g.b); } });
   state.ambienti.forEach(a => a.indices.forEach(i => used.add(i)));
   const pts = new Set(); state.points.forEach((p, i) => { if (p.mo && !used.has(i)) pts.add(i); });
-  if (segDel.size || pts.size) { const ws = state.wpSel; removeItems(pts, segDel, new Set()); state.wpSel = ws; }
+  if (segDel.size || pts.size) { const ws = state.wpSel; removeItems(pts, segDel, new Set(), true); state.wpSel = ws; }
   _wpGen = wpGenSig();
   return added;
 }
@@ -4629,14 +4675,21 @@ function wpSetT(W, t) {
 }
 // le quattro azioni sul muro. v = valore voluto (misura netta, spessore, lunghezza del lato) oppure spostamento della tramezza. Ritorna il testo, o null se non si puo'
 function wpDo(W, h, v) {
+  _wpLocoErr = null;
   if (h==='in') {
+    if (locoOn()) {                                        // rilievo in loco: si sposta un lato solo (perimetro fermo), le stanze vicine restano ferme
+      const r = wpLocoNet(W.R, W.k, v, W.keep); if (r.err || r.ask) { _wpLocoErr = r; return null; }
+      const R1 = wpRing(W.R.a); return W.R.a.name+': misura netta '+num(v)+' m (si sposta la parete '+wpDirName(R1.S[r.mv])+')';
+    }
     const m0 = wpNet(W.R, W.k); if (m0===null) return null;
+    if (wpLkHas(W.R.a, W.k, wpOpp(W.R, W.k))) { _wpLocoErr = {err:'Misura validata (lucchetto): per cambiarla togli prima il lucchetto dalla scheda della stanza (Rilievo in loco).'}; return null; }
     if (!wpOffset(W.R, W.k, v - m0)) return null;
     wpStamp(W.R.a); return W.R.a.name+': misura netta '+num(v)+' m';
   }
   if (h==='out') { const t = wpSetT(W, v); return 'Spessore '+num(t*100, 1).replace(',0', '')+' cm'; }
   if (h==='mid') {
     if (!W.e) return null;
+    if (wpLkSide(W.R.a, W.k) || wpLkSide(W.O.a, W.ko)) { _wpLocoErr = {err:'Una delle due stanze ha una misura validata su questa tramezza (lucchetto): per spostarla togli prima il lucchetto.'}; return null; }
     if (!wpOffset(W.R, W.k, v)) return null;
     const O = wpRing(W.O.a); if (!O || !wpOffset(O, W.ko, -v)) { const R = wpRing(W.R.a); if (R) wpOffset(R, W.k, -v); return null; }
     const R1 = wpStamp(W.R.a), O1 = wpStamp(W.O.a), a = R1 && wpNet(R1, W.k), b = O1 && wpNet(O1, W.ko);
@@ -4660,7 +4713,7 @@ function wpDragTo(sx, sy, ev) {
     else if (d.h==='out') txt = wpDo(W, 'out', d.t0 + dn);
     else if (d.h==='mid') txt = wpDo(W, 'mid', wpR2(dn));
     else txt = wpDo(W, d.h, Math.max(0.1, wpR2(d.len0 + (d.h==='e1' ? du : -du))));
-    if (txt===null) { wpDragBack(d); txt = 'Fin qui non si può'; }
+    if (txt===null) { wpDragBack(d); const er = _wpLocoErr; _wpLocoErr = null; txt = er && er.ask ? 'Due pareti esterne: tocca la maniglia e scrivi la misura, l\'app chiede quale tenere ferma' : er && er.err ? er.err : 'Fin qui non si può'; }
     wpSolve([W.R.rid]); rebuildWalls(wpFase());
     showTooltip(txt, ev.clientX, ev.clientY); draw();
   } catch (err) { console.error('muri parametrici', err); }
@@ -4674,11 +4727,16 @@ function wpUp() {
 }
 function wpAsk(h) {
   const W = wpWall(); if (!W) return;
-  const run = (v, okMsg) => {
+  const run = (v, okMsg, keep) => {
     const W2 = wpWall(); if (!W2) return;
+    if (keep!==undefined) W2.keep = keep;
     saveHistory();
     const txt = wpDo(W2, h, v);
-    if (txt===null) { state.history.pop(); setTip('Non si può: con questo valore un lato dell\'ambiente si annullerebbe.', 'warn'); draw(); return; }
+    if (txt===null) {
+      state.history.pop(); const er = _wpLocoErr; _wpLocoErr = null;
+      if (er && er.ask) { wpAskKeep(W2.R, er.ask, kp => run(v, okMsg, kp)); return; }       // due pareti esterne: quale resta ferma
+      setTip(er && er.err ? er.err : 'Non si può: con questo valore un lato dell\'ambiente si annullerebbe.', 'warn'); draw(); return;
+    }
     wpApply([W2.R.rid], txt + '.' + (okMsg || ''));
   };
   if (h==='out') {
@@ -4698,7 +4756,8 @@ function wpAsk(h) {
   }
   if (h==='in') {
     const m0 = wpNet(W.R, W.k); if (m0===null) { setTip('Su questo lato non trovo un lato di fronte da cui misurare.'); return; }
-    askDialog('Misura netta di '+W.R.a.name, [{label:'Misura netta (m), dal centro di questo lato al lato di fronte', id:'m', value:m0.toFixed(2), type:'number'}], 'Si sposta questo lato; il resto dell\'ambiente resta fermo e gli ambienti oltre il muro si spostano. Gli spessori restano.', v => {
+    if (wpLkHas(W.R.a, W.k, wpOpp(W.R, W.k))) { setTip('Misura validata (lucchetto): per cambiarla togli prima il lucchetto dalla scheda della stanza (Rilievo in loco).', 'warn'); return; }
+    askDialog('Misura netta di '+W.R.a.name, [{label:'Misura netta (m), dal centro di questo lato al lato di fronte', id:'m', value:m0.toFixed(2), type:'number'}], locoOn() ? 'Rilievo in loco: si sposta un lato solo (la parete esterna resta ferma) e le stanze vicine restano ferme; le tramezze mostrano lo scostamento.' : 'Si sposta questo lato; il resto dell\'ambiente resta fermo e gli ambienti oltre il muro si spostano. Gli spessori restano.', v => {
       const m = parseFloat(v.m); if (!(m > 0)) { draw(); return; }
       run(m);
     }, () => draw());
@@ -4729,14 +4788,16 @@ function wpBar(W) {
 function wpDraw() {
   try {
     if (PRINT) return;
+    locoSync();
     if (!state.ambienti.some(a => a.wt)) { wpBar(null); return; }
     if (state.wpSel && state.tool!=='select') state.wpSel = null;
     const W = wpWall();                                    // rilegge anche i legami (WPL)
     ctx.save(); ctx.font = 'bold 12px '+FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     WPL.forEach(e => {                                     // tramezze che hanno preso un residuo: sempre in vista
       if (!(Math.abs(e.l.g - e.l.t) > 0.0005)) return;
-      const q = w2s(e.f.M.x + e.A.S[e.ka].nx*e.f.g/2, e.f.M.y + e.A.S[e.ka].ny*e.f.g/2), s = wpResLabel(e.l), tw = ctx.measureText(s).width + 8;
-      ctx.fillStyle = '#ff9f1c'; ctx.fillRect(q.x-tw/2, q.y-9, tw, 18); ctx.fillStyle = '#111'; ctx.fillText(s, q.x, q.y);
+      const ov = Math.abs(e.l.g - e.l.t) > WP_TOL && (!locoOn() || _locoRia===wpGenSig());     // da verificare: in loco solo dopo Riassembla
+      const q = w2s(e.f.M.x + e.A.S[e.ka].nx*e.f.g/2, e.f.M.y + e.A.S[e.ka].ny*e.f.g/2), s = wpResLabel(e.l)+(ov ? ' !' : ''), tw = ctx.measureText(s).width + 8;
+      ctx.fillStyle = ov ? '#ff4d4d' : '#ff9f1c'; ctx.fillRect(q.x-tw/2, q.y-9, tw, 18); ctx.fillStyle = '#111'; ctx.fillText(s, q.x, q.y);
     });
     state.ambienti.forEach(a => {                          // ambiente non piu' parametrico: segno sopra il nome
       if (!a.wt || !a.wpx || !live(a) || hid(a)) return; const q = ambLabelPos(a); if (!q) return;
@@ -4745,6 +4806,7 @@ function wpDraw() {
       ctx.fillStyle = '#ff9f1c'; ctx.fillText(s, q.x, q.y-49);
     });
     ctx.restore();
+    locoDraw();
     wpBar(W); if (!W) return;
     const P = (al, off) => { const p = wpPt(W, al, off); return w2s(p.x, p.y); }, a = P(W.lo, 0), b = P(W.hi, 0), c = P(W.hi, W.t), d = P(W.lo, W.t);
     ctx.save(); ctx.fillStyle = 'rgba(255,224,102,.28)'; ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 1.5;
@@ -4805,14 +4867,8 @@ function finishRoom() {
     const w = parseFloat(v.w), d = parseFloat(v.d), hh = parseFloat(v.h);
     if (!(w>0) || !(d>0) || !(hh>0)) { draw(); return; }
     saveHistory();
-    const fase = wpFase(), old = wpSync().rooms.map(R => R.rid);
     const C = [{x:r.x0, y:r.y0}, {x:r.x0+sx*w, y:r.y0}, {x:r.x0+sx*w, y:r.y0+sy*d}, {x:r.x0, y:r.y0+sy*d}];
-    const ids = C.map(p => newPoint(p.x, p.y));                             // punti suoi: la stanza deve potersi spostare da sola
-    ids.forEach((id, k) => { state.segments.push({a:id, b:ids[(k+1)%4]}); });
-    let rid = 1; state.ambienti.forEach(a => { if (a.rid >= rid) rid = a.rid + 1; });
-    const am = { indices:ids, name:roomNameRead(v, null, nm0), h:hh, color:AMB_COLORS[state.ambienti.length%AMB_COLORS.length], category:'utile', fase, wt:[st.ext, st.ext, st.ext, st.ext], rid };
-    state.ambienti.push(am); wpStamp(am);
-    wpApply(old, 'Stanza creata: '+(w*d).toFixed(2)+' m², muri esterni di '+Math.round(st.ext*100)+' cm. Trascina per la prossima, oppure Seleziona per finire.', rid);
+    wpRoomMake(C, roomNameRead(v, null, nm0), hh, 'Stanza creata: '+(w*d).toFixed(2)+' m², muri esterni di '+Math.round(st.ext*100)+' cm. Trascina o tocca per la prossima, oppure Seleziona per finire.');
   }, () => draw());
   roomNameUI();
 }
@@ -4827,6 +4883,525 @@ function hitThickQuote(sx, sy) {
     if (Math.abs(sx-cx) <= 28 && Math.abs(sy-cy) <= 12) return i;
   }
   return null;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RILIEVO IN LOCO (2.48). Stato di lavoro accanto a SdF / Progetto (non si salva), solo per gli ambienti parametrici:
+//  - mentre si battono le misure le stanze vicine restano FERME (wpSolve non sposta nulla) e le tramezze mostrano lo scostamento ("10-3");
+//  - la misura netta sposta UN lato: il perimetro resta fermo; tra esterno e vano scala si muove il lato sul vano scala; con due lati
+//    esterni l'app chiede quale tenere fermo. Misura validata = lucchetto (`a.lk` [[k, j, valore]]): non si cambia piu';
+//  - perimetro proposto dall'app (lato senza un ambiente di fronte entro 1 m), correzione a un tocco: esterno / vano scala (`a.ext[k]`:
+//    1 esterno, 2 vano scala, null = come propone l'app). Lati esterni allineati = un filo; il vano scala e' perimetro ma non filo;
+//  - Riassembla: wpSolve con un'incognita per filo, misure nette mai toccate, residuo sulle tramezze, "da verificare" oltre WP_TOL.
+//  Campi facoltativi sull'ambiente (`lk`, `ext`), DATA_FMT invariato. Su un progetto senza ambienti parametrici non tocca nulla.
+// ═══════════════════════════════════════════════════════════
+const WP_TOL = 0.05, WP_FILO_TOL = 0.10;
+function locoOn() { return !!state.loco && !prog(); }
+function wpArea(C) { let s = 0; C.forEach((p, i) => { const q = C[(i+1)%C.length]; s += p.x*q.y - q.x*p.y; }); return s/2; }
+// lato di fronte: quello che il laser tocca partendo dal centro del lato k (come wpNet)
+function wpOpp(R, k) {
+  const s = R.S[k], M = {x:(s.p.x+s.q.x)/2, y:(s.p.y+s.q.y)/2}, dx = -s.nx, dy = -s.ny; let best = null, bj = -1;
+  R.S.forEach((t, j) => {
+    if (j===k) return; const den = dx*t.uy - dy*t.ux; if (Math.abs(den) < 1e-9) return;
+    const g = ((t.p.x-M.x)*t.uy - (t.p.y-M.y)*t.ux)/den, al = ((t.p.x-M.x)*dy - (t.p.y-M.y)*dx)/den;
+    if (g > 1e-4 && al > -1e-6 && al < t.L + 1e-6 && (best===null || g < best)) { best = g; bj = j; }
+  });
+  return bj;
+}
+function wpDirName(s) { return Math.abs(s.nx) > Math.abs(s.ny) ? (s.nx > 0 ? 'a destra' : 'a sinistra') : (s.ny > 0 ? 'in alto' : 'in basso'); }
+// lati di perimetro proposti: nessun lato di un altro ambiente di fronte entro 1 m per almeno meta' del lato
+function wpPerim(rooms) {
+  rooms = rooms || wpRooms(false); const out = new Map();
+  rooms.forEach(A => out.set(A.rid, A.S.map((s, k) => {
+    let cov = 0;
+    rooms.forEach(B => { if (B===A || (B.a.fase || 'es')!==(A.a.fase || 'es')) return; B.S.forEach((t, kb) => { const f = wpFace(A, k, B, kb, -0.6); if (f) cov += f.hi - f.lo; }); });
+    return cov < 0.5*s.L;
+  })));
+  return out;
+}
+// classe del lato: 0 = interno (di fronte c'e' un ambiente), 1 = esterno, 2 = vano scala
+function wpCls(R, k, per) {
+  const p = per && per.get(R.rid); if (!p || !p[k]) return 0;
+  const e = R.a.ext, v = Array.isArray(e) && e.length===R.m ? e[k] : null;
+  return v===2 ? 2 : 1;
+}
+function wpLk(a, m) { return Array.isArray(a.lk) ? a.lk.filter(p => Array.isArray(p) && (m===undefined || (p[0] < m && p[1] < m))) : []; }
+function wpLkHas(a, k, j) { return wpLk(a).some(p => (p[0]===k && p[1]===j) || (p[0]===j && p[1]===k)); }
+function wpLkSide(a, s) { return wpLk(a).some(p => p[0]===s || p[1]===s); }
+// quale lato si muove quando cambia la misura netta dal lato k (keep = lato da tenere fermo, scelto da chi misura)
+function wpLocoSide(R, k, per, keep) {
+  const j = wpOpp(R, k), a = R.a;
+  if (j < 0) return {err:'Su questo lato non trovo un lato di fronte da cui misurare.'};
+  if (wpLkHas(a, k, j)) return {j, err:'Misura validata (lucchetto): per cambiarla togli prima il lucchetto.'};
+  const ck = wpCls(R, k, per), cj = wpCls(R, j, per); let mv;
+  if (keep===k || keep===j) mv = keep===k ? j : k;
+  else if (ck && !cj) mv = j;
+  else if (cj && !ck) mv = k;
+  else if (ck && cj) { if (ck===2 && cj===1) mv = k; else if (cj===2 && ck===1) mv = j; else return {j, ask:[k, j]}; }
+  else mv = j;
+  if (wpLkSide(a, mv)) {                                   // il lato di una misura validata non si muove: si sposta l'altro
+    const o = mv===j ? k : j;
+    if (wpLkSide(a, o) || keep===o) return {j, err:'Tutti e due i lati appartengono a misure validate: togli prima un lucchetto.'};
+    mv = o;
+  }
+  return {j, mv};
+}
+// misura netta in loco: si sposta un solo lato (wpLocoSide), le stanze vicine non si muovono
+function wpLocoNet(R, k, v, keep) {
+  const r = wpLocoSide(R, k, wpPerim(), keep); if (r.err || r.ask) return r;
+  for (let it = 0; it < 4; it++) {
+    const R1 = wpRing(R.a), m0 = R1 && wpNet(R1, k); if (m0===null || m0===undefined) return it ? r : {err:'Su questo lato non trovo un lato di fronte da cui misurare.'};
+    const d = v - m0; if (Math.abs(d) < 0.00005) break;
+    if (!wpOffset(R1, r.mv, d)) { if (it) break; return {err:'Non si può: con questo valore un lato dell\'ambiente si annullerebbe.'}; }
+  }
+  wpStamp(R.a); return r;
+}
+var _wpLocoErr = null;
+// due lati esterni: chi misura sceglie quale tenere fermo
+function wpAskKeep(R, ks, cb) {
+  const [k, j] = ks;
+  askDialog('Due pareti esterne', [{label:'Quale parete resta ferma?', id:'f', type:'select', value:String(k), options:[
+    {value:String(k), label:'La parete '+wpDirName(R.S[k])+' (da dove misuri)'}, {value:String(j), label:'La parete '+wpDirName(R.S[j])}]}],
+    'Tutte e due le pareti di '+R.a.name+' danno sull\'esterno: si sposta l\'altra, verso l\'interno o l\'esterno, della differenza di misura.', v => cb(+v.f), () => draw());
+}
+// fili esterni: lati esterni con la stessa normale e la faccia esterna entro WP_FILO_TOL; contano i gruppi con almeno due ambienti
+function wpFili(rooms) {
+  rooms = rooms || wpRooms(false); const per = wpPerim(rooms), G = [];
+  rooms.forEach(R => R.S.forEach((s, k) => {
+    if (wpCls(R, k, per)!==1) return;
+    const c = s.p.x*s.nx + s.p.y*s.ny + (+R.a.wt[k] || 0);
+    let g = G.find(g => g.nx*s.nx + g.ny*s.ny > 0.9998 && Math.abs(g.c - c) <= WP_FILO_TOL);
+    if (!g) { g = {nx:s.nx, ny:s.ny, c, mem:[]}; G.push(g); }
+    g.mem.push({rid:R.rid, k});
+  }));
+  return G.filter(g => new Set(g.mem.map(m => m.rid)).size >= 2).map(g => ({nx:g.nx, ny:g.ny, mem:g.mem}));
+}
+// gli stessi fili con le posizioni di adesso (per wpSolve)
+function wpFiliNow(G0, rooms) {
+  return G0.map(g => ({nx:g.nx, ny:g.ny, mem:g.mem.map(m => {
+    const R = rooms.find(r => r.rid===m.rid), s = R && R.S[m.k]; if (!s) return null;
+    return {R, k:m.k, c:s.p.x*g.nx + s.p.y*g.ny + (+R.a.wt[m.k] || 0)};
+  }).filter(Boolean)})).filter(g => new Set(g.mem.map(m => m.R.rid)).size >= 2);
+}
+function wpFiliErr(G0) { const rooms = wpRooms(false); return wpFiliNow(G0, rooms).map(g => { const cs = g.mem.map(m => m.c); return Math.max(...cs) - Math.min(...cs); }); }
+// AGGANCIO della stanza nuova o spostata: lato affacciato piu' vicino entro 1 m (o sovrapposto fino a 60 cm) -> tramezza standard;
+// poi a filo: i lati di testa paralleli che guardano dalla stessa parte entro 50 cm si allineano
+function wpSnapRoom(rid) {
+  const rooms = wpRooms(false), A = rooms.find(R => R.rid===rid); if (!A || locked(A.a)) return null;
+  const others = rooms.filter(R => R!==A && (R.a.fase || 'es')===(A.a.fase || 'es')), st = wpStd(); let best = null;
+  A.S.forEach((s, k) => others.forEach(B => B.S.forEach((t, kb) => {
+    const f = wpFace(A, k, B, kb, -0.6); if (!f || f.g > 1.0) return;
+    const c = Math.abs(f.g - st.int); if (!best || c < best.c) best = {c, k, B, f};
+  })));
+  if (!best) return null;
+  const s = A.S[best.k], d = best.f.g - st.int, B = best.B; let dx = s.nx*d, dy = s.ny*d, al = null;
+  A.S.forEach(sa => B.S.forEach(sb => {
+    if (sa.nx*sb.nx + sa.ny*sb.ny < 0.9998 || Math.abs(sa.nx*s.nx + sa.ny*s.ny) > 0.02) return;
+    const off = (sb.p.x - sa.p.x - dx)*sa.nx + (sb.p.y - sa.p.y - dy)*sa.ny;
+    if (Math.abs(off) <= 0.5 && (!al || Math.abs(off) < Math.abs(al.off))) al = {off, nx:sa.nx, ny:sa.ny};
+  }));
+  if (al) { dx += al.nx*al.off; dy += al.ny*al.off; }
+  dx = wpR4(dx); dy = wpR4(dy);
+  if (!dx && !dy) return {to:B.a.name, moved:false};
+  new Set(A.a.indices).forEach(i => { const p = state.points[i]; if (p) { p.x = wpR4(p.x + dx); p.y = wpR4(p.y + dy); } });
+  wpStamp(A.a);
+  return {to:B.a.name, moved:true, filo:!!al};
+}
+// l'aggancio e' un passo di annulla suo: il pulsante lo toglie con un tocco
+var _snapUndo = null;
+function snapUndoShow(on) {
+  _snapUndo = on ? {n:state.history.length, t:Date.now()} : null;
+  const b = $id('snap-undo'); if (b) setDisp(b, on ? 'block' : 'none');
+  if (on) setTimeout(() => { if (_snapUndo && Date.now() - _snapUndo.t >= 9900) snapUndoShow(false); }, 10000);
+}
+function snapUndoTap() {
+  const u = _snapUndo; snapUndoShow(false);
+  if (u && state.history.length===u.n) { undo(); setTip('Aggancio tolto: la stanza resta dove l\'hai messa.', 'ok'); }
+}
+// stanza al tocco: le misure nette si scrivono, la stanza nasce centrata dove hai toccato e si aggancia da sola
+function finishRoomTap(w) {
+  const nm0 = freeAmbName(), st = wpStd(), lr = state.ambienti.filter(a => a.wt && live(a) && !hid(a)).slice(-1)[0], R0 = lr && wpRing(lr);
+  const dw = R0 && R0.m===4 ? Math.abs(R0.C[1].x-R0.C[0].x) || 3 : 3, dd = R0 && R0.m===4 ? Math.abs(R0.C[2].y-R0.C[1].y) || 3 : 3;
+  askDialog('Stanza al tocco', roomNameFields(nm0).concat([
+    {label:'Larghezza netta (m), da sinistra a destra', id:'w', value:dw.toFixed(2), type:'number'},
+    {label:'Profondità netta (m), dal basso in alto', id:'d', value:dd.toFixed(2), type:'number'},
+    {label:'Altezza netta (m)', id:'h', value:lastAmbH().toFixed(2), type:'number'},
+  ]), 'La stanza nasce centrata dove hai toccato. Se è entro 1 m da un\'altra si aggancia da sola: tramezza di '+Math.round(st.int*100)+' cm e lati a filo (un tocco su "Togli aggancio" la lascia dove l\'hai messa). Muri esterni '+Math.round(st.ext*100)+' cm.', v => {
+    const ww = parseFloat(v.w), d = parseFloat(v.d), hh = parseFloat(v.h);
+    if (!(ww >= 0.3) || !(d >= 0.3) || !(hh > 0) || ww > 100 || d > 100) { draw(); setTip('Stanza non creata: misure non valide.', 'warn'); return; }
+    saveHistory();
+    const x0 = wpR4(w.x - ww/2), y0 = wpR4(w.y - d/2);
+    wpRoomMake([{x:x0, y:y0}, {x:x0+ww, y:y0}, {x:x0+ww, y:y0+d}, {x:x0, y:y0+d}], roomNameRead(v, null, nm0), hh, 'Stanza creata: '+(ww*d).toFixed(2)+' m².');
+  }, () => draw());
+  roomNameUI();
+}
+// nasce l'ambiente parametrico (punti suoi), poi l'aggancio come passo a parte, poi i muri
+function wpRoomMake(C, name, hh, msg) {
+  const fase = wpFase(), old = wpSync().rooms.map(R => R.rid), st = wpStd();
+  const ids = C.map(p => newPoint(p.x, p.y));
+  ids.forEach((id, k) => { state.segments.push({a:id, b:ids[(k+1)%ids.length]}); });
+  let rid = 1; state.ambienti.forEach(a => { if (a.rid >= rid) rid = a.rid + 1; });
+  const am = {indices:ids, name, h:hh, color:AMB_COLORS[state.ambienti.length%AMB_COLORS.length], category:'utile', fase, wt:C.map(() => st.ext), rid};
+  state.ambienti.push(am); wpStamp(am);
+  wpSnapAndApply(rid, old, msg);
+}
+function wpSnapAndApply(rid, fixed, msg) {
+  saveHistory(); const n0 = state.history.length;
+  let r = null; try { r = wpSnapRoom(rid); } catch (err) { console.error('aggancio', err); }
+  if (!r || !r.moved) { if (state.history.length===n0) state.history.pop(); }
+  else state.wlinks = (state.wlinks || []).filter(l => l.lk || (l.a!==rid && l.b!==rid));      // le tramezze non misurate della stanza agganciata si rileggono (standard)
+  wpApply(fixed, msg+(r && r.moved ? ' Agganciata a '+r.to+': tramezza '+Math.round(wpStd().int*100)+' cm'+(r.filo ? ' e a filo' : '')+'.' : ''), rid);
+  snapUndoShow(!!(r && r.moved));
+}
+// SPOSTA AMBIENTE: tocco sull'ambiente -> Sposta -> trascina; la selezione resta (si puo' trascinare di nuovo), al rilascio l'aggancio
+function moveRoomStart(idx) {
+  const a = state.ambienti[idx]; if (!a) return;
+  if (locked(a)) { lockTip(); return; }
+  if (!a.wt || a.wpx) { setTip('Sposta ambiente vale per gli ambienti parametrici. Per gli altri: seleziona le linee con un riquadro e usa Sposta nella barra della selezione.', 'warn'); return; }
+  state.moveRoom = a.rid; state.sel = {kind:'ambiente', idx};
+  setTip('Trascina in un punto qualsiasi: '+a.name+' si sposta con i suoi muri e i serramenti; al rilascio si aggancia alla stanza vicina. Tocca il pulsante verde per finire.');
+  draw();
+}
+function moveRoomEnd(rid) {
+  const a = state.ambienti.find(x => x.rid===rid); if (!a) { draw(); return; }
+  wpStamp(a);
+  const others = wpRooms(false).filter(R => R.rid!==rid).map(R => R.rid);
+  wpSnapAndApply(rid, others, a.name+' spostato.');
+  const k = state.ambienti.indexOf(state.ambienti.find(x => x.rid===rid)); if (k >= 0) state.sel = {kind:'ambiente', idx:k};
+}
+function moveRoomStop() { state.moveRoom = null; setTip('Spostamento finito.'); draw(); }
+// RIASSEMBLA: le stanze traslano (le misure nette non cambiano), i fili esterni tornano dritti, il residuo va sulle tramezze
+function locoRiassembla() {
+  hideAllMenus();
+  const rooms = wpRooms(false).filter(R => !locked(R.a));
+  if (rooms.length < 2) { setTip('Riassembla serve quando ci sono almeno due ambienti parametrici.', 'warn'); return; }
+  saveHistory();
+  const G0 = wpFili(rooms); let anc = null, best = -1;
+  rooms.forEach(R => { const ar = Math.abs(wpArea(R.C)); if (ar > best) { best = ar; anc = R; } });
+  wpSolve([anc.rid], null, G0);
+  rebuildWalls(wpFase());
+  const by = new Map(state.ambienti.filter(a => a.rid).map(a => [a.rid, a])), over = [];
+  (WPL || []).forEach(e => { if (Math.abs(e.l.g - e.l.t) > WP_TOL) over.push('tramezza tra '+e.A.a.name+' e '+e.B.a.name+' '+wpResLabel(e.l)+' cm'); });
+  const nf = G0.length;
+  _locoRia = wpGenSig();
+  commit('Riassembla: '+(nf ? nf+(nf===1 ? ' filo esterno allineato' : ' fili esterni allineati') : 'nessun filo esterno comune')+', misure nette invariate, '+anc.a.name+' fermo.'
+    +(over.length ? ' Da verificare (residuo oltre '+Math.round(WP_TOL*100)+' cm): '+over.join('; ')+'.' : wpResText()), true);
+  if (over.length) setTimeout(() => setTip('Da verificare dopo Riassembla (oltre '+Math.round(WP_TOL*100)+' cm): '+over.join('; ')+'. Ribatti le misure di quelle stanze.', 'warn'), 0);
+}
+// INTERRUTTORE
+function toggleLoco() {
+  hideAllMenus();
+  if (state.loco) { state.loco = false; state.locoF = null; state.moveRoom = null; updateLocoUI(); setTip('Rilievo in loco finito: le stanze tornano a spostarsi da sole quando cambi una misura.'); draw(); return; }
+  if (prog()) toggleView();                               // il rilievo si fa sullo stato di fatto
+  setTool('select'); state.loco = true; state.locoF = null; state.wpSel = null;
+  updateLocoUI(); draw();
+  const n = wpRooms(false).length, old = state.ambienti.filter(a => live(a) && !hid(a) && (!a.wt || a.wpx)).length;
+  if (!n && old) { listDialog('Rilievo in loco', ['Questo progetto non ha ambienti parametrici: il rilievo in loco non agisce sugli ambienti che ci sono (non li sposta e non li cambia).', 'Vale per i progetti nuovi e per gli ambienti creati con Disegna > Stanza (trascinando o con un tocco), o da punti con punti suoi. Gli ambienti vecchi si adeguano a mano.']); return; }
+  setTip(n ? 'Rilievo in loco: tocca una stanza e scrivi le misure nette, un campo alla volta. Le stanze vicine restano ferme e le tramezze mostrano lo scostamento (es. 10-3); alla fine "Riassembla". Bollini sul perimetro: E esterno, S vano scala (un tocco li cambia).'
+    : 'Rilievo in loco da zero: Disegna > Stanza, poi tocca il disegno (o la foto) dove sta la stanza e scrivi le misure nette. Le stanze si agganciano da sole.', 'ok');
+}
+function updateLocoUI() {
+  document.body.classList.toggle('loco', locoOn());
+  const b = $id('btn-loco'); if (b) b.classList.toggle('on', locoOn());
+  locoRender();
+}
+// SCHEDA DELLA STANZA: un campo alla volta (misure nette, altezza, spessore esterno), Avanti / Indietro, lucchetto sulla misura validata
+function locoRoom() { const f = state.locoF; return f ? wpRooms(false).find(R => R.rid===f.rid) || null : null; }
+function locoFields(R) {
+  const F = [], seen = new Set();
+  R.S.forEach((s, k) => { const j = wpOpp(R, k); if (j < 0) return; const key = Math.min(k, j)+'-'+Math.max(k, j); if (seen.has(key)) return; seen.add(key); F.push({t:'net', k, j}); });
+  if (R.m===4 && F.length===2 && F.every(f => Math.abs(R.S[f.k].nx) > 0.9 || Math.abs(R.S[f.k].ny) > 0.9)) {
+    F.forEach(f => { f.hz = Math.abs(R.S[f.k].nx) > Math.abs(R.S[f.k].ny); f.lab = f.hz ? 'Larghezza' : 'Lunghezza'; });
+    F.sort((p, q) => (q.hz ? 1 : 0) - (p.hz ? 1 : 0));
+  } else F.forEach((f, i) => { f.lab = 'Misura '+(i+1)+' di '+F.length; });
+  F.push({t:'h', lab:'Altezza'});
+  const per = wpPerim(); if (R.S.some((s, k) => wpCls(R, k, per)===1)) F.push({t:'ext', lab:'Spessore muro esterno'});
+  return F;
+}
+function locoOpen(rid, i) {
+  state.locoF = {rid, i:i || 0}; state.wpSel = null; state.sel = null; hideAllMenus();
+  locoRender(); draw(); locoFocus();
+}
+function locoFocus() { const el = $id('lb-in'); if (el && el.offsetParent) try { el.focus({preventScroll:true}); } catch (e) {} }
+function locoVal(R, f) {
+  if (f.t==='net') { const v = wpNet(R, f.k); return v===null ? '' : num(v); }
+  if (f.t==='h') return num(+R.a.h || 0);
+  const per = wpPerim(), k = R.S.findIndex((s, k) => wpCls(R, k, per)===1); return k < 0 ? '' : num((+R.a.wt[k] || 0)*100, 0);
+}
+const LOCO_C = '<div class="lb-r"><span class="lb-g" id="lb-hint">Rilievo in loco: tocca una stanza per le misure</span><button id="lb-ria">Riassembla</button><button id="lb-out" title="Esci dal rilievo in loco">Esci</button></div>';
+const LOCO_R = '<div class="lb-r"><b class="lb-g" id="lb-name"></b><span id="lb-pos"></span><button id="lb-menu" title="Menu dell\'ambiente">⋯</button><button id="lb-ria">Riassembla</button><button id="lb-x" title="Chiudi la scheda">✖</button></div>'
+  + '<div class="lb-r"><span class="lb-g" id="lb-lab"></span><input id="lb-in" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false"><button id="lb-lock"></button></div>'
+  + '<div class="lb-r"><button class="lb-g" id="lb-prev">‹ Indietro</button><button class="lb-g ok" id="lb-next">Avanti ›</button></div>';
+function locoBind(el) {
+  const on = (id, fn) => { const b = el.querySelector('#'+id); if (!b) return; b.addEventListener('pointerdown', e => e.preventDefault()); b.addEventListener('mousedown', e => e.preventDefault()); b.addEventListener('click', e => { e.preventDefault(); fn(); }); };
+  on('lb-ria', locoRiassembla); on('lb-out', toggleLoco);
+  on('lb-x', () => { state.locoF = null; locoRender(); draw(); });
+  on('lb-menu', () => { const R = locoRoom(); if (!R) return; state.sel = {kind:'ambiente', idx:R.k}; const r = el.getBoundingClientRect(); showMenu('amb-context', r.right - 10, r.top - 6, true); draw(); });
+  on('lb-prev', () => locoStep(-1)); on('lb-next', () => locoStep(1)); on('lb-lock', locoLockTap);
+  const inp = el.querySelector('#lb-in');
+  if (inp) inp.addEventListener('keydown', e => { if (e.key==='Enter') { e.preventDefault(); locoStep(1); } else if (e.key==='Escape') { e.preventDefault(); inp.blur(); } });
+}
+function locoRender() {
+  const el = $id('loco-bar'); if (!el) return;
+  const root = document.documentElement.style;
+  if (!locoOn() || PRINT || state.wpSel || state.moveRoom || state.exp) { if (el.style.display!=='none') { el.style.display = 'none'; root.setProperty('--loco-h', '0px'); } return; }
+  const R = locoRoom(), mode = R ? 'r' : 'c';
+  if (!R && state.locoF) state.locoF = null;
+  if (el.dataset.mode!==mode) { el.dataset.mode = mode; el.innerHTML = mode==='r' ? LOCO_R : LOCO_C; locoBind(el); }
+  if (R) {
+    const F = locoFields(R), f = state.locoF; if (f.i >= F.length) f.i = F.length - 1;
+    const fd = F[f.i], lk = fd.t==='net' && wpLkHas(R.a, fd.k, fd.j), inp = $id('lb-in'), unit = fd.t==='ext' ? 'cm' : 'm';
+    setTxt($id('lb-name'), R.a.name); setTxt($id('lb-pos'), (f.i+1)+' di '+F.length);
+    setTxt($id('lb-lab'), fd.lab+' ('+unit+')'+(fd.t==='net' ? (lk ? ' 🔒' : '') : ''));
+    const ph = locoVal(R, fd); if (inp.placeholder!==ph) inp.placeholder = ph;
+    inp.disabled = lk; inp.classList.toggle('lk', lk);
+    const lb = $id('lb-lock'); setDisp(lb, fd.t==='net' ? '' : 'none'); setTxt(lb, lk ? '🔒' : '🔓'); lb.title = lk ? 'Misura validata: tocca per togliere il lucchetto' : 'Valida la misura com\'è (lucchetto)';
+    $id('lb-prev').disabled = f.i===0; setTxt($id('lb-next'), f.i===F.length-1 ? 'Fine ✔' : 'Avanti ›');
+  }
+  if (el.style.display!=='flex') el.style.display = 'flex';
+  root.setProperty('--loco-h', el.offsetHeight+'px');
+  locoKbd();
+}
+// tastiera aperta sul telefono: la scheda sta sopra la tastiera (visualViewport)
+function locoKbd() {
+  const el = $id('loco-bar'), vv = window.visualViewport; if (!el || !vv) return;
+  const inp = $id('lb-in'), kb = inp && document.activeElement===inp ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+  el.style.bottom = kb > 60 ? kb+'px' : '';
+}
+if (window.visualViewport) { visualViewport.addEventListener('resize', () => { try { locoKbd(); } catch (e) {} }); visualViewport.addEventListener('scroll', () => { try { locoKbd(); } catch (e) {} }); }
+function locoStep(dir) {
+  const R = locoRoom(); if (!R) return;
+  const F = locoFields(R), f = state.locoF, inp = $id('lb-in'), txt = inp ? inp.value.trim() : '';
+  const go = () => {
+    if (inp) inp.value = '';
+    f.i += dir; if (f.i < 0) f.i = 0;
+    if (f.i >= F.length) { state.locoF = null; locoRender(); draw(); setTip(R.a.name+': misure finite. Tocca un\'altra stanza; quando hai finito, Riassembla.', 'ok'); return; }
+    locoRender(); draw(); locoFocus();
+  };
+  if (dir > 0 && txt) { locoSet(R.rid, F[f.i], txt, go); return; }
+  go();
+}
+// applica il valore scritto nel campo; done() passa al campo dopo
+function locoSet(rid, fd, txt, done) {
+  const v = parseFloat(String(txt).replace(',', '.')), R = wpRooms(false).find(r => r.rid===rid); if (!R) return;
+  const a = R.a;
+  if (fd.t==='net') {
+    if (!(v >= 0.2 && v <= 100)) { setTip('Misura non valida: scrivi i metri, ad esempio 4,25.', 'warn'); return; }
+    const apply = keep => {
+      const R1 = wpRooms(false).find(r => r.rid===rid); if (!R1) return;
+      saveHistory();
+      const r = wpLocoNet(R1, fd.k, v, keep);
+      if (r.ask) { state.history.pop(); wpAskKeep(R1, r.ask, kp => apply(kp)); return; }
+      if (r.err) { state.history.pop(); setTip(r.err, 'warn'); draw(); return; }
+      a.lk = wpLk(a).filter(p => !((p[0]===fd.k && p[1]===r.j) || (p[0]===r.j && p[1]===fd.k))).concat([[fd.k, r.j, wpR4(v)]]);
+      locoValQuotes(a, fd.k, r.j, v);
+      rebuildWalls(wpFase());
+      const R2 = wpRing(a);
+      commit(a.name+': '+fd.lab.toLowerCase()+' '+num(v)+' m validata (lucchetto); si è spostata la parete '+wpDirName(R2.S[r.mv])+', le stanze vicine restano ferme.'+wpResText(), true);
+      done();
+    };
+    apply(); return;
+  }
+  if (fd.t==='h') {
+    if (!(v > 0 && v <= 20)) { setTip('Altezza non valida.', 'warn'); return; }
+    saveHistory(); a.h = v; commit(a.name+': altezza '+num(v)+' m.', true); done(); return;
+  }
+  if (!(v >= 0 && v <= 100)) { setTip('Spessore non valido: scrivi i centimetri, ad esempio 35.', 'warn'); return; }
+  saveHistory(); const per = wpPerim();
+  R.S.forEach((s, k) => { if (wpCls(R, k, per)===1) a.wt[k] = wpR4(v/100); });
+  rebuildWalls(wpFase()); commit(a.name+': muro esterno '+num(v, 0)+' cm su tutte le sue pareti esterne.', true); done();
+}
+// lucchetto: valida la misura com'e', oppure lo toglie
+function locoLockTap() {
+  const R = locoRoom(); if (!R) return;
+  const fd = locoFields(R)[state.locoF.i]; if (!fd || fd.t!=='net') return;
+  const a = R.a; saveHistory();
+  if (wpLkHas(a, fd.k, fd.j)) { a.lk = wpLk(a).filter(p => !((p[0]===fd.k && p[1]===fd.j) || (p[0]===fd.j && p[1]===fd.k))); if (!a.lk.length) delete a.lk; commit(a.name+': lucchetto tolto, la misura si può cambiare.', true); }
+  else { const v = wpNet(R, fd.k); a.lk = wpLk(a).concat([[fd.k, fd.j, wpR4(v)]]); locoValQuotes(a, fd.k, fd.j, v); commit(a.name+': '+fd.lab.toLowerCase()+' '+num(v)+' m validata (lucchetto).', true); }
+  locoRender(); locoFocus();
+}
+// la misura validata valida anche le quote delle linee che la misurano (lati accanto lunghi quanto la misura)
+function locoValQuotes(a, k, j, v) {
+  const R = wpRing(a); if (!R) return; const m = R.m;
+  new Set([(k+1)%m, (k+m-1)%m, (j+1)%m, (j+m-1)%m]).forEach(q => {
+    const s = R.S[q]; if (!s || Math.abs(s.L - v) > 0.005) return;
+    const i0 = a.indices[R.ci[q]], i1 = a.indices[R.ci[(q+1)%m]];
+    const si = state.segments.findIndex(g => (g.a===i0 && g.b===i1) || (g.a===i1 && g.b===i0)); if (si < 0) return;
+    state.segments[si].ok = true; state.segments[si].okLen = s.L;
+  });
+}
+// bollini del perimetro: E esterno, S vano scala; un tocco cambia
+function locoTags(rooms, per) {
+  const out = [];
+  rooms.forEach(R => R.S.forEach((s, k) => {
+    const c = wpCls(R, k, per); if (!c) return;
+    const M = {x:(s.p.x+s.q.x)/2, y:(s.p.y+s.q.y)/2}, q = w2s(M.x, M.y), off = Math.max(((+R.a.wt[k] || 0)/2)*state.zoom, 18);
+    out.push({rid:R.rid, k, c, x:q.x + s.nx*off, y:q.y - s.ny*off});
+  }));
+  return out;
+}
+function locoTagHit(sx, sy) {
+  if (!locoOn()) return null;
+  const rooms = wpRooms(false); let best = null, bd = COARSE ? 24 : 16;
+  locoTags(rooms, wpPerim(rooms)).forEach(t => { const d = Math.hypot(t.x-sx, t.y-sy); if (d < bd) { bd = d; best = t; } });
+  return best;
+}
+function locoTagTap(t) {
+  const R = wpRooms(false).find(r => r.rid===t.rid); if (!R) return;
+  saveHistory();
+  const a = R.a; if (!Array.isArray(a.ext) || a.ext.length!==R.m) a.ext = R.S.map(() => null);
+  a.ext[t.k] = t.c===1 ? 2 : 1;
+  commit(a.name+', parete '+wpDirName(R.S[t.k])+': '+(t.c===1 ? 'vano scala (perimetro fermo, non è filo di facciata)' : 'esterno (perimetro fermo, filo di facciata)')+'.', true);
+}
+function locoDraw() {
+  if (!locoOn()) return;
+  const rooms = wpRooms(false), per = wpPerim(rooms);
+  ctx.save(); ctx.lineCap = 'round';
+  rooms.forEach(R => R.S.forEach((s, k) => {                // perimetro: azzurro esterno, viola tratteggiato vano scala
+    const c = wpCls(R, k, per); if (!c) return;
+    const a = w2s(s.p.x, s.p.y), b = w2s(s.q.x, s.q.y);
+    ctx.strokeStyle = c===1 ? 'rgba(74,163,255,.85)' : 'rgba(196,140,255,.9)'; ctx.lineWidth = 4; ctx.setLineDash(c===1 ? [] : [8, 6]);
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }));
+  ctx.setLineDash([]);
+  const R = locoRoom(), fd = R ? locoFields(R)[state.locoF.i] : null;
+  if (R && fd) {                                           // il campo della scheda: lato giallo e lato di fronte
+    ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 6;
+    const line = (s, dash) => { const a = w2s(s.p.x, s.p.y), b = w2s(s.q.x, s.q.y); ctx.setLineDash(dash || []); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
+    if (fd.t==='net') { line(R.S[fd.k]); line(R.S[fd.j], [10, 6]); }
+    else if (fd.t==='ext') R.S.forEach((s, k) => { if (wpCls(R, k, per)===1) line(s); });
+    else R.S.forEach(s => line(s));
+    ctx.setLineDash([]);
+  }
+  ctx.font = 'bold 12px '+FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  rooms.forEach(R => wpLk(R.a, R.m).forEach(p => {          // misure validate: linea del laser con il lucchetto
+    const s = R.S[p[0]], v = wpNet(R, p[0]); if (!s || v===null) return;
+    const M = {x:(s.p.x+s.q.x)/2, y:(s.p.y+s.q.y)/2}, a = w2s(M.x, M.y), b = w2s(M.x - s.nx*v, M.y - s.ny*v);
+    if (Math.hypot(b.x-a.x, b.y-a.y) < 40) return;
+    ctx.strokeStyle = 'rgba(94,243,140,.8)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
+    const t = '🔒 '+num(v), tw = ctx.measureText(t).width + 10, cx = a.x + (b.x-a.x)*0.25, cy = a.y + (b.y-a.y)*0.25;
+    ctx.fillStyle = 'rgba(16,24,44,.92)'; ctx.fillRect(cx-tw/2, cy-9, tw, 18); ctx.fillStyle = '#5ef38c'; ctx.fillText(t, cx, cy);
+  }));
+  locoTags(rooms, per).forEach(t => {                       // bollini da toccare
+    const r = COARSE ? 13 : 11;
+    ctx.fillStyle = t.c===1 ? '#4aa3ff' : '#c48cff'; ctx.strokeStyle = '#10182c'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(t.x, t.y, r, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#10182c'; ctx.font = 'bold 13px '+FONT; ctx.fillText(t.c===1 ? 'E' : 'S', t.x, t.y+1);
+  });
+  ctx.restore();
+}
+// pulsanti verdi in basso: fine dello spostamento dell'ambiente, togli aggancio
+var _locoRia = null;
+function locoSync() {
+  const mb = $id('moveroom-btn'); if (mb) setDisp(mb, state.moveRoom && !PRINT ? 'block' : 'none');
+  if (state.moveRoom && !state.ambienti.some(a => a.rid===state.moveRoom && a.wt && !a.wpx)) state.moveRoom = null;
+  locoRender();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SELEZIONE MULTILIVELLO (2.48): sotto il dito ci sono piu' oggetti = elenco a comparsa per scegliere (voci da 48 px)
+// ═══════════════════════════════════════════════════════════
+function selCands(sx, sy, pi) {
+  const out = [], add = (k, i, m) => { if (i!==null && i!==undefined && !out.some(o => o[0]===k && o[1]===i)) out.push([k, i, m]); };
+  add('thick', hitThickQuote(sx, sy), null);
+  add('opening', pi===null ? hitOpening(sx, sy) : null, 'opening-context');
+  add('point', pi, 'context-menu');
+  add('label', hitLabel(sx, sy), 'entity-context');
+  add('opening', hitOpeningQuota(sx, sy), 'opening-context');
+  add('quota', hitQuota(sx, sy), 'quota-context');
+  add('pilastro', hitPilastro(sx, sy), 'entity-context');
+  add('scala', hitScala(sx, sy), 'entity-context');
+  add('pencil', hitPencil(sx, sy), 'entity-context');
+  add('tratto', hitTratto(sx, sy), 'entity-context');
+  add('misura', hitMisura(sx, sy), 'entity-context');
+  add('segment', hitSegment(sx, sy), 'seg-context');
+  add('costr', hitCostr(sx, sy), 'entity-context');
+  add('ambiente', hitAmbiente(sx, sy), 'amb-context');
+  return out;
+}
+function selCandName(c) {
+  const [k, i] = c, len = si => { const g = state.segments[si], A = g && state.points[g.a], B = g && state.points[g.b]; return A && B ? num(Math.hypot(B.x-A.x, B.y-A.y))+' m' : ''; };
+  if (k==='thick') { const g = state.segments[i]; return 'Spessore muro '+(g && g.thick ? num(g.thick*100, 0)+' cm' : ''); }
+  if (k==='opening') { const o = state.openings[i]; return ({P:'Porta', F:'Finestra', PF:'Porta-finestra'}[o.type] || 'Serramento')+' '+(o.label || ''); }
+  if (k==='point') return 'Punto '+(state.points[i].label || '');
+  if (k==='segment') return 'Muro '+len(i);
+  if (k==='quota') return 'Quota '+len(i);
+  if (k==='ambiente') return 'Ambiente '+state.ambienti[i].name;
+  return {label:'Testo', pilastro:'Pilastro', scala:'Scala', pencil:'Schizzo', tratto:'Linea tratteggiata', misura:'Quota temporanea', costr:'Linea di costruzione'}[k] || k;
+}
+function selxShow(list, sx, sy, cx, cy) {
+  const pop = $id('selx-pop'); pop.innerHTML = '';
+  const h = document.createElement('div'); h.className = 'sx-h'; h.textContent = 'Cosa vuoi toccare?'; pop.appendChild(h);
+  list.forEach(c => {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = selCandName(c);
+    b.addEventListener('click', e => { e.stopPropagation(); hideAllMenus(); selxPick(c, sx, sy, cx, cy); });
+    pop.appendChild(b);
+  });
+  pop.style.display = 'flex'; _menuOpenedAt = Date.now();
+  const r = pop.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight, gap = 30;
+  let top = cy + gap; if (top + r.height > vh - 6) top = cy - gap - r.height; top = Math.max(4, Math.min(top, vh - r.height - 6));
+  pop.style.left = Math.max(4, Math.min(cx - r.width/2, vw - r.width - 4))+'px'; pop.style.top = top+'px';
+}
+function selxPick(c, sx, sy, cx, cy) {
+  if (c[0]==='thick') { thickQuoteDialog(c[1]); return; }
+  if (c[0]==='segment' && wpClick(sx, sy)) return;
+  if (c[0]==='ambiente' && locoOn()) { const a = state.ambienti[c[1]]; if (a && a.wt && !a.wpx && !locked(a)) { locoOpen(a.rid); return; } }
+  state.wpSel = null;
+  state.sel = {kind:c[0], idx:c[1]};
+  if (c[0]==='segment') state.sel.t = segmentT(c[1], sx, sy);
+  if (c[0]==='ambiente') setTip(ambHighlightTip(c[1]));
+  draw(); showMenu(c[2], cx+8, cy+8, false, {x:cx, y:cy});
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PROPOSTE DEL RICALCO, UNA ALLA VOLTA (2.48): la proposta incerta centrata e ingrandita nella parte libera del disegno, Tieni / Scarta
+//  da 48 px; l'elenco completo con le caselle resta (pannello Ricalco). Sul telefono parte da sola alla prima lettura.
+// ═══════════════════════════════════════════════════════════
+var _wr = null, _wrAuto = false;
+function wallsUnc() {
+  const P = state.wallsPrev; if (!P) return [];
+  const out = [];
+  (P.rooms || []).forEach((r, i) => {
+    if (!r.unc) return; let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, a = 0;
+    r.ring.forEach((n, k) => { const p = P.nodes[n], q = P.nodes[r.ring[(k+1)%r.ring.length]]; x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); a += p.x*q.y - q.x*p.y; });
+    out.push({k:'r', i, why:'Ambiente incerto - '+r.unc, lab:'Ambiente '+fmtM(r.area!=null ? r.area : Math.abs(a)/2)+' m²', x:(x0+x1)/2, y:(y0+y1)/2, sz:Math.max(x1-x0, y1-y0, 1)*1.6, off:!!r.off});
+  });
+  (P.ops || []).forEach((o, i) => { if (o.unc) out.push({k:'o', i, why:o.unc, lab:(o.type==='P' ? 'Porta ' : 'Finestra ')+fmtM(o.width)+' m', x:o.cx, y:o.cy, sz:Math.max(2.5, o.width*3), off:!!o.off, key:o.key}); });
+  return out;
+}
+function wallsReview(i) {
+  const L = wallsUnc(); if (!L.length) { setTip('Nessuna proposta incerta da controllare.'); return; }
+  _wr = {i:Math.max(0, Math.min(i || 0, L.length - 1)), n:L.length, z0:state.zoom, x0:state.panX, y0:state.panY};
+  document.body.classList.add('wrev'); hideAllMenus();
+  wallsReviewShow();
+}
+function wallsReviewShow() {
+  const bar = $id('wr-bar'), P = state.wallsPrev; if (!_wr || !bar) return;
+  if (!P) { wallsReviewEnd(); return; }
+  const L = wallsUnc();
+  if (_wr.i >= L.length) {
+    bar.innerHTML = '<div class="wr-t"><b>Proposte controllate</b></div><div class="wr-why">Tieni e Scarta sono segnati anche nell\'elenco. Applica per portarle nel disegno.</div><div class="wr-b"><button type="button" onclick="wallsReviewEnd()">Elenco completo</button><button type="button" class="ok" onclick="wallsReviewEnd(); wallsApply()">✔ Applica</button></div>';
+    bar.style.display = 'flex'; if (P) P.hi = null;
+    state.zoom = _wr.z0; state.panX = _wr.x0; state.panY = _wr.y0; draw(); return;
+  }
+  const it = L[_wr.i];
+  bar.innerHTML = '<div class="wr-t"><b>'+(_wr.i+1)+' di '+L.length+'</b> &nbsp;'+it.lab+(it.off ? ' <span class="wr-s">(ora scartata)</span>' : '')+'</div><div class="wr-why"></div>'
+    + '<div class="wr-b"><button type="button" class="no" onclick="wallsDecide(false)">✖ Scarta</button><button type="button" class="ok" onclick="wallsDecide(true)">✔ Tieni</button></div>'
+    + '<div class="wr-l"><button type="button" onclick="wallsReviewEnd()">Elenco completo</button>'+(_wr.i ? '<button type="button" onclick="_wr.i--; wallsReviewShow()">‹ Indietro</button>' : '')+'</div>';
+  bar.querySelector('.wr-why').textContent = it.why;
+  bar.style.display = 'flex';
+  const bh = bar.offsetHeight + 8, free = Math.max(120, H - bh), z = Math.max(20, Math.min(600, Math.min(W, free)*0.8/it.sz));
+  state.zoom = z; state.panX = W/2 - it.x*z; state.panY = free/2 + it.y*z; P.hi = {x:it.x, y:it.y}; draw();
+}
+function wallsDecide(keep) {
+  if (!_wr) return; const L = wallsUnc(), it = L[_wr.i];
+  if (it) { if (it.k==='r') wallsToggle(it.i, keep); else wallsToggleOp(it.i, keep); }
+  _wr.i++; wallsList(); wallsReviewShow();
+}
+function wallsReviewEnd() {
+  if (!_wr) return; _wr = null;
+  document.body.classList.remove('wrev'); const bar = $id('wr-bar'); if (bar) bar.style.display = 'none';
+  wallsList(); draw();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -5451,7 +6026,7 @@ function setWallLength(si, m) {
 // ═══════════════════════════════════════════════════════════
 //  MENU
 // ═══════════════════════════════════════════════════════════
-const MENU_IDS = ['quota-context','seg-context','amb-context','context-menu','opening-context','entity-context','group-draw','group-ins','group-edit','group-view','file-submenu'];
+const MENU_IDS = ['selx-pop','quota-context','seg-context','amb-context','context-menu','opening-context','entity-context','group-draw','group-ins','group-edit','group-view','file-submenu'];
 let _menuOpenedAt = 0;
 function showMenu(id, x, y, above, avoid) {
   hideAllMenus();
@@ -5475,6 +6050,7 @@ function showMenu(id, x, y, above, avoid) {
     const a = state.sel && state.sel.kind==='ambiente' && state.ambienti[state.sel.idx], has = !!(a && a.volta);
     document.getElementById('am-novolta').style.display = has && !lk ? '' : 'none';
     document.getElementById('am-wpon').style.display = a && a.wpx && !lk ? '' : 'none';
+    document.getElementById('am-move').style.display = a && a.wt && !a.wpx && !lk ? '' : 'none';
     document.getElementById('am-volta').firstChild.textContent = has ? '⌒ Modifica volta (finestra)' : '⌒ Volta (finestra)';
     document.getElementById('am-vgraf').firstChild.textContent = has ? '⌒ Rifai i punti sul disegno' : '⌒ Volta sul disegno';
   }
@@ -6026,7 +6602,7 @@ function deletePoints(indices, noHist) {
 // toglie punti, linee e serramenti e rinumera tutto quello che vi fa riferimento:
 // le linee perdono i punti eliminati, i serramenti seguono la loro linea (o spariscono con lei),
 // gli ambienti con un vertice eliminato spariscono, i pilastri perdono l'ancoraggio
-function removeItems(pts, segDel, ops) {
+function removeItems(pts, segDel, ops, keep) {
   const map = {}; let k = 0;
   state.points.forEach((_,i) => { if (!pts.has(i)) map[i] = k++; });
   const segMap = {}, newSegs = [];
@@ -6034,11 +6610,20 @@ function removeItems(pts, segDel, ops) {
     if (segDel.has(i) || pts.has(s.a) || pts.has(s.b)) return;
     segMap[i] = newSegs.length; newSegs.push({...s, a:map[s.a], b:map[s.b]});
   });
+  const opMap = {}; let ko = 0; state.openings.forEach((o,i) => { if (!ops.has(i) && segMap[o.segIdx]!==undefined) opMap[i] = ko++; });
+  const amMap = {}; let ka = 0; state.ambienti.forEach((a,i) => { if (!a.indices.some(j => pts.has(j))) amMap[i] = ka++; });
   state.openings = state.openings.filter((o,i) => !ops.has(i) && segMap[o.segIdx]!==undefined).map(o => ({...o, segIdx:segMap[o.segIdx]}));
   state.ambienti = state.ambienti.filter(a => !a.indices.some(i => pts.has(i))).map(a => ({...a, indices:a.indices.map(i => map[i])}));
   state.pilastri.forEach(p => { if (p.ancora!==undefined) p.ancora = map[p.ancora]; });
   state.points   = state.points.filter((_,i) => !pts.has(i));
   state.segments = newSegs;
+  if (keep) {                                   // 2.48: rifacimento delle linee generate (rebuildWalls): la selezione resta, con gli indici nuovi
+    const m = (set, f) => set ? new Set([...set].map(f).filter(i => i!==undefined)) : set;
+    state.selSet = m(state.selSet, i => map[i]); state.selSeg = m(state.selSeg, i => segMap[i]); state.selOpen = m(state.selOpen, i => opMap[i]);
+    const s = state.sel, f = s && {point:map, segment:segMap, quota:segMap, opening:opMap, ambiente:amMap}[s.kind];
+    if (f) { s.idx = f[s.idx]; if (s.idx===undefined) state.sel = null; }
+    return;
+  }
   state.sel = null; state.selSet = null; state.selOpen = null; state.selSeg = null;
 }
 
@@ -6141,25 +6726,16 @@ function handleClick(sx, sy, clientX, clientY, shift) {
     state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null; state.moveSel=false;
     const vq = hitVoltaQuota(sx, sy);                          // con l'ambiente selezionato, toccando una quota della volta si cambia solo quella
     if (vq) { voltaQuotaDialog(vq); return; }
-    const tq = hitThickQuote(sx, sy);                          // la quota verde dello spessore: toccandola si scrive lo spessore
-    if (tq!==null) { thickQuoteDialog(tq); return; }
-    const pick = [
-      ['opening',  pi===null ? hitOpening(sx,sy) : null, 'opening-context'],
-      ['point',    pi,                    'context-menu'],
-      ['label',    hitLabel(sx,sy),       'entity-context'],
-      ['opening',  hitOpeningQuota(sx,sy),'opening-context'],
-      ['quota',    hitQuota(sx,sy),       'quota-context'],
-      ['pilastro', hitPilastro(sx,sy),    'entity-context'],
-      ['scala',    hitScala(sx,sy),       'entity-context'],
-      ['pencil',   hitPencil(sx,sy),      'entity-context'],
-      ['tratto',   hitTratto(sx,sy),      'entity-context'],
-      ['misura',   hitMisura(sx,sy),      'entity-context'],
-      ['segment',  hitSegment(sx,sy),     'seg-context'],
-      ['costr',    hitCostr(sx,sy),       'entity-context'],
-      ['ambiente', hitAmbiente(sx,sy),    'amb-context'],
-    ].find(h => h[1]!==null);
+    const tg = locoTagHit(sx, sy);                             // rilievo in loco: bollino del perimetro, un tocco = esterno <-> vano scala
+    if (tg) { locoTagTap(tg); return; }
+    // 2.48 selezione multilivello: con piu' oggetti sotto il dito si sceglie da un elenco (l'ambiente da solo non conta: sta sotto a tutto)
+    const cands = selCands(sx, sy, pi), objs = cands.filter(c => c[0]!=='ambiente');
+    if (objs.length >= 2) { state.wpSel = null; state.sel = null; draw(); selxShow(cands, sx, sy, clientX, clientY); return; }
+    if (objs.length===1 && objs[0][0]==='thick') { thickQuoteDialog(objs[0][1]); return; }     // la quota verde dello spessore: toccandola si scrive lo spessore
+    const pick = cands.find(c => c[0]!=='thick') || null;
     // muro di un ambiente parametrico: il primo tocco lo seleziona con le maniglie, il secondo apre il menu della linea
     if (!pick || pick[0]==='segment' || pick[0]==='ambiente') { if (wpClick(sx, sy)) return; } else if (state.wpSel) state.wpSel = null;
+    if (pick && pick[0]==='ambiente' && locoOn()) { const a = state.ambienti[pick[1]]; if (a && a.wt && !a.wpx) { locoOpen(a.rid); return; } }     // in loco: la scheda della stanza
     if (pick) {
       state.sel = {kind:pick[0], idx:pick[1]};
       if (pick[0]==='segment') state.sel.t = segmentT(pick[1], sx, sy);
@@ -6387,6 +6963,13 @@ canvas.addEventListener('pointerdown', e => {
   if (state.inherit) { startPan(e.clientX, e.clientY); return; }          // eredita proprieta': il tocco applica, il trascinamento sposta la vista
   // sposta base o selezione: il trascinamento sposta, non disegna
   if (state.moveBase && state.underlay) { const w=s2w(sx,sy); state.drag={kind:'base', x0:w.x, y0:w.y, ux:state.underlay.x, uy:state.underlay.y}; return; }
+  if (state.moveRoom) {                     // Sposta ambiente: l'ambiente parametrico con i suoi punti (i muri generati si rifanno al rilascio)
+    if (_snapUndo) snapUndoShow(false);
+    const a = state.ambienti.find(x => x.rid===state.moveRoom && x.wt && !x.wpx);
+    if (a && !locked(a)) { const w=s2w(sx,sy); state.drag={kind:'room', rid:a.rid, x0:w.x, y0:w.y, pts:[...new Set(a.indices)].filter(i => state.points[i]).map(i => ({i, x:state.points[i].x, y:state.points[i].y}))}; return; }
+    state.moveRoom = null;
+  }
+  if (_snapUndo && Date.now() - _snapUndo.t > 1500) snapUndoShow(false);
   if (state.moveSel) {
     const w=s2w(sx,sy), ids=new Set(state.selSet||[]);
     (state.selSeg||[]).forEach(k => { const g=state.segments[k]; if (g) { ids.add(g.a); ids.add(g.b); } });
@@ -6535,6 +7118,7 @@ canvas.addEventListener('pointermove', e => {
       if (rooms.length) showTooltip(rooms.map(am => am.name+': '+Math.abs(shoelace(am.indices.map(x => state.points[x]))).toFixed(2)+' m²').join('  |  '), e.clientX, e.clientY);
       d.pen.forEach(q => { state.pencilLines[q.i].pts = q.o.map(p => ({x:p.x+dx, y:p.y+dy})); }); }
     if (d.kind==='base')     { state.underlay.x=d.ux+w.x-d.x0; state.underlay.y=d.uy+w.y-d.y0; }
+    if (d.kind==='room')     { const dx = w.x-d.x0, dy = w.y-d.y0; d.pts.forEach(p => { const q = state.points[p.i]; if (q) { q.x = wpR4(p.x+dx); q.y = wpR4(p.y+dy); } }); }
     if (d.kind==='quota') {
       const g = state.segments[d.idx], A = g && state.points[g.a], B = g && state.points[g.b];
       if (A && B) { const c = s2w(d.c0.x+sx-d.p0.x, d.c0.y+sy-d.p0.y); g.qo = {x:c.x-(A.x+B.x)/2, y:c.y-(A.y+B.y)/2}; }
@@ -6597,7 +7181,7 @@ function endPointer(e) {
   }
   if (state.roomDraw) {
     if (state.moved) finishRoom();
-    else { state.roomDraw=null; setTip(TIPS.room); draw(); }
+    else { state.roomDraw=null; draw(); finishRoomTap(s2w(sx, sy)); }      // tocco senza trascinare: stanza al tocco, misure scritte e aggancio
     return;
   }
   if (state.selBox) {
@@ -6618,6 +7202,7 @@ function endPointer(e) {
     if (!state.moved) handleClick(sx, sy, e.clientX, e.clientY);
     draw(); return;
   }
+  if (state.drag && state.drag.kind==='room') { const d = state.drag, mv = state.moved; state.drag = null; hideTooltip(); dragEnd(mv); if (mv) moveRoomEnd(d.rid); else draw(); return; }
   if (state.drag && (state.drag.kind==='multi' || state.drag.kind==='base')) { hideTooltip(); state.drag=null; dragEnd(true); persist(); draw(); return; }
   if (state.drag) {
     const wasMoved = state.moved, dk = state.drag.kind, di = state.drag.idx;
@@ -6705,7 +7290,7 @@ document.addEventListener('keydown', e => {
     if (state.pending || state.trilStep || state.circles.length) { resetTril(); setTip('Trilaterazione annullata.'); }
     if (state.tool==='wall') resetWall();
     state.measA=null; state.measPrev=null; state.roomDraw=null;
-    state.selBox=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null; state.sel=null; state.multi=false; state.moveSel=false;
+    state.selBox=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null; state.sel=null; state.multi=false; state.moveSel=false; state.moveRoom=null;
     document.getElementById('photo-viewer').classList.remove('show');
     state.pencilCurrent = null;               // la matita a meta' si annulla, non si salva
     if (state.tool!=='select') { setTool('select'); setTip('Seleziona.'); }      // Esc riporta sempre a Seleziona
@@ -10941,9 +11526,10 @@ let _wallsTimer = null;
 function wallsOpen() {
   if (!state.underlay) return;
   if (prog()) { setTip('Il ricalco crea il rilievo: si fa nello Stato di fatto.'); return; }
-  $id('walls-panel').classList.add('show'); wallsSchedule();
+  _wrAuto = false; $id('walls-panel').classList.add('show'); wallsSchedule();
 }
-function wallsClose() { $id('walls-panel').classList.remove('show'); state.wallsPrev=null; draw(); }
+function wallsClose() { wallsReviewEnd(); $id('walls-panel').classList.remove('show'); state.wallsPrev=null; draw(); }
+function wallsAuto() { if (COARSE && !_wrAuto && !_wr && $id('walls-panel').classList.contains('show') && wallsUnc().length) { _wrAuto = true; wallsReview(0); } }
 function wallsSchedule() {
   $id('walls-count').textContent = 'Elaboro...';
   clearTimeout(_wallsTimer); _wallsTimer = setTimeout(wallsRun, 200);
@@ -10961,6 +11547,7 @@ function wallsList() {
   if (uo.length || nf) h += '<div class="wl-head">Da controllare</div>';
   h += uo.map(([o, i]) => row('<input type="checkbox" '+(o.off ? '' : 'checked')+' onchange="wallsToggleOp('+i+', this.checked)">', (o.type==='P' ? 'Porta ' : 'Finestra ')+fmtM(o.width)+' m', o.unc, o.cx, o.cy)).join('');
   if (nf) h += '<div class="wl-row unc"><small>'+nf+(nf===1 ? ' muro' : ' muri')+' senza faccia opposta (tratteggio fucsia): '+(nf===1 ? 'resta una linea semplice' : 'restano linee semplici')+', lo spessore si dà a mano.</small></div>';
+  const nu = wallsUnc().length; if (nu) h = '<button type="button" class="wr-go" onclick="wallsReview(0)">Rivedi le proposte incerte una alla volta ('+nu+')</button>' + h;
   box.innerHTML = h;
 }
 function wallsToggle(i, on) { const P = state.wallsPrev; if (!P || !P.rooms[i]) return; P.rooms[i].off = !on; draw(); }
@@ -10994,7 +11581,7 @@ function wallsRun() {
   document.querySelectorAll('.wp-raster').forEach(el => { el.style.display = u.vec ? 'none' : ''; });          // i cursori servono solo al ricalco da immagine
   if (u.vec) {
     state.wallsPrev = u.vec;
-    wallsCount(); wallsList(); draw(); return;
+    wallsCount(); wallsList(); draw(); wallsAuto(); return;
   }
   const effPx = u.effPx || THIN_WALL/u.mpp;                              // tramezza da 8 cm sotto i 3 pixel: niente risultati inventati
   if (!u.forceRun && (u.lowRes || effPx < LOWRES_PX)) {
@@ -11029,10 +11616,11 @@ function wallsRun() {
     ops,
     wallT: r.wallTcm ? Math.max(0.10, Math.round(r.wallTcm/5)*5/100) : null,    // spessore dei muri esterni letto dal disegno, a 5 cm
   };
-  wallsCount(', muri esterni ~'+(r.wallTcm||0)+' cm'); wallsList(); draw();
+  wallsCount(', muri esterni ~'+(r.wallTcm||0)+' cm'); wallsList(); draw(); wallsAuto();
 }
 function wallsForce() { const u = state.underlay; if (!u) return; u.forceRun = true; document.querySelectorAll('.wp-raster').forEach(el => { el.style.display = ''; }); wallsSchedule(); }
 function wallsApply() {
+  if (_wr) wallsReviewEnd();
   const P = state.wallsPrev; if (!P || !P.segs.length) return;
   if (prog()) { setTip('Il ricalco crea il rilievo: si fa nello Stato di fatto.'); return; }
   saveHistory();
@@ -11533,7 +12121,7 @@ var _tipFull = '', _tipTimer = null;
 var TIPS_SHORT = {
   select:'Tocca un elemento per le sue azioni. Trascina nel vuoto per selezionarne più d\'uno.',
   wall:'Tocca il punto di partenza, poi ogni vertice. Per finire tocca di nuovo l\'ultimo punto.',
-  room:'Trascina da un angolo all\'angolo opposto.',
+  room:'Trascina un rettangolo, oppure tocca dove sta la stanza.',
   stair:'Trascina nel verso di salita.',
   cline:'Tocca inizio e fine della linea, o scrivi la lunghezza.',
   ccircle:'Tocca il centro e un punto sul bordo, o scrivi il raggio.',
@@ -11902,8 +12490,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.47';
-const APP_NOTE = ["Tabella ambienti in due blocchi, ognuno con il suo subtotale di superficie netta: \"Ambienti interni\" (utile, mansarde, soppalchi abitabili, taverne e non classificati) e \"Altri ambienti non abitabili\" (sottotetti, soppalchi non abitabili, balconi, terrazzi, logge, verande, portici, esterni, cantine, locali accessori, box, posti auto). Vale in PDF, JPG, CSV e Word; la tabella della superficie commerciale non cambia", "Disegni dei serramenti (abaco): casella \"Disegni serramenti\" nelle esportazioni Tabelle, Rilievo completo e Word. Per ogni serramento il prospetto con telaio, specchiature e quote larghezza x altezza; sotto la finestra il sottofinestra, quotato. Serramenti uguali in un disegno solo con la quantità (x3) e le sigle; le porte in una sezione a parte, viste dal lato in cui aprono", "Relazione in Word (menu File, \"Esporta relazione (Word)\"): un file .docx modificabile con i dati del rilievo in testa, la tavola come immagine, le stesse tabelle del PDF come tabelle vere di Word e, se scelto, l'abaco dei serramenti. Per modificare il disegno resta il DXF", "Porte in una tabella a parte, separata da \"Finestre e porte-finestre\" (a video nella Tabella serramenti, in PDF, JPG, CSV e Word). Casella \"Dati per ordine\": per le porte apertura (battente o scorrevole), mano (DX o SX guardando dal lato in cui apre), verso (da dove si tira e da dove si spinge), spessore del muro; per finestre e porte-finestre ante, specchiature, sottofinestra (altezza e spessore), cassonetto, oscurante e spessore del muro. Nella finestra della porta si sceglie se è battente o scorrevole", "Inserendo una finestra o una porta-finestra compaiono subito i divisori verticali e orizzontali delle specchiature: sono gli stessi dei dati energetici, scritti qui li ritrovi là e viceversa. Il serramento resta \"dati energetici da compilare\" finché non compili la scheda", "Tolta la \"Porta a vetro\": la porta è sempre in legno, una porta vetrata si inserisce come porta-finestra. I progetti con porte a vetro si aprono come sempre e un avviso dice quali porte sono diventate porte normali", "Verifica rilievo: accanto alle quote non verificate c'è \"Valida tutte\", che le valida in un colpo; Annulla le riporta da verificare", "Scelta delle quote all'esportazione: prima di esportare il disegno (PDF, JPG, Rilievo completo, Word, DXF) scegli quali quote mettere: spessori dei muri, lunghezze dei muri, anche quelle non verificate, nome e misure dei serramenti, dati degli ambienti, misure dei pilastri, dati delle scale. Le caselle partono come la Vista e la scelta vale solo per quella esportazione", "Nomi degli ambienti: un nome usato una volta sola non ha numero (\"Camera\"); quando ne nasce un secondo diventano \"Camera 1\" e \"Camera 2\", e così via. Vale per tutti i nomi, anche Balcone, Terrazzo e quelli scritti a mano. Cancellando o rinominando, i numeri si ricompattano e chi resta da solo perde il numero. I progetti già fatti non si rinominano all'apertura", "Spezza e crea ambiente: un muro disegnato che attraversa un ambiente da un lato all'altro (o che parte da un lato e arriva su un altro) fa comparire la proposta, con i punti d'incrocio segnati. Su un ambiente parametrico nascono due ambienti parametrici separati da una tramezza standard (la linea è il suo asse) e legati tra loro; l'originale tiene nome, altezza e categoria nella parte più grande, alla nuova dai il nome. Su un ambiente non parametrico le linee si spezzano negli incroci e nascono i due ambienti. Vale anche per forme a L e lati inclinati; \"Solo la linea\" disegna il muro come prima", "Modifica, \"Cancella disegni temporanei\": toglie in una volta tutte le linee di costruzione e le quote temporanee, dopo una conferma; Annulla le riporta", "Schema delle specchiature sul telefono: ora è una striscia orizzontale che scorre col dito, poco sopra la barra in basso, e il disegno resta libero. Sul computer resta la colonna a sinistra"];
+const APP_VERSION = '2.48';
+const APP_NOTE = ["Rilievo in loco: nuovo tasto \"In loco\" accanto a SdF. Mentre batti le misure le stanze vicine restano ferme e le tramezze mostrano lo scostamento (esempio \"10-3\": tramezza voluta 10 cm, ne mancano 3). Vale per gli ambienti parametrici (Stanza, stanza al tocco, ambiente da punti con punti suoi); su un progetto che non ne ha, l'app lo dice e non tocca nulla", "Scheda della stanza: tocchi la stanza e scrivi le misure nette un campo alla volta (larghezza, lunghezza, altezza, spessore del muro esterno), con Avanti e Indietro, pensata per il telefono con la tastiera aperta. Il lato misurato è evidenziato in giallo", "Lucchetto: la misura scritta nella scheda è validata e non cambia più (né con le maniglie né con Riassembla); valida anche le quote delle linee che la misurano. Un tocco sul lucchetto lo toglie", "Perimetro: l'app propone le pareti esterne (bollino E) e le tieni ferme; un tocco sul bollino le fa diventare vano scala (S) e viceversa. Cambiando una misura si sposta la parete interna; tra parete esterna e vano scala si sposta quella sul vano scala; con due pareti esterne l'app chiede quale tenere ferma", "Riassembla: rimette insieme le stanze con le pareti esterne allineate su un filo unico, senza cambiare le misure nette; la differenza va sulle tramezze, e oltre 5 cm la tramezza è segnalata da verificare", "Stanza al tocco: con Stanza tocchi il disegno (o la foto) dove sta la stanza e scrivi le misure. Entro 1 m da un'altra stanza si aggancia da sola, con la tramezza standard e i lati a filo; \"Togli aggancio\" la lascia dove l'hai messa. L'aggancio vale anche per la stanza trascinata e per Sposta ambiente", "Sposta ambiente (menu dell'ambiente): trascini l'ambiente con i suoi muri e i serramenti, anche più volte di seguito; al rilascio si aggancia alla stanza vicina", "La selezione non si perde più dopo uno spostamento", "Quando sotto il dito ci sono più oggetti (punto, muro, finestra, quota...) compare un elenco con voci grandi per scegliere quale", "Ricalco sul telefono: le proposte incerte si controllano una alla volta, centrate e ingrandite, con Tieni e Scarta; l'elenco completo resta", "Corretto: con lo schema delle specchiature acceso, nascondendo il menu il pulsante per riaprirlo finiva sotto lo schema e l'app restava bloccata anche dopo la riapertura"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
