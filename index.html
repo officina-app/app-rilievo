@@ -256,6 +256,18 @@
     .vr-row b { display:block; font-size:14px; color:#eee; }
     .vr-row small { display:block; font-size:12px; color:#b9c8dd; margin-top:2px; }
     .vr-ok { padding:12px; color:#5ef38c; font-size:14px; }
+    #oppanel { position:fixed; left:calc(var(--tb-w,0px) + 10px); top:10px; width:250px; max-height:calc(var(--vh,100vh) - 130px); overflow-y:auto; z-index:150; background:rgba(22,33,62,.96); border:1px solid #0f3460; border-radius:8px; padding:8px; font-size:12px; color:#ccc; }
+    #oppanel .op-card { cursor:pointer; margin-bottom:6px; padding:6px; border-radius:6px; border:1px solid #1a4a7a; }
+    #oppanel .op-card.cur { border-color:#ffe066; background:rgba(255,224,102,.10); }
+    #oppanel .op-svg { margin:4px 0; }
+    #oppanel.strip { left:var(--tb-w,0px); right:0; top:auto; bottom:calc(30px + var(--tb-h,0px)); width:auto; max-height:none; overflow-x:auto; overflow-y:hidden; display:flex; gap:6px; padding:5px 6px; border-radius:10px 10px 0 0; font-size:11px; -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; scroll-snap-type:x proximity; touch-action:pan-x; }
+    #oppanel.strip .op-card { flex:0 0 auto; width:108px; margin:0; padding:4px 5px; scroll-snap-align:start; }
+    #oppanel.strip .op-card span { color:#aaa; }
+    #oppanel.strip .op-svg { margin:2px 0; height:48px; display:flex; align-items:center; }
+    #oppanel.strip .op-msg { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:10px; }
+    #oppanel.strip .op-empty { padding:6px; }
+    body.opstrip #info-tip { bottom:calc(36px + 104px + var(--tb-h,0px)); }
+    .vr-all { margin-top:8px; padding:9px 14px; border-radius:8px; border:1px solid #2a9a5a; background:#1a6a3a; color:#fff; font-size:14px; cursor:pointer; }
     @media (max-width:600px) { #sb-points, #sb-segments, #sb-ambienti, #sb-zoom, #sb-tool, #sb-save { display:none; } #info-tip { font-size:13px; } }
     @media (max-width:600px) and (orientation:portrait) {                     /* pannelli Base e Ricalco: foglio in basso, il disegno resta libero */
       .side-panel { left:0 !important; right:0; top:auto !important; bottom:calc(28px + var(--tb-h,0px)); width:auto; max-height:36vh !important; overflow-y:auto; border-radius:12px 12px 0 0; font-size:13px; z-index:155; }
@@ -326,6 +338,7 @@
   </div></div>
   <div class="menu-item" onclick="hideAllMenus(); opTableOpen()">▦ Tabella serramenti<small class="md">Tutte le bucature in una schermata: misure, tipo e nome modificabili</small></div>
   <div class="menu-item" onclick="hideAllMenus(); toggleMulti()">➕ Selezione multipla<small class="md">Ogni tocco aggiunge o toglie un elemento</small></div>
+  <div class="menu-item danger" id="ed-deltemp" onclick="deleteAllTemp()">🗑 Cancella disegni temporanei<small class="md">In una volta tutte le linee di costruzione e le quote temporanee</small></div>
   <div class="menu-item danger" id="ed-delmis" onclick="deleteAllMisure()">🗑 Cancella le quote temporanee<small class="md">Tutte le misure fatte con Misura</small></div>
   <div class="menu-item danger" id="ed-delcostr" onclick="deleteAllCostr()">🗑 Cancella le linee di costruzione<small class="md">Tutte le linee, i cerchi e i quadrati di appoggio</small></div>
 </div>
@@ -350,8 +363,9 @@
   <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Esporta</div><div class="grp-b">
     <div class="menu-item" id="fm-full" onclick="exportTablesMenu('full')">📑 Esporta rilievo completo (PDF)<small class="md">Un solo PDF: disegno in scala e tabelle</small></div>
     <div class="menu-item" id="fm-tables" onclick="exportTablesMenu('tab')">📊 Esporta tabelle (PDF/JPG/CSV)<small class="md">Ambienti, serramenti, superficie commerciale</small></div>
-    <div class="menu-item" onclick="startExport('pdf')">📄 Esporta disegno (PDF)<small class="md">Solo la tavola, su A4 in scala, da stampare</small></div>
-    <div class="menu-item" onclick="startExport('jpg')">🖼 Esporta disegno (JPG)<small class="md">Solo la tavola, su A4 in scala, come immagine</small></div>
+    <div class="menu-item" id="fm-docx" onclick="exportTablesMenu('docx')">📝 Esporta relazione (Word)<small class="md">Un file .docx modificabile: dati del rilievo, tavola come immagine e tabelle vere</small></div>
+    <div class="menu-item" onclick="exportDrawing('pdf')">📄 Esporta disegno (PDF)<small class="md">Solo la tavola, su A4 in scala, da stampare</small></div>
+    <div class="menu-item" onclick="exportDrawing('jpg')">🖼 Esporta disegno (JPG)<small class="md">Solo la tavola, su A4 in scala, come immagine</small></div>
     <div class="menu-item" id="fm-dxf" onclick="exportDXF()">📤 Esporta DXF<small class="md">Per AutoCAD e gli altri CAD, in metri</small></div>
   </div></div>
   <div class="menu-item" id="fm-meta" onclick="metaDialog()">🏷 Dati del rilievo<small class="md">Indirizzo, catasto, committente e tecnico: vanno nel cartiglio e nel nome dei file</small></div>
@@ -383,7 +397,6 @@
   <div class="menu-item" data-lock onclick="openingMenuAction('edit')">✎ Modifica misure<small class="md">Larghezza, altezza, davanzale e nome</small></div>
   <div class="menu-item" data-lock onclick="openingMenuAction('setdist')">📏 Imposta distanza<small class="md">Posizionalo a una distanza misurata dallo spigolo</small></div>
   <div class="menu-item" id="om-energy" onclick="openingMenuAction('energy')">📋 Dati energetici<small class="md">Vetro, telaio, cassonetto e specchiature, per l'APE</small></div>
-  <div class="menu-item" data-lock id="om-glass" onclick="openingMenuAction('glass')">🪟 Porta a vetro<small class="md">Anta in vetro invece che a pannello opaco</small></div>
   <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Su più serramenti</div><div class="grp-b">
     <div class="menu-item" onclick="openingMenuAction('multi')">➕ Selezione multipla<small class="md">Poi tocca altri elementi per agire su tutti</small></div>
     <div class="menu-item" data-clip style="display:none" onclick="startPaste()">⎗ Incolla<small class="md">Quello che hai copiato: poi tocca dove posarlo</small></div>
@@ -1032,6 +1045,7 @@ function ambLabelPos(am) {
 function ambBlockBox(am, c) {
   const dy = prU(16), hn = PRINT ? 2.5*PX_MM : 14, hs = PRINT ? 2*PX_MM : 13;
   ctx.font = prFont(14, 2.5, true); let w = ctx.measureText(am.name).width;
+  if (!xqOn('amb', true)) return { x0:c.x-w/2, x1:c.x+w/2, y0:c.y-dy-hn*0.6, y1:c.y-dy+hn*0.6 };      // esportazione col solo nome
   const showH = +am.h > 0;
   ctx.font = prFont(13, 2, true);   w = Math.max(w, ctx.measureText(ambNet(am).toFixed(2)+' m²').width, showH ? ctx.measureText('H. '+ambHtxt(am)+' m').width : 0);
   return { x0:c.x-w/2, x1:c.x+w/2, y0:c.y-dy-hn*0.6, y1:c.y+(!showH ? 0 : ambNoVol(am) ? dy : 2*dy)+hs*0.6 };
@@ -1071,8 +1085,9 @@ function hitAmbLabel(sx, sy) {
 // ---- quote dei muri: posizione, convalida (valida finche' la lunghezza resta quella validata)
 function segOk(g, len) { return !!g.ok && Math.abs(len - g.okLen) < 0.01; }
 function quotaInfo(i) {
-  const g = state.segments[i]; if (!QINT || !g || hid(g) || g.layer==='MURI_EST') return null;     // i muri esterni non hanno quota; spente da Vista = nessuna quota, ne' a video ne' in uscita
+  const g = state.segments[i]; if (!xqOn('qint', QINT) || !g || hid(g) || g.layer==='MURI_EST') return null;     // i muri esterni non hanno quota; spente da Vista (o non scelte all'esportazione) = nessuna quota
   const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return null;
+  if (XQ && !XQ.nonver && !segOk(g, Math.hypot(B.x-A.x, B.y-A.y))) return null;          // esportazione senza le quote non verificate
   const sa = w2s(A.x,A.y), sb = w2s(B.x,B.y);
   if (Math.hypot(sb.x-sa.x, sb.y-sa.y) < (PRINT ? 18 : 46)) return null;      // troppo corto sullo schermo: ci si avvicina con lo zoom
   let ang = Math.atan2(sb.y-sa.y, sb.x-sa.x);
@@ -1543,7 +1558,7 @@ function drawStairArrow(a) {                // freccia di salita lungo la spezza
   if (dot) { ctx.beginPath(); ctx.arc(A0.x,A0.y,prU(3),0,Math.PI*2); ctx.fill(); }
 }
 function drawStairText(s, cw) {             // etichetta sempre visibile, come quella dei locali: nome e righe di verifica; in rosso quello da controllare
-  const rows = [s.label].concat(stairInfo(s)), c = w2s(cw.x, cw.y), dy = prU(13), y0 = c.y - dy*(rows.length-1)/2;
+  const rows = [s.label].concat(xqOn('scale', true) ? stairInfo(s) : []), c = w2s(cw.x, cw.y), dy = prU(13), y0 = c.y - dy*(rows.length-1)/2;
   ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
   rows.forEach((t, k) => {
     ctx.font = k ? prFont(11, 1.8) : prFont(13, 2.2, true);
@@ -1738,6 +1753,7 @@ function drawNow() {
   drawLabels();
   drawPoints();
   drawPickMarks();
+  drawSplitMark();
   drawPending();
   drawPastePreview();
   drawSelBox();
@@ -1905,7 +1921,7 @@ let THKQ = true;
 try { THKQ = localStorage.getItem('app_rilievo_thkq')!=='0'; } catch (err) {}
 function toggleThkQ() { THKQ = !THKQ; try { localStorage.setItem('app_rilievo_thkq', THKQ ? '1' : '0'); } catch (err) {} setTip(THKQ ? 'Quote dello spessore automatico accese.' : 'Quote dello spessore automatico spente.'); draw(); }
 function drawThickQuotes() {
-  if (!THKQ) return;
+  if (!xqOn('thk', THKQ)) return;
   state.segments.forEach(g => {
     if (!g.thAuto || !g.thick || !g.thN || hid(g)) return;
     const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return;
@@ -2168,7 +2184,7 @@ function drawPilastri() {
     ctx.textAlign='center'; ctx.textBaseline='bottom';
     ctx.fillText(r.label, c.x, c.y-prU(3));
     ctx.fillStyle=PRINT ? '#333' : '#fff'; ctx.font=prFont(9, 1.6); ctx.textBaseline='top';
-    ctx.fillText(Math.round(r.w*100)+'x'+Math.round(r.h*100), c.x, c.y+1);
+    if (xqOn('pil', true)) ctx.fillText(Math.round(r.w*100)+'x'+Math.round(r.h*100), c.x, c.y+1);
   });
 }
 
@@ -2600,23 +2616,42 @@ function selHasLocked() {
   return pts.has(-1) || [...pts].some(i => locked(state.points[i])) || [...(state.selOpen||[])].some(i => locked(state.openings[i])) || [...(state.selPen||[])].some(i => locked(state.pencilLines[i]));
 }
 
-// nome dell'ambiente da elenco, sempre univoco: quelli che di solito si ripetono (ROOM_NUM) partono da "1", gli altri
-// prendono il numero solo se si ripetono (il primo senza numero diventa "1"). Il numero nuovo e' il primo libero;
-// i nomi gia' dati non si rinumerano. "Altro" = nome scritto a mano.
+// nome dell'ambiente da elenco o scritto a mano ("Altro"). NUMERAZIONE (2.47, vale per tutti i nomi): un nome usato una volta sola non ha
+// numero ("Camera"); quando ne nasce un secondo con lo stesso nome base diventano "Camera 1" e "Camera 2", e cosi' via. La fa roomRenum a ogni
+// commit, solo per i nomi base toccati (ambiente nuovo, rinominato, cancellato): i progetti aperti non si rinominano.
 const ROOM_NAMES = ['Soggiorno','Soggiorno/cucina','Cucina','Camera','Bagno','Disimpegno','Corridoio','Ripostiglio'];
-const ROOM_NUM = new Set(['Camera','Bagno','Disimpegno','Corridoio','Ripostiglio']);
 const roomRe = base => new RegExp('^'+base.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&')+'(?: ([0-9]+))?$', 'i');
 function roomBase(name) { return ROOM_NAMES.find(b => roomRe(b).test(name||'')) || ''; }
-// da chiamare dopo saveHistory: puo' rinominare in "<nome> 1" l'omonimo senza numero
 function roomName(base, self) {
-  const re = roomRe(base);
-  if (self && re.test(self.name)) return self.name;                   // tipo invariato: resta il suo nome
-  const same = state.ambienti.filter(a => a!==self && re.test(a.name));
-  if (!same.length && !ROOM_NUM.has(base)) return base;
-  const used = new Set();
-  same.forEach(a => { const m = re.exec(a.name); if (m[1]) used.add(+m[1]); else { a.name = base+' 1'; used.add(1); } });
-  let n = 1; while (used.has(n)) n++;
-  return base+' '+n;
+  if (self && roomRe(base).test(self.name)) return self.name;          // tipo invariato: resta il suo nome
+  return base;                                                         // il numero lo mette roomRenum
+}
+var _rnPrev = [], _rnObj = new Map(), _rnForce = new Set();
+function rnBase(n) { return String(n||'').replace(/ [0-9]+$/, '').trim(); }
+function rnKey(n) { return rnBase(n).toLowerCase(); }
+function rnSync() { _rnPrev = state.ambienti.map(a => String(a.name||'')); _rnObj = new Map(state.ambienti.map(a => [a, String(a.name||'')])); _rnForce = new Set(); }
+function roomRenum() {
+  const names = state.ambienti.map(a => String(a.name||'')), cnt = arr => { const m = new Map(); arr.forEach(n => { const k = rnKey(n); if (k) m.set(k, (m.get(k)||0)+1); }); return m; };
+  const cp = cnt(_rnPrev), cn = cnt(names), dirty = new Set(_rnForce);
+  new Set([...cp.keys(), ...cn.keys()]).forEach(k => { if ((cp.get(k)||0)!==(cn.get(k)||0)) dirty.add(k); });
+  const ep = new Map(), ex = new Map(); _rnPrev.forEach(n => ep.set(n, (ep.get(n)||0)+1)); names.forEach(n => ex.set(n, (ex.get(n)||0)+1));
+  ex.forEach((c, n) => { if (c > 1 && c > (ep.get(n)||0) && rnKey(n)) dirty.add(rnKey(n)); });          // due nomi uguali nati adesso
+  if (dirty.size) {
+    const seen = new Map();
+    const info = state.ambienti.map((a, i) => {
+      const n = names[i], c = (seen.get(n)||0)+1, m = / ([0-9]+)$/.exec(n); seen.set(n, c);
+      const nw = _rnObj.has(a) ? _rnObj.get(a)!==n : c > (ep.get(n)||0);                    // nuovo o rinominato adesso: va in fondo
+      return {a, i, k:rnKey(n), nw:nw ? 1 : 0, num:m ? +m[1] : 0};
+    });
+    dirty.forEach(k => {
+      const g = info.filter(x => x.k===k); if (!g.length) return;
+      const base = rnBase((g.find(x => !x.nw) || g[0]).a.name);
+      if (g.length===1) { g[0].a.name = base; return; }
+      g.sort((p, q) => (p.nw - q.nw) || (p.num - q.num) || (p.i - q.i));
+      g.forEach((x, j) => { x.a.name = base+' '+(j+1); });
+    });
+  }
+  rnSync();
 }
 // campi del nome nella finestra dell'ambiente: elenco + nome libero (visibile solo con "Altro")
 function roomNameFields(cur) {
@@ -2675,8 +2710,9 @@ function ambMenuAction(action) {
     ]), 'Superficie '+ambNet(amb).toFixed(2)+' m²'+(pw ? ', pareti '+pw.lorde.toFixed(2)+' m² lorde, '+pw.nette.toFixed(2)+' m² nette' : ''), v => {
       const hh = parseFloat(v.h); saveHistory();
       const out = COMM_APERTO.has(v.cat);                                  // balcone, terrazzo...: prende il nome della categoria, senza numerazione, e puo' avere altezza 0
-      amb.name = out && v.rn!=='altro' ? OUT_NAME[v.cat] : roomNameRead(v, amb, amb.name);
-      if (out) { const base = amb.name.replace(/ [0-9]+$/, ''), taken = new Set(state.ambienti.filter(a => a!==amb).map(a => a.name)); let nm = amb.name, n = 2; while (taken.has(nm)) nm = base+' '+(n++); amb.name = nm; }       // mai due ambienti con lo stesso nome: Balcone, Balcone 2...
+      _rnForce.add(rnKey(amb.name));                                     // l'ambiente toccato segue la regola dei nomi (anche se il nome resta)
+      amb.name = out && v.rn!=='altro' ? (rnKey(amb.name)===rnKey(OUT_NAME[v.cat]) ? amb.name : OUT_NAME[v.cat]) : roomNameRead(v, amb, amb.name);
+      _rnForce.add(rnKey(amb.name));
       if (isFinite(hh) && (hh>0 || (hh===0 && out))) amb.h = hh;
       amb.category = v.cat || undefined;
       commit('Ambiente aggiornato.');
@@ -2727,6 +2763,7 @@ function drawAmbienti() {
     ctx.textAlign='center'; ctx.textBaseline='middle';
     const dy = prU(16);
     ctx.fillStyle=C.ambName; ctx.font=prFont(14, 2.5, true); haloText(amb.name, c.x, c.y-dy);
+    if (!xqOn('amb', true)) return;                                                // esportazione senza i dati degli ambienti: resta il nome
     ctx.fillStyle=C.ambArea; ctx.font=prFont(13, 2, true);   haloText(num(area)+' m²', c.x, c.y);
     if (+amb.h > 0) { ctx.fillStyle=C.ambH;    ctx.font=prFont(13, 2, true);   haloText('H. '+ambHtxt(amb, ',')+' m'+(amb.volta && !(voltaInfo(amb)||{}).ok ? ' (!)' : ''), c.x, c.y+dy); }      // altezza 0 (terrazzo): la riga sparisce; (!) = volta incompleta
     const volRow = +amb.h > 0 && !ambNoVol(amb);
@@ -2831,12 +2868,19 @@ function ambHighlightTip(k) {
 // Porta: anta spessa 5 cm aperta a 90 gradi con la cerniera all'inizio del varco e quarto di circonferenza tratteggiato.
 const OP_PR = 0.05;
 function openingNv(op) { return Math.max(0, Math.round(+(op.energy && op.energy.nv) || 0)); }
-function openingGeom(type, w, nv, hinge, side, glass) {
+// scheda dei dati energetici compilata (per la porta: trasmittanza o note); con le sole specchiature scritte all'inserimento resta "da compilare"
+function enDone(op) { const e = op && op.energy; return !!e && (op.type==='P' || e.vetro!=null || e.telaio!=null); }
+function openingGeom(type, w, nv, hinge, side, scorr) {
   const h = OP_PR/2, segs = [], polys = [], arcs = [];
+  if (type==='P' && scorr) {                          // porta scorrevole: anta lungo il muro dal lato "side", freccia verso dove scorre (hinge)
+    const sg = side<0 ? -1 : 1, d = hinge==='b' ? 1 : -1, y0 = sg*h, y1 = sg*(h+OP_PR), ya = sg*(h+OP_PR*2.4), a0 = w/2 - d*w*0.22, a1 = w/2 + d*w*0.22, k = Math.min(0.08, w*0.08);
+    polys.push([{x:0,y:y0},{x:w,y:y0},{x:w,y:y1},{x:0,y:y1}]);
+    segs.push([a0, ya, a1, ya], [a1, ya, a1-d*k, ya+k*0.6], [a1, ya, a1-d*k, ya-k*0.6]);
+    return {segs, polys, arcs};
+  }
   if (type==='P') {                                   // hinge 'a' = cerniera all'inizio del varco, 'b' = alla fine; side +1 = anta a sinistra del verso del muro, -1 a destra
     const mx = hinge==='b', my = side<0, A = Math.atan2(w, OP_PR)*180/Math.PI, X = x => mx ? w-x : x, Yv = y => my ? -y : y;
     polys.push([{x:0,y:0},{x:OP_PR,y:0},{x:OP_PR,y:w},{x:0,y:w}].map(q => ({x:X(q.x), y:Yv(q.y)})));
-    if (glass) segs.push([X(OP_PR/2), Yv(0), X(OP_PR/2), Yv(w)]);      // anta a vetro: linea di vetro in mezzeria, come nelle finestre
     arcs.push({cx: mx ? w : 0, cy:0, r:Math.hypot(OP_PR, w), a0: mx ? (my ? 180 : 180-A) : (my ? 360-A : 0), a1: mx ? (my ? 180+A : 180) : (my ? 360 : A), dash:true});
     return {segs, polys, arcs};
   }
@@ -2857,7 +2901,7 @@ function drawOpenings() {
     const col     = faseCol(op) || (PRINT ? (op.type==='P' ? C.door : C.win) : (op.type==='F' ? C.win : op.type==='P' ? C.door : C.pf));
 
     ctx.save(); ctx.translate(p.sx,p.sy); ctx.rotate(ang);
-    const kpx = segLen>0 ? segLenPx/segLen : state.zoom, G = openingGeom(op.type, op.width, openingNv(op), op.hinge, op.side, op.glass);      // px per metro reale
+    const kpx = segLen>0 ? segLenPx/segLen : state.zoom, G = openingGeom(op.type, op.width, openingNv(op), op.hinge, op.side, op.scorr);      // px per metro reale
     const X = x => (x - op.width/2)*kpx, Y = y => -y*kpx;                                                    // p e' gia' nella posizione disegnata (in mezzeria della bucatura)
     ctx.strokeStyle = on ? '#fff' : col; ctx.lineWidth = on ? 2.5 : prLw(1.5, 0.18);
     G.segs.forEach(([x1,y1,x2,y2]) => { ctx.beginPath(); ctx.moveTo(X(x1),Y(y1)); ctx.lineTo(X(x2),Y(y2)); ctx.stroke(); });
@@ -2869,6 +2913,7 @@ function drawOpenings() {
     ctx.restore();
 
     // nome e, solo a video, distanza dall'estremo A (serve a collocarlo, non in stampa); spostabile, la linea di richiamo la segue
+    if (!xqOn('op', true)) return;                                                 // esportazione senza nomi e misure dei serramenti
     const q = openingQuotaPos(i);
     let end = {x:q.x, y:q.y+14};
     if (PRINT) {                                    // in stampa il richiamo si ferma al bordo del nome, da qualunque lato stia
@@ -3310,11 +3355,17 @@ function updateWallPreview(sx, sy) {
   draw();
 }
 
-function finishWall() {
+function finishWall(noSplit) {
   const O = state.points[state.wallOrigin], P = state.wallPreview;
   if (!O || !P) return;
   let target = state.wallSnapPoint;
   if (target===null && Math.hypot(P.x-O.x, P.y-O.y) < 0.02) return;
+  const Pt = target!==null && state.points[target] ? state.points[target] : P;
+  if (!noSplit) {                                    // la linea attraversa un ambiente parametrico da lato a lato: prima si propone "Spezza e crea ambiente"
+    const sc = splitCand(O, Pt, true);
+    if (sc) { splitAsk(sc, {P:{x:P.x, y:P.y}, target}); return; }
+  }
+  const npc = splitCand(O, Pt, false);               // ambiente non parametrico: se dopo il muro non e' diviso, si propone dopo
   saveHistory(); state.history[state.history.length-1].wo = state.wallOrigin;   // Annulla riparte da questo vertice
   const swapped = twinRemoveFor(state.wallOrigin, P, target);                    // seconda faccia disegnata a mano: la automatica sparisce prima
   if (swapped) { state.wallOrigin = swapped.o; target = swapped.t; }             // i punti tolti spostano gli indici
@@ -3338,6 +3389,189 @@ function finishWall() {
   clearAssist();
   if (!asked) checkClosedPolygon(target, gk);
   commit((wn.length ? wn.join(' ')+' ' : '')+'Clicca il vertice successivo. Per finire: clic sull\'ultimo punto, doppio clic o ESC.');
+  if (npc && !asked && !$id('dialog-overlay').classList.contains('show') && splitStillInside(npc)) splitAskNP(npc);
+}
+// ═══ SPEZZA E CREA AMBIENTE (2.47): un muro disegnato che attraversa un ambiente da un lato all'altro (o che parte da un lato e finisce su un altro)
+// lo divide. Ambiente parametrico: due ambienti parametrici separati da una tramezza standard, legati (la linea e' l'asse della tramezza);
+// non parametrico: le linee si spezzano nei punti d'incrocio e nascono i due ambienti, come un muro che arriva sui lati.
+// Si propone solo se la parte della linea dentro l'ambiente va da contorno a contorno e lascia due parti vere (almeno 0,5 m² l'una).
+function splitPieces(poly, h0, h1) {                 // le due parti del poligono tagliato dalla corda h0 -> h1 (h = {X, k: lato})
+  const n = poly.length, walk = (ha, hb) => { const out = [ha.X]; for (let k = (ha.k+1)%n, g = 0; g <= n; k = (k+1)%n, g++) { out.push(poly[k]); if (k===hb.k) break; } out.push(hb.X); return out; };
+  const clean = pts => pts.filter((p, i) => { const q = pts[(i+pts.length-1)%pts.length]; return Math.hypot(p.x-q.x, p.y-q.y) > 0.001; });
+  return [clean(walk(h0, h1)), clean(walk(h1, h0))];
+}
+function splitCand(O, P, wantParam) {
+  const dx = P.x-O.x, dy = P.y-O.y, L = Math.hypot(dx, dy); if (L < 0.3) return null;
+  const ux = dx/L, uy = dy/L, ext = WELD_UNDERSHOOT;
+  const par = new Set(); try { wpRooms(false).forEach(R => { if (!locked(R.a)) par.add(R.a); }); } catch (err) {}
+  let best = null;
+  state.ambienti.forEach((a, ai) => {
+    if (!live(a) || hid(a) || locked(a) || a.indices.length < 3 || par.has(a)!==wantParam) return;
+    const poly = a.indices.map(i => state.points[i]); if (poly.some(p => !p)) return;
+    const hits = [];
+    for (let k = 0; k < poly.length; k++) {
+      const A = poly[k], B = poly[(k+1)%poly.length], ex = B.x-A.x, ey = B.y-A.y, den = ux*ey - uy*ex; if (Math.abs(den) < 1e-9) continue;
+      const s = ((A.x-O.x)*ey - (A.y-O.y)*ex)/den, t = ((A.x-O.x)*uy - (A.y-O.y)*ux)/den;
+      if (t < -1e-9 || t > 1+1e-9 || s < -ext || s > L+ext) continue;
+      hits.push({s, k, X:{x:O.x+ux*s, y:O.y+uy*s}});
+    }
+    hits.sort((p, q) => p.s-q.s);
+    const H = hits.filter((h, i) => !i || h.s - hits[i-1].s > 0.001);       // un vertice tocca due lati: conta una volta
+    for (let i = 0; i < H.length-1; i++) {
+      const h0 = H[i], h1 = H[i+1]; if (h1.s - h0.s < 0.3) continue;
+      const m = (h0.s+h1.s)/2; if (!inPoly(poly, O.x+ux*m, O.y+uy*m)) continue;
+      const pc = splitPieces(poly, h0, h1), a0 = Math.abs(shoelace(pc[0])), a1 = Math.abs(shoelace(pc[1]));
+      if (pc[0].length < 3 || pc[1].length < 3 || Math.min(a0, a1) < 0.5) continue;
+      if (!best || h0.s < best.s0) best = {a, ai, X1:h0.X, X2:h1.X, s0:h0.s, s1:h1.s, ux, uy, poly, h0, h1};
+      break;
+    }
+  });
+  return best;
+}
+// dopo il muro: il punto medio della corda e' ancora dentro un ambiente (lontano dai suoi lati) = l'ambiente non si e' diviso
+function splitStillInside(sc) {
+  const M = {x:(sc.X1.x+sc.X2.x)/2, y:(sc.X1.y+sc.X2.y)/2};
+  return state.ambienti.some(a => {
+    if (!live(a) || a.indices.length < 3) return false;
+    const p = a.indices.map(i => state.points[i]).filter(Boolean); if (p.length < 3 || !inPoly(p, M.x, M.y)) return false;
+    return p.every((A, k) => { const B = p[(k+1)%p.length]; return distPtSeg(M.x, M.y, A.x, A.y, B.x, B.y) > 0.01; });
+  });
+}
+function drawSplitMark() {
+  if (!state.splitMark) return;
+  ctx.save(); ctx.strokeStyle = '#ffe066'; ctx.fillStyle = 'rgba(255,224,102,.35)'; ctx.lineWidth = 3;
+  state.splitMark.forEach(X => { const s = w2s(X.x, X.y); ctx.beginPath(); ctx.arc(s.x, s.y, 11, 0, Math.PI*2); ctx.fill(); ctx.stroke(); });
+  if (state.splitMark.length===2) { const a = w2s(state.splitMark[0].x, state.splitMark[0].y), b = w2s(state.splitMark[1].x, state.splitMark[1].y); ctx.setLineDash([8, 5]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+  ctx.restore();
+}
+function dlgButtons(ok, no) { $id('dialog-confirm').textContent = ok; $id('dialog-cancel').textContent = no; }
+// ambiente parametrico: si chiede il nome del nuovo ambiente, "Solo la linea" disegna il muro come prima
+function splitAsk(sc, cont) {
+  state.splitMark = [sc.X1, sc.X2]; draw();
+  const nm0 = freeAmbName(), t = Math.round(wpStd().int*100);
+  askDialog('Spezza e crea ambiente', roomNameFields(nm0),
+    'La linea attraversa '+sc.a.name+' da un lato all\'altro. Diventano due ambienti parametrici separati da una tramezza di '+t+' cm, con la linea come asse. '+sc.a.name+' tiene nome, altezza e categoria nella parte più grande; qui scegli il nome della nuova. "Solo la linea" disegna il muro come prima.', v => {
+      state.splitMark = null;
+      try { splitParamDo(sc, roomNameRead(v, null, nm0)); } catch (err) { console.error('spezza ambiente', err); setTip('Non riesco a dividere l\'ambiente: '+err.message, 'warn'); draw(); }
+    }, () => { state.splitMark = null; state.wallPreview = cont.P; state.wallSnapPoint = cont.target; finishWall(true); });
+  roomNameUI(); dlgButtons('Spezza e crea ambiente', 'Solo la linea');
+}
+// ambiente non parametrico attraversato da una linea che non lo divide: si spezzano le linee negli incroci e si dividono gli ambienti
+function splitAskNP(sc) {
+  state.splitMark = [sc.X1, sc.X2]; draw();
+  askDialog('Spezza e crea ambiente', [], 'La linea attraversa '+sc.a.name+' ma non lo divide. Spezzo le linee nei punti d\'incrocio e creo i due ambienti?', () => {
+    state.splitMark = null;
+    try { splitNPDo(sc); } catch (err) { console.error('spezza ambiente', err); setTip('Non riesco a dividere l\'ambiente: '+err.message, 'warn'); draw(); }
+  }, () => { state.splitMark = null; draw(); });
+  dlgButtons('Spezza e crea ambiente', 'No');
+}
+function splitNode(X) {                              // punto nel luogo X: esistente (entro 1 cm) o nuovo, che spezza tutte le linee che ci passano
+  const near = state.points.findIndex(p => Math.hypot(p.x-X.x, p.y-X.y) < 0.01);
+  let n = near >= 0 ? near : null;
+  for (let si = 0; si < state.segments.length; si++) {
+    const g = state.segments[si]; if (!live(g) || hid(g) || (n!==null && (g.a===n || g.b===n))) continue;
+    const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) continue;
+    const L2 = (B.x-A.x)**2 + (B.y-A.y)**2; if (L2 < 1e-8) continue;
+    const t = ((X.x-A.x)*(B.x-A.x) + (X.y-A.y)*(B.y-A.y))/L2; if (t <= 1e-4 || t >= 1-1e-4) continue;
+    if (Math.abs((X.x-A.x)*(B.y-A.y) - (X.y-A.y)*(B.x-A.x))/Math.sqrt(L2) > 0.002) continue;
+    n = splitSegCore(si, t, n===null ? undefined : n).n;
+  }
+  if (n===null) n = newPoint(X.x, X.y);
+  return n;
+}
+function splitNPDo(sc) {
+  saveHistory();
+  const n1 = splitNode(sc.X1), n2 = splitNode(sc.X2);
+  if (!segExists(n1, n2)) state.segments.push({a:n1, b:n2});
+  const T = new Set([n1, n2]), wn = weldGaps(T);
+  const gk = weldGapKeys(T), wr = weldRooms(T, gk); let asked = wr.asked;
+  const tw = wr.big ? weldTwin(n1, n2, wr.big) : null;
+  if (tw) {
+    wn.push('Tramezza da '+Math.round(TWIN_T*100)+' cm: seconda linea creata.');
+    const T2 = new Set([tw.pa, tw.pb]); weldGaps(T2);
+    if (weldRooms(T2, weldGapKeys(new Set([n1, n2, tw.pa, tw.pb])), asked).asked) asked = true;
+  }
+  if (!asked) checkClosedPolygon(n2, gk);
+  state.wallOrigin = null;
+  commit('Linee spezzate negli incroci: ambiente diviso. '+wn.join(' '));
+}
+// ambiente parametrico diviso in due: la corda X1-X2 e' l'asse della tramezza standard. Le due facce si ottengono spostando la corda di mezza
+// tramezza per parte, con gli estremi che scorrono sui lati dell'ambiente; il tratto di contorno tra le due facce sparisce
+function splitParamDo(sc, nm) {
+  const a = sc.a, t = wpStd().int, R0 = wpRing(a); if (!R0) throw new Error('forma non valida');
+  const wt0 = (a.wt || []).slice(), poly = sc.poly, n = poly.length, ux = sc.ux, uy = sc.uy, nL = {x:-uy, y:ux};
+  const hitAt = (X, off) => {                         // la retta della corda spostata di off: incrocio col contorno piu' vicino a X
+    const B0 = {x:X.x+nL.x*off, y:X.y+nL.y*off}; let best = null;
+    for (let k = 0; k < n; k++) {
+      const A = poly[k], B = poly[(k+1)%n], ex = B.x-A.x, ey = B.y-A.y, den = ux*ey - uy*ex; if (Math.abs(den) < 1e-9) continue;
+      const s = ((A.x-B0.x)*ey - (A.y-B0.y)*ex)/den, tt = ((A.x-B0.x)*uy - (A.y-B0.y)*ux)/den;
+      if (tt < -1e-9 || tt > 1+1e-9) continue;
+      const Y = {x:B0.x+ux*s, y:B0.y+uy*s}, d = Math.hypot(Y.x-X.x, Y.y-X.y);
+      if (!best || d < best.d) best = {x:Y.x, y:Y.y, d};
+    }
+    if (!best || best.d > Math.max(0.5, 4*t)) throw new Error('lato troppo inclinato vicino all\'incrocio');
+    return best;
+  };
+  const Y = {L1:hitAt(sc.X1, t/2), L2:hitAt(sc.X2, t/2), R1:hitAt(sc.X1, -t/2), R2:hitAt(sc.X2, -t/2)};
+  if (Math.hypot(Y.L1.x-Y.L2.x, Y.L1.y-Y.L2.y) < 0.2 || Math.hypot(Y.R1.x-Y.R2.x, Y.R1.y-Y.R2.y) < 0.2) throw new Error('parte troppo piccola');
+  saveHistory();
+  try { splitParamCore(sc, nm, a, t, R0, wt0, Y); }
+  catch (err) { restore(state.history.pop()); throw err; }            // niente a meta': si torna a prima
+}
+function splitParamCore(sc, nm, a, t, R0, wt0, Y) {
+  const fase = a.fase, oIdx = state.wallOrigin, idx = {};
+  // i quattro punti nuovi entrano nel contorno: spezzano il lato (e la sua linea) dove cadono
+  const insert = P => {
+    const r = a.indices, m = r.length;
+    for (let k = 0; k < m; k++) { const V = state.points[r[k]]; if (Math.hypot(V.x-P.x, V.y-P.y) < 0.001) return r[k]; }
+    for (let k = 0; k < m; k++) {
+      const i = r[k], j = r[(k+1)%m], A = state.points[i], B = state.points[j], L2 = (B.x-A.x)**2 + (B.y-A.y)**2; if (L2 < 1e-10) continue;
+      const tt = ((P.x-A.x)*(B.x-A.x) + (P.y-A.y)*(B.y-A.y))/L2; if (tt <= 0 || tt >= 1) continue;
+      if (Math.abs((P.x-A.x)*(B.y-A.y) - (P.y-A.y)*(B.x-A.x))/Math.sqrt(L2) > 0.002) continue;
+      const si = state.segments.findIndex(g => (g.a===i && g.b===j) || (g.a===j && g.b===i));
+      if (si >= 0) { const g = state.segments[si]; return splitSegCore(si, g.a===i ? tt : 1-tt).n; }
+      const np = newPoint(P.x, P.y); state.points[np].fase = fase; r.splice(k+1, 0, np); return np;
+    }
+    throw new Error('punto fuori dal contorno');
+  };
+  ['L1','R1','L2','R2'].forEach(key => { idx[key] = insert(Y[key]); });
+  const ring = a.indices.slice(), m = ring.length, pos = v => ring.indexOf(v);
+  const fwd = (u, v) => { const out = []; for (let k = pos(u), g = 0; g <= m; k = (k+1)%m, g++) { out.push(ring[k]); if (ring[k]===v) break; } return out; };
+  const pick = (u, v, bad) => { const p1 = fwd(u, v), p2 = fwd(v, u); return !p1.some(x => bad.includes(x)) ? p1 : !p2.some(x => bad.includes(x)) ? p2 : null; };
+  const pL = pick(idx.L1, idx.L2, [idx.R1, idx.R2]), pR = pick(idx.R1, idx.R2, [idx.L1, idx.L2]);
+  if (!pL || !pR || pL.length < 3 || pR.length < 3) throw new Error('divisione non riuscita');
+  const inP = new Set(pL.concat(pR)), edgeIn = (p, u, v) => p.some((x, k) => k < p.length-1 && ((x===u && p[k+1]===v) || (x===v && p[k+1]===u)));
+  const segDel = new Set(), ptsDel = new Set();
+  for (let k = 0; k < m; k++) {                       // tratti del contorno tra le due facce: spariscono, con i loro vertici
+    const u = ring[k], v = ring[(k+1)%m]; if (edgeIn(pL, u, v) || edgeIn(pR, u, v)) continue;
+    const si = state.segments.findIndex(g => (g.a===u && g.b===v) || (g.a===v && g.b===u)); if (si >= 0) segDel.add(si);
+  }
+  ring.forEach(v => { if (!inP.has(v)) ptsDel.add(v); });
+  const lostOps = state.openings.filter(o => segDel.has(o.segIdx)).length;
+  state.segments.push({a:pL[0], b:pL[pL.length-1], fase}, {a:pR[0], b:pR[pR.length-1], fase});      // le due facce della tramezza
+  const ptsOf = p => p.map(i => state.points[i]), aL = Math.abs(shoelace(ptsOf(pL))), aR = Math.abs(shoelace(ptsOf(pR)));
+  const big = aL >= aR ? pL : pR, small = aL >= aR ? pR : pL;
+  let rid = 1; state.ambienti.forEach(x => { if (x.rid >= rid) rid = x.rid + 1; });
+  const wtFor = ids => {                              // spessori dei lati: quelli del lato originale su cui stanno; la faccia nuova come una stanza nuova
+    const Rn = wpRing({indices:ids}); if (!Rn) return null;
+    return Rn.S.map(s => {
+      const mx = (s.p.x+s.q.x)/2, my = (s.p.y+s.q.y)/2;
+      const j = R0.S.findIndex(o => Math.abs(o.ux*s.uy - o.uy*s.ux) < 1e-3 && Math.abs((mx-o.p.x)*o.uy - (my-o.p.y)*o.ux) < 0.002);
+      return j >= 0 && wt0[j]!=null ? +wt0[j] : wpStd().ext;
+    });
+  };
+  const nb = {indices:small, name:nm, h:a.h, color:AMB_COLORS[state.ambienti.length % AMB_COLORS.length], category:a.category, fase, rid};
+  a.indices = big; delete a.lo;
+  a.wt = wtFor(big) || a.wt; nb.wt = wtFor(small) || small.map(() => wpStd().ext);
+  state.ambienti.push(nb);
+  if (oIdx!==null && state.points[oIdx] && !state.segments.some(g => g.a===oIdx || g.b===oIdx) && !state.ambienti.some(x => x.indices.includes(oIdx)) && !state.points[oIdx].note && !state.points[oIdx].photo) ptsDel.add(oIdx);   // il punto da cui partiva la linea, rimasto da solo
+  state.wallOrigin = null; state.wallPreview = null; state.wallSnapPoint = null; clearAssist();
+  const aRid = a.rid;
+  if (segDel.size || ptsDel.size) removeItems(ptsDel, segDel, new Set());
+  const A2 = state.ambienti.find(x => x.rid===aRid), B2 = state.ambienti.find(x => x.rid===rid);
+  if (A2) wpStamp(A2); if (B2) wpStamp(B2); wpIds(); wpAnchor();       // serramenti sulle facce esterne: riferiti ai lati nuovi
+  const fixed = wpRooms(false).map(R => R.rid);
+  wpApply(fixed, (A2 ? A2.name : 'L\'ambiente')+' diviso: nasce '+(B2 ? B2.name : nm)+' ('+(B2 ? ambNet(B2).toFixed(2) : '?')+' m²), tramezza di '+Math.round(t*100)+' cm sull\'asse della linea. Sono legati: lo spessore si cambia toccando il muro.'+(lostOps ? ' Attenzione: '+lostOps+(lostOps===1 ? ' serramento stava' : ' serramenti stavano')+' proprio dove nasce la tramezza ed è stato tolto.' : ''), rid);
 }
 // ── Muri disegnati a mano che si innestano nel disegno (tramezze) ──────────────────────────────────────────────
 // Una linea nuova non resta sovrapposta alle altre: (1) un estremo che cade sulla linea di un muro la spezza in quel punto e si
@@ -4696,31 +4930,32 @@ function toggleOpPanel() {
 function opPanelUpdate(force) {
   const btn = $id('oppanel-btn'); if (btn) btn.classList.toggle('on', OPPANEL);
   let pn = $id('oppanel');
-  if (!OPPANEL) { if (pn) pn.style.display = 'none'; return; }
-  if (!pn) {
-    pn = document.createElement('div'); pn.id = 'oppanel';
-    pn.style.cssText = 'position:fixed;left:calc(var(--tb-w,0px) + 10px);top:10px;width:250px;max-height:calc(var(--vh,100vh) - 130px);overflow-y:auto;z-index:150;background:rgba(22,33,62,.96);border:1px solid #0f3460;border-radius:8px;padding:8px;font-size:12px;color:#ccc';
-    document.body.appendChild(pn);
-  }
+  if (!OPPANEL) { if (pn) pn.style.display = 'none'; document.body.classList.remove('opstrip'); return; }
+  if (!pn) { pn = document.createElement('div'); pn.id = 'oppanel'; document.body.appendChild(pn); }
+  // telefono (schermo stretto o basso): striscia orizzontale scorrevole poco sopra la barra in basso, il disegno resta libero; computer: colonna a sinistra
+  const strip = window.innerWidth <= 600 || window.innerHeight <= 500;
+  pn.classList.toggle('strip', strip); document.body.classList.toggle('opstrip', strip);
   const idx = state.openings.map((o,i) => i).filter(i => !hid(state.openings[i]) && state.openings[i].type!=='P')
     .sort((a,b) => String(state.openings[a].label).localeCompare(String(state.openings[b].label), 'it', {numeric:true}));
   const cur = state.sel && state.sel.kind==='opening' ? state.sel.idx : -1;
-  const sig = JSON.stringify([idx.map(i => { const o = state.openings[i], e = o.energy; return [o.label, o.type, o.width, opHb(o), e && [e.nv, e.no, e.pannelli, e.spTelaio]]; }), cur]);
+  const sig = JSON.stringify([idx.map(i => { const o = state.openings[i], e = o.energy; return [o.label, o.type, o.width, opHb(o), e && [e.nv, e.no, e.pannelli, e.spTelaio]]; }), cur, strip]);
   if (!force && sig===OPPANEL_SIG && pn.style.display!=='none') return;
-  OPPANEL_SIG = sig; pn.style.display = 'block';
-  const top0 = pn.scrollTop;
+  OPPANEL_SIG = sig; pn.style.display = strip ? 'flex' : 'block';
+  const top0 = pn.scrollTop, left0 = pn.scrollLeft;
   const m2 = v => v.toFixed(2).replace('.', ',');
-  pn.innerHTML = '<div style="color:#aaa;margin-bottom:6px">Serramenti: specchiature dai dati energetici. Tocca una scheda per selezionarlo.</div>'+(idx.length ? '' : '<div>Nessuna finestra o porta-finestra.</div>')+
+  pn.innerHTML = (strip ? '' : '<div style="color:#aaa;margin-bottom:6px">Serramenti: specchiature dai dati energetici. Tocca una scheda per selezionarlo.</div>')+(idx.length ? '' : '<div class="op-empty">Nessuna finestra o porta-finestra.</div>')+
     idx.map(i => {
-      const o = state.openings[i], p = o.type==='PF' ? 0 : Math.max(0, (o.energy && o.energy.pannelli) || 0), r = opSketchSvg(o.width, opHb(o), o.energy || null, p, 220, 70);
-      return '<div data-pi="'+i+'" style="cursor:pointer;margin-bottom:6px;padding:6px;border-radius:6px;border:1px solid '+(i===cur ? '#ffe066' : '#1a4a7a')+';background:'+(i===cur ? 'rgba(255,224,102,.10)' : 'transparent')+'">'+
-        '<b style="color:#fff">'+o.label+'</b> <span>'+m2(o.width)+' x '+m2(opHb(o))+' m</span><div style="margin:4px 0">'+r.svg+'</div><div style="color:'+r.msg[0]+'">'+r.msg[1]+'</div></div>';
+      const o = state.openings[i], p = o.type==='PF' ? 0 : Math.max(0, (o.energy && o.energy.pannelli) || 0), r = opSketchSvg(o.width, opHb(o), o.energy || null, p, strip ? 96 : 220, strip ? 46 : 70);
+      return '<div class="op-card'+(i===cur ? ' cur' : '')+'" data-pi="'+i+'">'+
+        '<b style="color:#fff">'+o.label+'</b> <span>'+m2(o.width)+' x '+m2(opHb(o))+'</span><div class="op-svg">'+r.svg+'</div><div class="op-msg" style="color:'+r.msg[0]+'" title="'+r.msg[1]+'">'+r.msg[1]+'</div></div>';
     }).join('');
   pn.querySelectorAll('[data-pi]').forEach(el => el.addEventListener('click', () => { state.sel = {kind:'opening', idx:+el.dataset.pi}; draw(); }));
-  pn.scrollTop = top0;                                       // il ridisegno non riporta l'elenco in cima
+  pn.scrollTop = top0; pn.scrollLeft = left0;                // il ridisegno non riporta l'elenco all'inizio
   const card = cur>=0 ? pn.querySelector('[data-pi="'+cur+'"]') : null;     // serramento scelto sulla pianta: l'elenco ci scorre sopra da solo, se non e' gia' tutto in vista
-  if (card && (card.offsetTop < pn.scrollTop || card.offsetTop+card.offsetHeight > pn.scrollTop+pn.clientHeight)) pn.scrollTop = Math.max(0, card.offsetTop - (pn.clientHeight-card.offsetHeight)/2);
+  if (card && !strip && (card.offsetTop < pn.scrollTop || card.offsetTop+card.offsetHeight > pn.scrollTop+pn.clientHeight)) pn.scrollTop = Math.max(0, card.offsetTop - (pn.clientHeight-card.offsetHeight)/2);
+  if (card && strip && (card.offsetLeft < pn.scrollLeft || card.offsetLeft+card.offsetWidth > pn.scrollLeft+pn.clientWidth)) pn.scrollLeft = Math.max(0, card.offsetLeft - (pn.clientWidth-card.offsetWidth)/2);
 }
+window.addEventListener('resize', () => { if (OPPANEL) opPanelUpdate(true); });
 // superficie di bucatura, vetrata e telaio per differenza
 function openingAreas(op) {
   const bucatura = op.width * opHb(op), gl = openingGlass(op);
@@ -4757,6 +4992,7 @@ function insertOpening(segIdx, t, tpl) {            // tpl = serramento copiato 
   saveHistory();
   const label = nextOpeningLabel(type);
   state.openings.push(Object.assign(tpl ? JSON.parse(JSON.stringify(tpl)) : {hb:D.hb, h0:D.h0, spessore:0}, { type, segIdx, t:Math.min(Math.max(t, hw), 1-hw), width, label }));
+  delete state.openings[state.openings.length-1].glass;          // copia fatta con una versione prima della 2.47
   state.sel = {kind:'opening', idx:state.openings.length-1};
   const cl = classifyByOpening(state.openings.length-1);
   if (tpl) { commit(label+' incollato'+(width < tpl.width ? ' e ristretto a '+width.toFixed(2)+' m: il muro è più corto' : '')+'. Tocca un altro muro, Esc per finire.'+cl, true); return; }
@@ -4827,7 +5063,6 @@ function openingMenuAction(action) {
   if (action==='inherit') { inheritStart('opening', i); return; }
   if (action==='copy')   { clipCopyOpening(i); return; }
   if (action==='table')  { opTableOpen(); return; }
-  if (action==='glass')  { if (op.type!=='P') return; saveHistory(); op.glass = !op.glass; if (!op.glass) delete op.glass; commit(op.label+(op.glass ? ': porta a vetro.' : ': porta a pannello opaco.')); return; }
   if (action==='demo')   { setDemo([], [i], [], op.fase!=='demo'); return; }
   if (action==='delete') { saveHistory(); state.openings.splice(i,1); state.sel=null; commit('Serramento eliminato.'); return; }
   if (action==='editall') {
@@ -4946,8 +5181,13 @@ function openingMenuAction(action) {
       {label:'Altezza bucatura (m)',              id:'hb', value:op.hb!=null ? String(op.hb) : '', type:'number'},
       {label:'Altezza sottofinestra da terra (m)', id:'h0', value:String(op.h0 ?? 0), type:'number'},
       {label:'Profondità nicchia (m, eventuale)',  id:'sp', value:op.spessore ? String(op.spessore) : '', type:'number'},
+      // specchiature: gli STESSI campi dei dati energetici (op.energy.nv / no), scritti qui o li' e' uguale. Non per le porte
+      {label:'Apertura della porta', id:'scorr', type:'select', sec:'door', value:op.scorr ? 's' : 'b', options:[{value:'b', label:'Battente'}, {value:'s', label:'Scorrevole'}]},
+      {type:'head', label:'Specchiature', sec:'spec'},
+      {label:'Divisori verticali', id:'nv', type:'number', half:true, sec:'spec', value:String(op.energy && op.energy.nv!=null ? op.energy.nv : 0)},
+      {label:'Divisori orizzontali', id:'no', type:'number', half:true, sec:'spec', value:String(op.energy && op.energy.no!=null ? op.energy.no : 0)},
     ].filter(f => f.id!=='h0' || op.type==='F');
-    askDialog('Modifica '+op.label, fields, '', v => {
+    askDialog('Modifica '+op.label, fields, op.type==='P' ? '' : 'Le specchiature sono le stesse dei dati energetici: si compilano qui o lì.', v => {
       const w = parseFloat(v.w); if (!isFinite(w)||w<=0) return;
       saveHistory(); op.width=w;
       if (v.ty && v.ty!==op.type) { op.type=v.ty; op.label=nextOpeningLabel(v.ty); }
@@ -4955,8 +5195,15 @@ function openingMenuAction(action) {
       const h0 = parseFloat(v.h0);
       op.h0 = op.type!=='F' ? 0 : isFinite(h0) ? h0 : (op.h0 || OPENING_DEF.F.h0);
       op.spessore = parseFloat(v.sp)||0;
+      if (op.type==='P' && v.scorr==='s') op.scorr = 1; else delete op.scorr;
+      if (op.type!=='P') {
+        const int = x => { const n = parseInt(x); return isFinite(n) && n >= 0 ? Math.min(n, 20) : 0; }, nv = int(v.nv), no = int(v.no);
+        if (op.energy || nv || no) { op.energy = op.energy || {}; op.energy.nv = nv; op.energy.no = no; }
+      }
       commit('Serramento aggiornato.'+classifyByOpening(i));
     });
+    const tsel = $id('dlg_ty'), syncSpec = () => { showSec('spec', tsel.value!=='P'); showSec('door', tsel.value==='P'); };
+    tsel.addEventListener('change', syncSpec); syncSpec();
   }
 }
 
@@ -5137,7 +5384,7 @@ function askRoom(cycle) {
     const h = parseFloat(v.h); if (!isFinite(h)||h<=0) return;
     saveHistory();                                   // passo di annulla suo: il primo ↩ toglie l'ambiente, non anche l'ultimo muro
     state.ambienti.push({
-      indices: cycle, name: (n => state.ambienti.some(a => a.name===n) ? freeAmbName() : n)(roomNameRead(v, null, nm0)),     // mai un nome gia' usato
+      indices: cycle, name: roomNameRead(v, null, nm0),                // numero solo se il nome si ripete (roomRenum)
       h, color: AMB_COLORS[state.ambienti.length%AMB_COLORS.length], category:'utile'    // nasce interno: si cambia solo balcone, cantina, box...
     });
     const am = state.ambienti[state.ambienti.length-1], msg = 'Ambiente registrato: '+area.toFixed(2)+' m², '+(area*h).toFixed(2)+' m³.';
@@ -5219,10 +5466,8 @@ function showMenu(id, x, y, above, avoid) {
       '<small class="md">'+(back ? 'Resta com\'è nel progetto' : amb ? 'Cambia nel progetto: disegna il nuovo ambiente' : 'Giallo nel progetto, entra nelle quantità')+'</small>';
   });
   mn.querySelectorAll('[data-demotract]').forEach(it => { it.style.display = can && el.fase==='es' ? '' : 'none'; });
-  if (id==='opening-context' && el && state.sel.kind==='opening') {          // la porta e' un'entita' a parte: pannello opaco o vetro, e per l'energia solo trasmittanza e note
-    const door = el.type==='P', g = document.getElementById('om-glass'), en = document.getElementById('om-energy');
-    g.style.display = door && !lk ? '' : 'none';
-    if (door) g.innerHTML = (el.glass ? '▮ Porta a pannello opaco' : '🪟 Porta a vetro')+'<small class="md">'+(el.glass ? 'Anta piena, non vetrata' : 'Anta in vetro invece che a pannello opaco')+'</small>';
+  if (id==='opening-context' && el && state.sel.kind==='opening') {          // la porta e' un'entita' a parte: per l'energia solo trasmittanza e note
+    const door = el.type==='P', en = document.getElementById('om-energy');
     en.innerHTML = door ? '📋 Trasmittanza e note<small class="md">Trasmittanza della porta; gli altri dati nel campo note</small>'
                         : ("📋 Dati energetici<small class=\"md\">Vetro, telaio, cassonetto e specchiature, per l'APE</small>");
   }
@@ -5254,6 +5499,8 @@ function showMenu(id, x, y, above, avoid) {
   if (id==='group-edit') {
     const n = state.misure.length, d = document.getElementById('ed-delmis'); d.style.display = n ? '' : 'none'; d.firstChild.textContent = '🗑 Cancella le quote temporanee ('+n+')';
     const nc = state.costr.length, dc = document.getElementById('ed-delcostr'); dc.style.display = nc ? '' : 'none'; dc.firstChild.textContent = '🗑 Cancella le linee di costruzione ('+nc+')';
+    const dt = document.getElementById('ed-deltemp'); dt.style.display = n+nc ? '' : 'none'; dt.firstChild.textContent = '🗑 Cancella disegni temporanei ('+(n+nc)+')';
+    if (!n || !nc) { d.style.display = 'none'; dc.style.display = 'none'; }        // un tipo solo: basta la voce che li toglie tutti
   }
   if (m.classList.contains('smart')) smartZone(m, id);
   m.querySelectorAll('.menu-grp').forEach(g => {                                                     // gruppi chiusi; spariscono se nessuna voce e' disponibile
@@ -5307,7 +5554,7 @@ function smartRules(id) {
     const n = state.segments.filter(g => g.a===s.idx || g.b===s.idx).length;
     if (n===2) out.push("[onclick=\"menuAction('absorb')\"]");                       // vertice tra due linee: probabile da riassorbire
   }
-  if (id==='opening-context' && s && s.kind==='opening' && el && !el.energy) out.push('#om-energy');       // dati energetici ancora da compilare
+  if (id==='opening-context' && s && s.kind==='opening' && el && !enDone(el)) out.push('#om-energy');       // dati energetici ancora da compilare
   return out;
 }
 function smartZone(m, id) {
@@ -5359,6 +5606,16 @@ function selectByType(t) {
   const c = openingCenterW(ids[0]); if (c) state.selAnchor = c;
   setTip(ids.length+(t==='P' ? ' porte selezionate' : ' finestre e porte-finestre selezionate')+': le azioni sono nella barra vicino alla selezione.');
   draw();
+}
+// linee di costruzione e quote temporanee in un colpo, dopo una conferma; Annulla le riporta
+function deleteAllTemp() {
+  hideAllMenus();
+  const n = state.misure.length, nc = state.costr.length; if (!n && !nc) { setTip('Nessun disegno temporaneo da cancellare.'); return; }
+  const parts = [nc ? nc+(nc===1 ? ' linea di costruzione' : ' linee di costruzione') : '', n ? n+(n===1 ? ' quota temporanea' : ' quote temporanee') : ''].filter(Boolean).join(' e ');
+  askDialog('Cancella disegni temporanei', [], 'Tolgo '+parts+'. Muri, ambienti e quote dei muri restano. Con Annulla tornano.', () => {
+    saveHistory(); state.misure = []; state.costr = []; state.sel = null; state.cPick = null;
+    commit('Cancellati: '+parts+'.', true);
+  }, () => draw());
 }
 function deleteAllMisure() {
   hideAllMenus();
@@ -5820,7 +6077,7 @@ function openPhoto(ptIdx) {
   const P = state.points[ptIdx];
   if (!P || !P.photo) return;
   document.getElementById('photo-viewer-img').src = P.photo.data;
-  document.getElementById('photo-viewer-cap').textContent = 'Punto '+P.label + (P.note ? ' — '+P.note : '');
+  document.getElementById('photo-viewer-cap').textContent = 'Punto '+P.label + (P.note ? ' - '+P.note : '');
   document.getElementById('photo-viewer').classList.add('show');
 }
 function closePhoto(){ document.getElementById('photo-viewer').classList.remove('show'); }
@@ -6596,8 +6853,15 @@ function migrate(o) {
   const from = o.fmt || 1, notes = [];
   MIGRATIONS.forEach(m => { if (m.fmt > from) notes.push(...m.run(o)); });
   o.fmt = DATA_FMT;
-  if (from >= DATA_FMT) return [];
-  return ['Il progetto era stato salvato con la versione '+(o.app || '2.02 o precedente')+' e ora è aggiornato a questa.'].concat(notes);
+  const extra = dropGlass(o);                        // campi tolti senza cambio di formato: valgono per ogni progetto
+  if (from >= DATA_FMT) return extra;
+  return ['Il progetto era stato salvato con la versione '+(o.app || '2.02 o precedente')+' e ora è aggiornato a questa.'].concat(notes, extra);
+}
+// 2.47: la "porta a vetro" non c'e' piu' (la porta vetrata si inserisce come porta-finestra). Il campo `glass` si scarta e si dice quali porte lo avevano
+function dropGlass(o) {
+  const was = [];
+  (o.openings||[]).forEach(op => { if (op && 'glass' in op) { if (op.glass) was.push(op.label || '?'); delete op.glass; } });
+  return was.length ? [(was.length===1 ? 'La porta '+was[0]+' era a vetro ed è diventata una porta normale' : 'Le porte '+was.join(', ')+' erano a vetro e sono diventate porte normali')+': la porta a vetro non c\'è più. Se è vetrata, inseriscila come porta-finestra.'] : [];
 }
 function snapshot(inline) {
   const o = {fmt:DATA_FMT, meta:state.meta || {}};
@@ -6623,7 +6887,7 @@ function restore(o) {
   SNAP_KEYS.forEach(k => { state[k] = o[k] || []; });               // una parte mancante nel file significa vuota, non "resta quella di prima"
   COUNTERS.forEach(k => state[k] = o[k] || 0);
   state.meta = o.meta || {};                                         // dati del rilievo: assenti nei progetti vecchi = vuoti
-  state.wstd = o.wstd || null; state.wpSel = null; state.wpDrag = null; _wpGen = null;      // muri parametrici: spessori standard del progetto; le linee generate salvate restano come sono
+  state.wstd = o.wstd || null; state.wpSel = null; state.wpDrag = null; _wpGen = null; rnSync();      // muri parametrici: spessori standard del progetto; le linee generate salvate restano come sono
   photosIn(state.points);
   state.sel=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null; state.pending=null; state.cand=null; state.circles=[];
   state.multi=false; state.moveSel=false;
@@ -6645,7 +6909,7 @@ function undo() {
 }
 // commit = aggiorna barra di stato, ridisegna e salva
 function commit(msg, keepTool){
-  assignFase(); autoWallThick();
+  assignFase(); roomRenum(); autoWallThick();
   if (state.wallOrigin!==null && !state.points[state.wallOrigin]) state.wallOrigin = null;    // vertice sparito (annulla, cancella tutto): niente muro appeso
   if (!keepTool && state.tool!=='select' && state.tool!=='point' && !(state.tool==='wall' && state.wallOrigin!==null)) setTool('select');
   updateStatus(); draw(); persist(); if (msg) setTip(msg, 'ok'); DIRTY = true; fileFlag();
@@ -6830,6 +7094,7 @@ function drawExport() {
 // disegna il rilievo su un canvas A4 a 300 dpi: stesso codice dello schermo con la tavolozza "stampa"
 function renderExport(E, den, orient) {
   refreshGW();
+  const xqOld = XQ; XQ = E.xq || null;               // quote scelte per questa esportazione (la Vista non cambia)
   const dpi = 300, mm = dpi/25.4, k = dpi/96;
   const pw = Math.round((orient==='land' ? 297 : 210)*mm), ph = Math.round((orient==='land' ? 210 : 297)*mm);
   const cv = document.createElement('canvas'); cv.width = pw; cv.height = ph;
@@ -6854,10 +7119,10 @@ function renderExport(E, den, orient) {
     drawCartiglio(Wl, Hl); drawScaleBar(den, Hl); drawWallLegend(Wl, Hl);
     ctx.save(); ctx.font = 'italic 8pt Calibri, Carlito, Arial, sans-serif'; ctx.fillStyle = '#828282'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';      // come nelle tabelle
     ctx.fillText('Aggiornato il '+new Date().toLocaleDateString('it-IT'), Wl - 10*96/25.4, Hl - 3.2*96/25.4);
-    if (QINT) { ctx.textAlign = 'left'; ctx.fillText('Quote in metri. In nero le misure verificate in loco, in grigio tra parentesi quelle lette dalla planimetria.', 10*96/25.4, Hl - 3.2*96/25.4); }
+    if (xqOn('qint', QINT)) { ctx.textAlign = 'left'; ctx.fillText(XQ && !XQ.nonver ? 'Quote in metri, verificate in loco.' : 'Quote in metri. In nero le misure verificate in loco, in grigio tra parentesi quelle lette dalla planimetria.', 10*96/25.4, Hl - 3.2*96/25.4); }
     ctx.restore();
   } finally {
-    PLAY = null;
+    PLAY = null; XQ = xqOld;
     ctx = sv.ctx; W = sv.W; H = sv.H; C = sv.C; PRINT = sv.PRINT;
     state.panX = sv.panX; state.panY = sv.panY; state.zoom = sv.zoom;
     state.sel = sv.sel; state.selSeg = sv.selSeg; state.selSet = sv.selSet; state.selOpen = sv.selOpen; state.selPen = sv.selPen; state.hoverScala = sv.hov;
@@ -6900,7 +7165,7 @@ function layoutPrint() {
   state.labels.forEach(l => { const s = w2s(l.x,l.y); placed.push({x0:s.x, y0:s.y, x1:s.x+ctx.measureText(l.text).width, y1:s.y+2.5*PX_MM*1.2}); });
   state.pilastri.forEach(r => { const c = rectCenter(r); placed.push({x0:c.x-6*PX_MM, x1:c.x+6*PX_MM, y0:c.y-2.5*PX_MM, y1:c.y+2.5*PX_MM}); });
   state.segments.forEach((g,i) => { if (!g.qo) return; const q = quotaInfo(i); if (q) placed.push(qBox(q.cx, q.cy, q)); });
-  if (THKQ) { ctx.font = prFont(10, 1.7, true); state.segments.forEach(g => {            // quote degli spessori: ferme, gli altri testi le evitano
+  if (xqOn('thk', THKQ)) { ctx.font = prFont(10, 1.7, true); state.segments.forEach(g => {            // quote degli spessori: ferme, gli altri testi le evitano
     if (!g.thAuto || !g.thick || !g.thN || hid(g)) return;
     const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return;
     const f = g.thF ?? 0.5, M = {x:A.x+(B.x-A.x)*f, y:A.y+(B.y-A.y)*f}, p0 = w2s(M.x, M.y), p1 = w2s(M.x+g.thN.x*g.thick, M.y+g.thN.y*g.thick), l = Math.hypot(p1.x-p0.x, p1.y-p0.y) || 1;
@@ -6909,7 +7174,8 @@ function layoutPrint() {
   }); }
   const opText = i => { const q = openingQuotaPos(i); ctx.font = prFont(11, 2, true); const w = ctx.measureText(state.openings[i].label).width, h = 2*PX_MM;
                         return {x0:q.x-w/2, x1:q.x+w/2, y0:q.y-prU(7)-h/2, y1:q.y-prU(7)+h/2}; };
-  state.openings.forEach((op,i) => { if (op.qo && openingPos(i)) placed.push(opText(i)); });
+  const opOn = xqOn('op', true);
+  state.openings.forEach((op,i) => { if (opOn && op.qo && openingPos(i)) placed.push(opText(i)); });
   const handAmb = am => !!(am.lo && (am.lo.x || am.lo.y));
   const leaderLine = (am, c, b) => {           // la linea di richiamo di un blocco fuori dal suo ambiente diventa un ostacolo per gli altri testi
     const pts = am.indices.map(i => state.points[i]).filter(Boolean), S = ambLeaderStart(pts, s2w(c.x, c.y)); if (!S) return;
@@ -6945,7 +7211,7 @@ function layoutPrint() {
   });
   // nomi dei serramenti: sopra, sotto, ai lati, piu' lontano
   state.openings.forEach((op,i) => {
-    if (op.qo) return;
+    if (op.qo || !opOn) return;
     const p = openingPos(i); if (!p) return;
     ctx.font = prFont(11, 2, true);
     const w = ctx.measureText(op.label).width, h = 2*PX_MM, d = prU(22);
@@ -7003,6 +7269,33 @@ function drawWallLegend(Wl, Hl) {
   });
   ctx.restore();
 }
+// ═══ QUOTE ALL'ESPORTAZIONE (2.47): prima di esportare il disegno si scelgono i tipi di quota. Le caselle partono come la Vista;
+// la scelta (XQ) vale solo durante quell'esportazione e non cambia la Vista. XQ = null: vale la Vista (a video sempre).
+var XQ = null;
+function xqOn(k, vista) { return XQ ? !!XQ[k] : vista; }
+function quoteFields() {
+  const live2 = arr => arr.some(el => !hid(el));
+  return [
+    {type:'head', label:'Quote da esportare'},
+    {label:'Spessori dei muri', id:'q_thk', type:'check', value:THKQ ? '1' : ''},
+    {label:'Lunghezze dei muri', id:'q_qint', type:'check', value:QINT ? '1' : ''},
+    {label:'Anche le quote non verificate (grigie, tra parentesi)', id:'q_nonver', type:'check', value:QINT ? '1' : ''},
+    {label:'Serramenti: nome e misure', id:'q_op', type:'check', value:'1', on:live2(state.openings)},
+    {label:'Ambienti: superficie, altezza e volume', id:'q_amb', type:'check', value:'1', on:live2(state.ambienti)},
+    {label:'Pilastri: misure', id:'q_pil', type:'check', value:'1', on:live2(state.pilastri)},
+    {label:'Scale: gradini, pedate e alzate', id:'q_scale', type:'check', value:'1', on:live2(state.scale)},
+  ].filter(f => f.on!==false);
+}
+function quoteRead(v) { const o = {}; ['thk','qint','nonver','op','amb','pil','scale'].forEach(k => { o[k] = v['q_'+k]===undefined ? true : !!v['q_'+k]; }); return o; }
+function quoteAsk(title, hint, cb) { askDialog(title, quoteFields(), hint, v => cb(quoteRead(v)), () => draw()); }
+// disegno in PDF o JPG: prima le quote, poi zona e scala
+function exportDrawing(kind) {
+  hideAllMenus();
+  if (!drawingBounds()) { setTip('Niente da esportare.'); return; }
+  quoteAsk(kind==='jpg' ? 'Esporta disegno (JPG)' : 'Esporta disegno (PDF)', 'Scegli le quote da mettere nel disegno. Vale solo per questa esportazione: la Vista resta com\'è. Dopo OK scegli zona e scala.', xq => {
+    startExport(kind); if (state.exp) state.exp.xq = xq;
+  });
+}
 // il JPEG del canvas non porta la risoluzione: la si scrive nell'intestazione JFIF (300 dpi), cosi' si stampa in scala
 function jfifDpi(b, dpi) {
   if (b.length>20 && b[0]===0xFF && b[1]===0xD8 && b[2]===0xFF && b[3]===0xE0 && b[6]===0x4A && b[7]===0x46) {
@@ -7036,14 +7329,30 @@ function makePdf(pages) {
 }
 // kind: 'jpg' | 'pdf' | 'full' (PDF col disegno e dietro le tabelle scelte in E.tables)
 // confronto: una tabella identica tra stato di fatto e progetto si stampa una volta sola ("invariato"), le altre una per vista
-function bothTables(ids) {
+// gruppi di tabelle del confronto: {v: vista, ids, titleFn}. Una tabella identica nei due stati va una volta sola ("invariato")
+function tableGroups(ids) {
   const dat = v => withView(v, () => { const o = {}; TABLES.forEach(t => { if (ids.includes(t.id) && t.id!=='lav' && t.id!=='var') o[t.id] = JSON.stringify(t.data()); }); return o; });
-  const a = dat('sdf'), b = dat('prog'), same = Object.keys(a).filter(k => a[k]!=='null' && a[k]===b[k]), diff = ids.filter(k => !same.includes(k));
+  const a = dat('sdf'), b = dat('prog'), same = Object.keys(a).filter(k => a[k]!=='null' && a[k]===b[k]), diff = ids.filter(k => !same.includes(k)), G = [];
+  if (ids.includes('var')) G.push({v:'prog', ids:['var']});
+  if (same.length) G.push({v:'sdf', ids:same, titleFn:t => 'Rilievo - '+t.title+' (invariato tra stato di fatto e progetto)'});
+  G.push({v:'sdf', ids:diff.filter(k => k!=='lav' && k!=='var')});
+  G.push({v:'prog', ids:diff.filter(k => k!=='var')});
+  return G;
+}
+function bothTables(ids) {
   const pages = [];
-  if (ids.includes('var')) withView('prog', () => tablePages(['var'])).forEach(p => pages.push(p));
-  if (same.length) withView('sdf', () => tablePages(same, t => 'Rilievo - '+t.title+' (invariato tra stato di fatto e progetto)')).forEach(p => pages.push(p));
-  withView('sdf', () => tablePages(diff.filter(k => k!=='lav' && k!=='var'))).forEach(p => pages.push(p));
-  withView('prog', () => tablePages(diff.filter(k => k!=='var'))).forEach(p => pages.push(p));
+  tableGroups(ids).forEach(g => withView(g.v, () => tablePages(g.ids, g.titleFn)).forEach(p => pages.push(p)));
+  return pages;
+}
+// "Dati per ordine" acceso solo mentre si generano le tabelle
+function withOrd(on, fn) { const o = ORD; ORD = !!on; try { return fn(); } finally { ORD = o; } }
+// pagine delle tabelle (e dell'abaco) numerate tutte insieme in fondo
+function numberPages(pages) {
+  const mm = 300/25.4, M = Math.round(12*mm);
+  pages.forEach((cv, i) => {
+    const c = cv.getContext('2d'); c.fillStyle = '#555'; c.font = Math.round(8*300/72)+'px '+FONT; c.textAlign = 'right'; c.textBaseline = 'middle';
+    c.fillText('Pagina '+(i+1)+' di '+pages.length, cv.width - M, cv.height - M/2);
+  });
   return pages;
 }
 function expGo() {
@@ -7053,7 +7362,9 @@ function expGo() {
   E.wm = !!state.underlay && $id('exp-wm').checked;
   const kind = E.kind, ids = E.tables || [], views = E.both ? ['sdf','prog'] : [state.view];
   const plans = views.map(v => withView(v, () => renderExport(E, den, o)));
-  const tabs = E.both ? bothTables(ids) : tablePages(ids);
+  if (kind==='docx') { expCancel(); docxExport(E, den, plans, views); return; }
+  const tabs = withOrd(E.ord, () => (E.both ? bothTables(ids) : tablePages(ids)).concat(E.abaco ? withView(E.both ? 'prog' : state.view, abacoPages) : []));
+  numberPages(tabs);
   expCancel();
   const base = stamp()+'_rilievo_1-'+den+(hasProject() && !E.both ? (prog() ? '_progetto' : '_stato_di_fatto') : '');
   Promise.all(plans.concat(tabs).map(canvasJpg)).then(pp => {
@@ -7202,8 +7513,17 @@ function dxfWriter(layers) {
   return W;
 }
 
+// prima del DXF si scelgono le quote (come per PDF e JPG); la Vista non cambia
 function exportDXF() {
-  hideAllMenus(); refreshGW();
+  hideAllMenus();
+  if (!drawingBounds()) { setTip('Niente da esportare.'); return; }
+  quoteAsk('Esporta DXF', 'Scegli le quote da mettere nel DXF. Vale solo per questa esportazione: la Vista resta com\'è.', xq => {
+    const old = XQ; XQ = xq;
+    try { exportDXFRun(); } finally { XQ = old; }
+  });
+}
+function exportDXFRun() {
+  refreshGW();
   // layer: [nome, colore]; colore negativo = spento all'apertura (QUOTE_CORTE: quote che non stanno nel loro muro)
   const LAYERS = [['MURI',5],['MURI_EST',6],['MURI_COM',3],['MURI_NONRISC',30],['MURI_ND',200],['MURI_GRAFICI',8],['QUOTE',2],['QUOTE_CORTE',-2],['SERRAMENTI',5],
                   ['PORTE',4],['AMBIENTI',4],['AMBIENTI_TESTO',7],['VOLTE',5],['ARCHI',6],['PILASTRI',8],['SCALE',6],['SCALE_TESTO',8],['QUOTE_SPESSORI',3],['ETICHETTE',1],['MATITA',30],['DEMOLIZIONI',2],['COSTRUZIONI',1]];
@@ -7249,10 +7569,11 @@ function exportDXF() {
     segPieces(i, cuts).forEach(([t0,t1]) => line(lay(s, wallLayer(s)), A.x+(B.x-A.x)*t0, A.y+(B.y-A.y)*t0, A.x+(B.x-A.x)*t1, A.y+(B.y-A.y)*t1));
     if (s.layer==='MURI_EST') return;               // i muri esterni non portano quota
     const len = Math.hypot(B.x-A.x,B.y-A.y); if (len < 1e-6) return;
+    const qOn = xqOn('qint', QINT) && (xqOn('nonver', true) || segOk(s, len));        // lunghezza del muro: solo se scelta (e verificata, se le non verificate sono escluse)
     const d = readable((B.x-A.x)/len, (B.y-A.y)/len), q = len.toFixed(2);
     const mx = (A.x+B.x)/2, my = (A.y+B.y)/2, at = s.qo ? {x:mx+s.qo.x, y:my+s.qo.y} : {x:mx-d.y*hQ*0.9, y:my+d.x*hQ*0.9};
-    txt(s.qo ? 0 : 3, q.length*hQ*CW+0.04 > len ? 'QUOTE_CORTE' : 'QUOTE', at.x, at.y, hQ, q, {dir:d}, s.qo ? [] : around([0,0.5,-0.5,1,-1], [0.12,-0.12,0.24,-0.24]));
-    if (THKQ && s.thAuto && s.thick && s.thN) {                      // quota dello spessore automatico, come a video
+    if (qOn) txt(s.qo ? 0 : 3, q.length*hQ*CW+0.04 > len ? 'QUOTE_CORTE' : 'QUOTE', at.x, at.y, hQ, q, {dir:d}, s.qo ? [] : around([0,0.5,-0.5,1,-1], [0.12,-0.12,0.24,-0.24]));
+    if (xqOn('thk', THKQ) && s.thAuto && s.thick && s.thN) {                      // quota dello spessore automatico, come a video
       const f = s.thF ?? 0.5, M = {x:A.x+(B.x-A.x)*f, y:A.y+(B.y-A.y)*f}, e = {x:M.x+s.thN.x*s.thick, y:M.y+s.thN.y*s.thick};
       line('QUOTE_SPESSORI', M.x, M.y, e.x, e.y);
       txt(3, 'QUOTE_SPESSORI', e.x+s.thN.x*0.09, e.y+s.thN.y*0.09, 0.07, Math.round(s.thick*100)+' cm', {}, around([0,1,-1,2,-2], [0.1,-0.1]));
@@ -7268,7 +7589,7 @@ function exportDXF() {
     if (pts.length<3 || !live(a)) return;
     poly('AMBIENTI', pts, true);
     const cc = ambCenter(a), cx = cc.x+(a.lo?a.lo.x:0), cy = cc.y+(a.lo?a.lo.y:0), net = ambNet(a);
-    const rows = [a.name, 'Sup. netta: '+net.toFixed(2)+' mq'].concat(+a.h > 0 ? ['Altezza: '+ambHtxt(a)+' m'] : [], ambNoVol(a) || !(+a.h > 0) ? [] : ['Volume: '+(net*ambHe(a)).toFixed(2)+' mc']);
+    const rows = !xqOn('amb', true) ? [a.name] : [a.name, 'Sup. netta: '+net.toFixed(2)+' mq'].concat(+a.h > 0 ? ['Altezza: '+ambHtxt(a)+' m'] : [], ambNoVol(a) || !(+a.h > 0) ? [] : ['Volume: '+(net*ambHe(a)).toFixed(2)+' mc']);
     voltaLines(a).forEach(([p, q]) => line('VOLTE', p.x, p.y, q.x, q.y, 'TRATTEGGIATA'));
     const bw = Math.max(...pts.map(p=>p.x)) - Math.min(...pts.map(p=>p.x)), bh = Math.max(...pts.map(p=>p.y)) - Math.min(...pts.map(p=>p.y));
     const nc = Math.max(...rows.map(r => r.length)), LS = 5/3;          // interlinea MTEXT = 5/3 dell'altezza
@@ -7296,20 +7617,20 @@ function exportDXF() {
     const door = op.type==='P', SL = lay(op, door ? 'PORTE' : 'SERRAMENTI');
     const mx=A.x+(B.x-A.x)*op.t, my=A.y+(B.y-A.y)*op.t;
     const ux=(B.x-A.x)/len, uy=(B.y-A.y)/len, hw=op.width/2, rot = Math.atan2(uy, ux)*180/Math.PI;
-    const nv = door ? 0 : openingNv(op), nm = door ? 'PORTA_'+mm(op.width)+'_'+(op.hinge==='b' ? 'b' : 'a')+(op.side<0 ? 'm' : 'p')+(op.glass ? '_V' : '') : 'SERR_'+op.type+'_'+mm(op.width)+'_V'+nv;
+    const nv = door ? 0 : openingNv(op), nm = door ? 'PORTA_'+mm(op.width)+'_'+(op.hinge==='b' ? 'b' : 'a')+(op.side<0 ? 'm' : 'p')+(op.scorr ? '_S' : '') : 'SERR_'+op.type+'_'+mm(op.width)+'_V'+nv;
     const yo = cuts.off[state.openings.indexOf(op)] || 0;                                                   // stesso scostamento che si vede a video
-    defOp(nm, openingGeom(op.type, op.width, nv, op.hinge, op.side, op.glass)); D.insert(SL, nm, mx-ux*hw-uy*yo, my-uy*hw+ux*yo, rot, 1, 1);
+    defOp(nm, openingGeom(op.type, op.width, nv, op.hinge, op.side, op.scorr)); D.insert(SL, nm, mx-ux*hw-uy*yo, my-uy*hw+ux*yo, rot, 1, 1);
     const H = opHb(op), st = op.h0 ?? OPENING_DEF[op.type].h0, d = readable(ux, uy), hS = 0.08;
     let info = op.label+' '+(+op.width).toFixed(2)+'x'+(+H).toFixed(2);
     if (op.type==='F') info += ' dav. '+(+st).toFixed(2);
-    txt(op.qo ? 0 : 2, SL, mx+d.y*hS*1.2, my-d.x*hS*1.2, hS, info, {dir:d}, around([0,0.8,-0.8,1.6,-1.6], [0.1,-0.1,0.2,-0.2,0.3,-0.3]));
+    if (xqOn('op', true)) txt(op.qo ? 0 : 2, SL, mx+d.y*hS*1.2, my-d.x*hS*1.2, hS, info, {dir:d}, around([0,0.8,-0.8,1.6,-1.6], [0.1,-0.1,0.2,-0.2,0.3,-0.3]));
   });
 
   // pilastri
   state.pilastri.forEach(p => {
     if (hid(p)) return;
     rect(lay(p, 'PILASTRI'), p.x, p.y-p.h, p.x+p.w, p.y);
-    txt(0, 'PILASTRI', p.x+p.w/2, p.y-p.h/2, 0.07, p.label+' '+Math.round(p.w*100)+'x'+Math.round(p.h*100));
+    txt(0, 'PILASTRI', p.x+p.w/2, p.y-p.h/2, 0.07, p.label+(xqOn('pil', true) ? ' '+Math.round(p.w*100)+'x'+Math.round(p.h*100) : ''));
   });
 
   // scale: ingombro, gradini, freccia di salita; il testo sta in un layer a parte (SCALE_TESTO)
@@ -7327,7 +7648,7 @@ function exportDXF() {
     SG.dashed.forEach(q => line('SCALE', q[0], q[1], q[2], q[3], 'TRATTEGGIATA'));
     if (c.grp) { if (doneG.has(c.grp)) return; doneG.add(c.grp); }          // scala composta: un solo testo
     const ct = stairCenter(c);
-    txt(0, 'SCALE_TESTO', ct.x, ct.y, 0.08, [c.label].concat(stairInfo(c).map(t => t.replace(/ {2,}/g,'  '))));
+    txt(0, 'SCALE_TESTO', ct.x, ct.y, 0.08, [c.label].concat(xqOn('scale', true) ? stairInfo(c).map(t => t.replace(/ {2,}/g,'  ')) : []));
   });
   stairArrows().forEach(arrow);                     // la stessa freccia che si vede a video: continua nelle scale composte
 
@@ -7356,7 +7677,8 @@ const OP_TXT = {
 };
 const TABLES = [
   {id:'amb',  title:'Ambienti',               file:'ambienti',               data:ambTable},
-  {id:'serr', title:'Serramenti',             file:'serramenti',             data:openingsTable},
+  {id:'serr', title:'Finestre e porte-finestre', file:'finestre',            data:openingsTable},
+  {id:'porte', title:'Porte',                 file:'porte',                  data:doorsTable},
   {id:'comm', title:'Superficie commerciale', file:'superficie_commerciale', data:commTable},
   {id:'lav',  title:'Demolizioni e costruzioni', file:'demolizioni_costruzioni', data:lavTable},
   {id:'var',  title:'Riepilogo variazioni',   file:'riepilogo_variazioni',   data:varTable},
@@ -7435,46 +7757,135 @@ function lavTable() {
 }
 // colonne da mostrare: via quelle senza dati (le righe dei totali non contano) e, in pagina, quelle di dettaglio.
 // Decimali con la virgola, come li legge Excel in italiano.
+// kinds (facoltativo): tipo di ogni riga, '' normale, 'g' titolo di un blocco, 's' subtotale, 't' totale. Le righe speciali non tengono in vita una colonna
 function tableView(d, page) {
   const filled = v => v!=null && v!=='' && v!=='-';
-  const keep = d.head.map((_,j) => !(page && (d.detail||[]).includes(j)) && d.rows.some(r => !/^Totale/.test(r[0]) && filled(r[j])));
+  const kinds = d.rows.map((r, i) => (d.kinds && d.kinds[i]) || (/^Totale/.test(r[0]) ? 't' : ''));
+  const keep = d.head.map((_,j) => !(page && (d.detail||[]).includes(j)) && d.rows.some((r, i) => !kinds[i] && filled(r[j])));
   const txt = v => { const s = v==null ? '' : String(v); return /^-?\d+\.\d+( \(\d+\))?$/.test(s) ? s.replace('.', ',') : s; };
   const pick = r => r.filter((_,j) => keep[j]).map(txt);
-  return {head:pick(d.head), rows:d.rows.map(pick)};
+  return {head:pick(d.head), rows:d.rows.map(pick), kinds};
 }
+// 2.47: tabella ambienti in due blocchi, ognuno col subtotale della superficie netta: gli ambienti interni (abitabili) e gli altri non abitabili
+const AMB_INT = new Set(['', 'utile', 'mansarde', 'soppalcoAb', 'taverna']);
+function ambInterno(a) { return AMB_INT.has(a.category || ''); }
 function ambTable() {
   const rooms = state.ambienti.filter(live); if (!rooms.length) return null;
   const cuts = wallCuts(), f = v => v.toFixed(2), T = {area:0, ing:0, vol:0, lorde:0, ap:0, nette:0};
-  const rows = rooms.map(a => {
+  const row = a => {
     const net = ambNet(a), ing = ambIngombro(a), pw = ambWalls(a, cuts), vol = ambNoVol(a) ? null : net*ambHe(a);
     T.area += net; T.ing += ing; if (vol!=null) T.vol += vol;
     if (pw) { T.lorde += pw.lorde; T.ap += pw.ap; T.nette += pw.nette; }
     return [a.name, a.category ? COMM_CAT[a.category].label : '', f(net), ing > 0.0005 ? f(ing) : '', ambHtxt(a, ','), vol!=null ? f(vol) : '-',
             pw ? f(pw.per) : '-', pw ? f(pw.lorde) : '-', pw ? f(pw.ap)+(pw.n ? ' ('+pw.n+')' : '') : '-', pw ? f(pw.nette) : '-',
             (() => { const r = raiInfo(a, cuts); return r ? r.txt+(r.ok ? '' : ' (!)') : ''; })()];
-  });
-  rows.push(['Totale', '', f(T.area), T.ing > 0.0005 ? f(T.ing) : '', '', f(T.vol), '', f(T.lorde), f(T.ap), f(T.nette), '']);
-  return {head:['Ambiente','Categoria','Superficie netta (m²)','Ingombri tolti (m²)','Altezza (m)','Volume (m³)','Perimetro (m)','Pareti lorde (m²)','Aperture (m²)','Pareti nette (m²)','Rapporto aeroilluminante (min 1/8)'], rows};
+  };
+  const rows = [], kinds = [], E = () => ['', '', '', '', '', '', '', '', '', ''];
+  const inn = rooms.filter(ambInterno), alt = rooms.filter(a => !ambInterno(a));
+  if (alt.length) {                                    // ci sono balconi, cantine, box...: due blocchi, colpo d'occhio sulla netta interna
+    [['Ambienti interni', inn, 'Subtotale ambienti interni'], ['Altri ambienti non abitabili', alt, 'Subtotale altri ambienti']].forEach(([tt, list, st]) => {
+      if (!list.length) return;
+      rows.push([tt].concat(E())); kinds.push('g');
+      let s = 0; list.forEach(a => { rows.push(row(a)); kinds.push(''); s += ambNet(a); });
+      rows.push([st, '', f(s)].concat(E().slice(2))); kinds.push('s');
+    });
+  } else rooms.forEach(a => { rows.push(row(a)); kinds.push(''); });
+  rows.push(['Totale', '', f(T.area), T.ing > 0.0005 ? f(T.ing) : '', '', f(T.vol), '', f(T.lorde), f(T.ap), f(T.nette), '']); kinds.push('t');
+  return {head:['Ambiente','Categoria','Superficie netta (m²)','Ingombri tolti (m²)','Altezza (m)','Volume (m³)','Perimetro (m)','Pareti lorde (m²)','Aperture (m²)','Pareti nette (m²)','Rapporto aeroilluminante (min 1/8)'], rows, kinds};
 }
-// serramenti: dimensioni sempre, dati energetici dove compilati; specchiatura scritta a mano o calcolata dalla bucatura
-function openingsTable() {
-  const ops = state.openings.filter(live); if (!ops.length) return null;
-  const f = (v, d) => (+v).toFixed(d||2), T = {buc:0, vetr:0, tel:0}, X = OP_TXT;
-  const cuts = wallCuts(), inAmb = new Map();                  // ambienti che toccano ogni serramento (una porta tra due stanze ne ha due)
+// "Dati per ordine" (casella nella finestra di esportazione): colonne in piu' nelle tabelle di finestre e porte. Vale solo durante l'esportazione
+var ORD = false;
+// ambienti che toccano ogni serramento (una porta tra due stanze ne ha due); i balconi non contano
+function opAmbMap(cuts) {
+  const inAmb = new Map();
   state.ambienti.filter(a => live(a) && !isBalcone(a)).forEach(a => ambOpenings(a, cuts).forEach(i => inAmb.set(i, (inAmb.get(i) || []).concat(a.name))));
+  return inAmb;
+}
+// spessore del muro al serramento (imbotte, stipite): distanza tra le due facce, oppure lo spessore scritto sul muro
+function opWallTk(op) {
+  const g = state.segments[op.segIdx], A = g && state.points[g.a], B = g && state.points[g.b]; if (!A || !B) return null;
+  const L = Math.hypot(B.x-A.x, B.y-A.y); if (L < 1e-6) return null;
+  const hw = op.width/L/2, t0 = Math.max(0, op.t-hw), t1 = Math.min(1, op.t+hw);
+  const f = oppositeFace(op.segIdx, {x:A.x+(B.x-A.x)*t0, y:A.y+(B.y-A.y)*t0}, {x:A.x+(B.x-A.x)*t1, y:A.y+(B.y-A.y)*t1});
+  return f ? f.d : (g.thick || null);
+}
+// porta: mano e verso dai dati di cerniera e apertura. Mano: guardando la porta dal lato verso cui apre (da dove si tira), cerniere a destra = DX.
+function doorHand(op) {
+  const g = state.segments[op.segIdx], A = g && state.points[g.a], B = g && state.points[g.b]; if (!A || !B) return {mano:'', verso:''};
+  const L = Math.hypot(B.x-A.x, B.y-A.y) || 1, ux = (B.x-A.x)/L, uy = (B.y-A.y)/L, C = {x:A.x+(B.x-A.x)*op.t, y:A.y+(B.y-A.y)*op.t};
+  const n = op.side<0 ? {x:uy, y:-ux} : {x:-uy, y:ux}, hx = ux*(op.hinge==='b' ? 1 : -1), hy = uy*(op.hinge==='b' ? 1 : -1);
+  const right = hx*(-n.y) + hy*n.x > 0, d = (opWallTk(op) || 0.3)/2 + 0.25;
+  const roomAt = s => { const P = {x:C.x+n.x*d*s, y:C.y+n.y*d*s}, a = state.ambienti.find(r => live(r) && r.indices.length>=3 && inPoly(r.indices.map(i => state.points[i]).filter(Boolean), P.x, P.y)); return a ? a.name : ''; };
+  const pull = roomAt(1), push = roomAt(-1);
+  if (op.scorr) return {mano:'scorre a '+(right ? 'DX' : 'SX'), verso:pull ? 'anta dal lato '+pull : ''};
+  return {mano:right ? 'DX' : 'SX', verso:[pull ? 'tira da '+pull : '', push ? 'spinge da '+push : ''].filter(Boolean).join(', ')};
+}
+// finestre e porte-finestre: dimensioni sempre, dati energetici dove compilati; specchiatura calcolata dalla bucatura. Le porte hanno la loro tabella
+function openingsTable() {
+  const ops = state.openings.filter(o => live(o) && o.type!=='P'); if (!ops.length) return null;
+  const f = (v, d) => (+v).toFixed(d||2), X = OP_TXT, inAmb = opAmbMap(wallCuts());
+  const C = [                                                  // [intestazione, valore, solo nel CSV]
+    ['Serramento', o => o.label],
+    ['Ambiente', o => (inAmb.get(state.openings.indexOf(o)) || []).join(' / ')],
+    ['Tipo', o => X.tipo[o.type]||o.type],
+    ['Larghezza (m)', o => f(o.width)],
+    ['Altezza (m)', o => f(opHb(o))],
+  ].concat(ORD ? [
+    ['Ante', o => o.energy ? String(openingNv(o)+1) : ''],
+    ['Specchiature (colonne x righe)', o => o.energy ? (openingNv(o)+1)+' x '+(Math.max(0, Math.round(+o.energy.no || 0))+1) : ''],
+    ['Spessore muro (m)', o => { const t = opWallTk(o); return t ? f(t) : ''; }],
+  ] : [], [
+    [ORD ? 'Sottofinestra H (m)' : 'Davanzale (m)', o => o.type==='F' && o.h0 ? f(o.h0) : ''],
+    [ORD ? 'Sottofinestra sp. (m)' : 'Profondità nicchia (m)', o => o.spessore ? f(o.spessore) : '', !ORD],
+    ['Vetro', (o, e) => X.vetro[e.vetro]||''],
+    ['Spessore vetro (mm)', (o, e) => e.spVetro ?? '', true],
+    ['Distanziatore', (o, e) => e.distanz || '', true],
+    ['Cassonetto', (o, e) => X.si[e.cass]||''],
+    ['Cassonetto isolato', (o, e) => X.si[e.cassIso]||'', true],
+    ['Cassonetto H (cm)', (o, e) => e.cassH ?? '', !ORD],
+    ['Cassonetto prof. (cm)', (o, e) => e.cassP ?? '', !ORD],
+    ['Telaio', (o, e) => X.telaio[e.telaio]||''],
+    ['Spessore profilo (mm)', (o, e) => e.spTelaio ?? '', true],
+    ['Oscurante', (o, e) => X.osc[e.oscurante]||''],
+    ['Vetri', (o, e, gl) => gl ? gl.n : '', true],               // numero dei vetri: solo nel CSV
+    ['Pannelli', (o, e) => e.pannelli || ''],
+    ['Larghezza specchiatura (m)', (o, e, gl) => gl ? f(gl.L, 3) : '', true],
+    ['Altezza specchiatura (m)', (o, e, gl) => gl ? f(gl.H, 3) : '', true],
+    ['Bucatura (m²)', (o, e, gl, ar) => f(ar.bucatura)],
+    ['Vetrata (m²)', (o, e, gl, ar) => ar.vetrata!=null ? f(ar.vetrata) : ''],
+    ['Telaio (m²)', (o, e, gl, ar) => ar.telaio!=null ? f(ar.telaio) : ''],
+    ['Note', (o, e) => e.note || ''],
+  ]);
+  const T = {buc:0, vetr:0, tel:0};
   const rows = ops.map(op => {
-    const door = op.type==='P', e = door ? {note:op.energy && op.energy.note} : (op.energy || {}), ar = openingAreas(op), gl = openingGlass(op);       // la porta non porta dati energetici di serramento: solo trasmittanza e note
+    const e = op.energy || {}, ar = openingAreas(op), gl = openingGlass(op);
     T.buc += ar.bucatura; T.vetr += ar.vetrata || 0; T.tel += ar.telaio || 0;
-    return [op.label, (inAmb.get(state.openings.indexOf(op)) || []).join(' / '), X.tipo[op.type]||op.type, f(op.width), f(opHb(op)), op.type==='F' && op.h0 ? f(op.h0) : '', op.spessore ? f(op.spessore) : '',
-            X.vetro[e.vetro]||'', e.spVetro ?? '', e.distanz || '', X.si[e.cass]||'', X.si[e.cassIso]||'', e.cassH ?? '', e.cassP ?? '',
-            X.telaio[e.telaio]||'', e.spTelaio ?? '', X.osc[e.oscurante]||'', gl ? gl.n : '', e.pannelli || '',
-            gl ? f(gl.L, 3) : '', gl ? f(gl.H, 3) : '', f(ar.bucatura), ar.vetrata!=null ? f(ar.vetrata) : '', ar.telaio!=null ? f(ar.telaio) : '', door && op.energy && op.energy.u ? f(op.energy.u) : '', e.note || ''];
+    return C.map(c => c[1](op, e, gl, ar));
   });
-  rows.push(['Totale', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', f(T.buc), T.vetr ? f(T.vetr) : '', T.tel ? f(T.tel) : '', '', '']);
-  return {head:['Serramento','Ambiente','Tipo','Larghezza (m)','Altezza (m)','Davanzale (m)','Profondità nicchia (m)','Vetro','Spessore vetro (mm)','Distanziatore',
-                'Cassonetto','Cassonetto isolato','Cassonetto H (cm)','Cassonetto prof. (cm)','Telaio','Spessore profilo (mm)','Oscurante','Vetri','Pannelli',
-                'Larghezza specchiatura (m)','Altezza specchiatura (m)','Bucatura (m²)','Vetrata (m²)','Telaio (m²)','Trasmittanza porta (W/m²K)','Note'],
-          rows, detail:[6,8,9,11,12,13,15,17,19,20]};      // 17 = numero dei vetri: solo nel CSV
+  const tot = C.map(c => c[0]==='Bucatura (m²)' ? f(T.buc) : c[0]==='Vetrata (m²)' ? (T.vetr ? f(T.vetr) : '') : c[0]==='Telaio (m²)' ? (T.tel ? f(T.tel) : '') : ''); tot[0] = 'Totale';
+  rows.push(tot);
+  return {head:C.map(c => c[0]), rows, detail:C.map((c, j) => c[2] ? j : -1).filter(j => j >= 0)};
+}
+// porte: tabella a parte (gli ordini sono separati). Con "Dati per ordine": apertura, mano, verso, spessore del muro
+function doorsTable() {
+  const ops = state.openings.filter(o => live(o) && o.type==='P'); if (!ops.length) return null;
+  const f = v => (+v).toFixed(2), inAmb = opAmbMap(wallCuts());
+  const C = [
+    ['Porta', o => o.label],
+    ['Ambienti', o => (inAmb.get(state.openings.indexOf(o)) || []).join(' / ')],
+    ['Larghezza (m)', o => f(o.width)],
+    ['Altezza (m)', o => f(opHb(o))],
+  ].concat(ORD ? [
+    ['Apertura', o => o.scorr ? 'Scorrevole' : 'Battente'],
+    ['Mano', o => doorHand(o).mano],
+    ['Verso', o => doorHand(o).verso],
+    ['Spessore muro (m)', o => { const t = opWallTk(o); return t ? f(t) : ''; }],
+  ] : [], [
+    ['Trasmittanza (W/m²K)', o => o.energy && o.energy.u ? f(o.energy.u) : ''],
+    ['Note', o => (o.energy && o.energy.note) || ''],
+  ]);
+  const rows = ops.map(o => C.map(c => c[1](o)));
+  return {head:C.map(c => c[0]), rows};
 }
 // CSV per Excel italiano: separatore ';', BOM per gli accenti, virgolette solo dove servono
 function downloadCSV(name, rows) {
@@ -7651,7 +8062,8 @@ function tablePages(ids, titleFn) {
   const day = new Date().toLocaleDateString('it-IT'), pages = [];
   TABLES.filter(t => ids.includes(t.id)).forEach(t => {
     const d = t.data(); if (!d) return;
-    const tv = tableView(d, true), head = tv.head.map(shortH), rows = tv.rows;
+    const tv = tableView(d, true), head = tv.head.map(shortH), allRows = tv.rows, kinds = tv.kinds;
+    const rows = allRows.filter((_, i) => kinds[i]!=='g');      // i titoli dei blocchi attraversano la riga: non contano nelle larghezze
     const meas = document.createElement('canvas').getContext('2d');
     // larghezze: il testo piu' lungo della colonna (intestazione a parole, va su due righe); se non entrano si accorciano le piu' larghe
     // intestazione al massimo su due righe: la divisione tra parole piu' equilibrata dice la larghezza minima della colonna
@@ -7692,7 +8104,7 @@ function tablePages(ids, titleFn) {
     rowH = Math.round(Math.max(6.5, fs*0.78)*mm); headH = Math.round(Math.max(11, fs*1.3)*mm);       // righe e intestazione crescono col corpo
     const pw = Math.round(210*mm), ph = Math.round(297*mm), avail = pw - 2*M;
     const per = Math.max(1, Math.floor((ph - top - headH - M) / rowH));
-    for (let r0 = 0; r0 < rows.length; r0 += per) {
+    for (let r0 = 0; r0 < allRows.length; r0 += per) {
       const cv = document.createElement('canvas'); cv.width = pw; cv.height = ph;
       const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, pw, ph); c.textBaseline = 'middle';
       c.fillStyle = '#000'; c.font = font(14, true); c.fillText((titleFn || tableTitle)(t)+(r0 ? ' (segue)' : ''), M, M + Math.round(4*mm));
@@ -7707,11 +8119,15 @@ function tablePages(ids, titleFn) {
         if (l2) c.fillText(fit(c, l2, W[j]-2*pad), x+pad, top + headH/2 + rowH*0.3);
         x += W[j];
       });
-      const part = rows.slice(r0, r0+per);
+      const part = allRows.slice(r0, r0+per);
       part.forEach((r,i) => {
-        const y = top + headH + i*rowH, tot = /^Totale/.test(r[0]);
+        const y = top + headH + i*rowH, k = kinds[r0+i], tot = k==='t' || k==='s';
+        if (k==='g') {                                       // titolo del blocco: tutta la riga, su fondo azzurro
+          c.fillStyle = '#dde8f5'; c.fillRect(M, y, avail, rowH); c.fillStyle = '#000'; c.font = font(fs, true); c.textAlign = 'left';
+          c.fillText(r[0], M+pad, y + rowH/2); return;
+        }
         if (i%2) { c.fillStyle = '#f5f7fa'; c.fillRect(M, y, avail, rowH); }
-        if (tot) { c.strokeStyle = '#000'; c.lineWidth = 3; c.beginPath(); c.moveTo(M, y); c.lineTo(M+avail, y); c.stroke(); }
+        if (tot) { c.strokeStyle = '#000'; c.lineWidth = k==='t' ? 3 : 1.5; c.beginPath(); c.moveTo(M, y); c.lineTo(M+avail, y); c.stroke(); }
         c.fillStyle = '#000'; c.font = font(fs, tot); x = M;
         r.forEach((s,j) => {
           const num = isNum(s);
@@ -7725,7 +8141,7 @@ function tablePages(ids, titleFn) {
         c.textAlign = 'left';
       });
       c.strokeStyle = '#9aa3ad'; c.lineWidth = 2; c.strokeRect(M, top, avail, headH + part.length*rowH);
-      if (r0 + per >= rows.length) {                         // note a pie' di tabella, sotto l'ultima riga
+      if (r0 + per >= allRows.length) {                      // note a pie' di tabella, sotto l'ultima riga
         const fy = top + headH + part.length*rowH + Math.round(5*mm);
         c.font = 'italic '+Math.round(8*300/72)+'px '+FONT; c.fillStyle = '#555'; c.textAlign = 'left';
         (TABLE_NOTES[t.id] || []).forEach((n, i) => { const yy = fy + i*Math.round(4*mm); if (yy < ph - M - Math.round(6*mm)) c.fillText(n, M, yy); });
@@ -7734,11 +8150,276 @@ function tablePages(ids, titleFn) {
     }
     if (t.id==='amb') ambSchemaPages(day).forEach(cv => pages.push(cv));
   });
-  pages.forEach((cv,i) => {
-    const c = cv.getContext('2d'); c.fillStyle = '#555'; c.font = font(8, false); c.textAlign = 'right'; c.textBaseline = 'middle';
-    c.fillText('Pagina '+(i+1)+' di '+pages.length, cv.width - M, cv.height - M/2);
+  return pages;                                       // i numeri di pagina li mette numberPages, su tutte le pagine insieme
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ABACO DEI SERRAMENTI (2.47): per ogni serramento il prospetto con telaio, specchiature (divisori dei dati del serramento) e quote
+//  L x H; sotto la finestra con il sottofinestra un rettangolo largo come la finestra e alto come il sottofinestra, quotato.
+//  Serramenti uguali = un disegno solo con la quantita' e le sigle. Porte in una sezione a parte. Una scala sola per tutti i disegni.
+// ═══════════════════════════════════════════════════════════
+const ABK = 300/25.4;                                 // pixel per mm a 300 dpi
+function abacoGroups() {
+  const r3 = v => Math.round((+v || 0)*1000), win = new Map(), door = new Map();
+  state.openings.forEach(o => {
+    if (!live(o)) return;
+    const H = opHb(o), e = o.energy || {};
+    if (o.type==='P') {
+      const hd = doorHand(o), k = [r3(o.width), r3(H), o.scorr ? 1 : 0, hd.mano].join('|');
+      if (!door.has(k)) door.set(k, {op:o, hand:hd, labels:[]}); door.get(k).labels.push(o.label); return;
+    }
+    const no = Math.max(0, Math.round(+e.no || 0)), pan = o.type==='F' ? Math.max(0, Math.round(+e.pannelli || 0)) : 0;
+    const k = [o.type, r3(o.width), r3(H), openingNv(o), no, o.type==='F' ? r3(o.h0) : 0, pan, Math.round(telS(e)*1000), o.energy ? 1 : 0].join('|');
+    if (!win.has(k)) win.set(k, {op:o, labels:[]}); win.get(k).labels.push(o.label);
   });
+  const cmp = (a, b) => String(a).localeCompare(String(b), 'it', {numeric:true});
+  const srt = m => [...m.values()].map(g => { g.labels.sort(cmp); return g; }).sort((a, b) => cmp(a.labels[0], b.labels[0]));
+  return {win:srt(win), door:srt(door)};
+}
+function abacoArea(cw, ch) { const k = ABK; return {ax:4*k, ay:26*k, aw:cw - 22*k, ah:ch - 26*k - 4*k}; }      // sopra i testi e la quota orizzontale, a destra le quote verticali
+function abacoDim(c, x1, y1, x2, y2, t) {             // quota con trattini a 45 gradi; orizzontale: testo sopra; verticale: testo a sinistra, ruotato
+  const k = ABK, tk = 1.3*k;
+  c.save(); c.strokeStyle = '#000'; c.fillStyle = '#000'; c.lineWidth = 2;
+  c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2);
+  [[x1, y1], [x2, y2]].forEach(([x, y]) => { c.moveTo(x-tk, y+tk); c.lineTo(x+tk, y-tk); });
+  c.stroke();
+  c.font = Math.round(8.5*300/72)+'px '+FONT; c.textAlign = 'center'; c.textBaseline = 'bottom';
+  if (Math.abs(y1-y2) < 1) c.fillText(t, (x1+x2)/2, y1 - 0.8*k);
+  else { c.translate(x1 - 0.8*k, (y1+y2)/2); c.rotate(-Math.PI/2); c.fillText(t, 0, 0); }
+  c.restore();
+}
+function abacoCell(c, g, door, s, cw, ch) {
+  const k = ABK, o = g.op, L = +o.width, H = opHb(o), h0 = !door && o.type==='F' ? Math.max(0, +o.h0 || 0) : 0, m2 = v => (+v).toFixed(2).replace('.', ',');
+  const font = (pt, b) => (b ? 'bold ' : '')+Math.round(pt*300/72)+'px '+FONT;
+  const fit = (t, w) => { if (c.measureText(t).width <= w) return t; while (t && c.measureText(t+'…').width > w) t = t.slice(0, -1); return t+'…'; };
+  c.strokeStyle = '#c9d0d8'; c.lineWidth = 2; c.strokeRect(1, 1, cw-2, ch-2);
+  c.fillStyle = '#000'; c.textBaseline = 'middle'; c.textAlign = 'left';
+  const n = g.labels.length, tw = cw - 6*k;
+  c.font = font(10.5, true); c.fillText(fit((n > 1 ? 'x'+n+'   ' : '')+(OP_TXT.tipo[o.type] || o.type)+' '+m2(L)+' x '+m2(H)+' m', tw), 3*k, 5*k);
+  c.font = font(8.5); c.fillText(fit((n > 1 ? 'Sigle: ' : 'Sigla: ')+g.labels.join(', '), tw), 3*k, 10*k);
+  const e = o.energy || {}, det = [];
+  if (door) { det.push(o.scorr ? 'Scorrevole' : 'Battente'); if (g.hand && g.hand.mano) det.push('mano '+g.hand.mano); det.push('vista dal lato in cui apre'); }
+  else {
+    det.push(o.energy ? (openingNv(o)+1)+' x '+(Math.max(0, Math.round(+e.no || 0))+1)+' specchiature' : 'specchiature da compilare');
+    if (h0 > 0) det.push('sottofinestra '+m2(h0)+(o.spessore ? ', sp. '+m2(o.spessore) : ''));
+    if (o.type==='F' && +e.pannelli > 0) det.push(e.pannelli+(+e.pannelli===1 ? ' pannello cieco' : ' pannelli ciechi'));
+  }
+  c.fillStyle = '#444'; c.fillText(fit(det.join(' - '), tw), 3*k, 15*k);
+  const A = abacoArea(cw, ch), w = L*s, h = (H + h0)*s, x0 = A.ax + (A.aw - w)/2, y0 = A.ay + (A.ah - h)/2;
+  const R = (x, y, ww, hh) => c.strokeRect(x0 + x*s, y0 + y*s, ww*s, hh*s);
+  c.strokeStyle = '#000'; c.lineJoin = 'miter';
+  if (!door) {
+    const gg = glassGrid(L, H, e);
+    if (gg) {
+      const blind = o.type==='F' ? Math.min(Math.max(0, Math.round(+e.pannelli || 0)), gg.n) : 0;
+      c.fillStyle = '#d9d9d9'; c.fillRect(x0, y0, w, H*s);                        // telaio
+      for (let q = 0; q < gg.n; q++) {
+        const i = q % (gg.nv+1), j = Math.floor(q/(gg.nv+1)), cieco = q >= gg.n - blind, X = gg.s + i*(gg.w+gg.s), Y = gg.s + j*(gg.h+gg.s);
+        c.fillStyle = cieco ? '#a9aeb5' : '#e3f1fb'; c.fillRect(x0 + X*s, y0 + Y*s, gg.w*s, gg.h*s);
+        c.lineWidth = 2; R(X, Y, gg.w, gg.h);
+      }
+    }
+    c.lineWidth = 4; R(0, 0, L, H);
+    if (h0 > 0) {                                     // sottofinestra
+      c.fillStyle = '#f3f3f3'; c.fillRect(x0, y0 + H*s, w, h0*s); c.lineWidth = 2.5; R(0, H, L, h0);
+      c.font = font(7.5); c.fillStyle = '#666'; c.textAlign = 'center';
+      if (c.measureText('sottofinestra').width < w - 2*k && h0*s > 5*k) c.fillText('sottofinestra', x0 + w/2, y0 + (H + h0/2)*s);
+      c.textAlign = 'left';
+    }
+  } else {
+    const st = Math.min(0.06, L*0.1), right = g.hand && /DX/.test(g.hand.mano);
+    c.lineWidth = 4; R(0, 0, L, H);
+    c.fillStyle = '#f4efe6'; c.fillRect(x0 + st*s, y0 + st*s, (L - 2*st)*s, (H - st)*s); c.lineWidth = 2; R(st, st, L - 2*st, H - st);
+    if (o.scorr) {                                    // scorrevole: freccia verso dove scorre
+      const d = right ? 1 : -1, ya = y0 + H*s*0.45, xa = x0 + w/2, al = Math.min(w*0.3, 12*k);
+      c.lineWidth = 3; c.beginPath(); c.moveTo(xa - d*al, ya); c.lineTo(xa + d*al, ya); c.moveTo(xa + d*al, ya); c.lineTo(xa + d*(al - 2*k), ya - 1.4*k); c.moveTo(xa + d*al, ya); c.lineTo(xa + d*(al - 2*k), ya + 1.4*k); c.stroke();
+    } else {                                          // cerniere dal lato della mano, maniglia dall'altro (a 1 m da terra)
+      const hx = right ? L - st : st;
+      c.fillStyle = '#000'; [0.25, H - 0.35].forEach(yy => c.fillRect(x0 + hx*s - 0.6*k, y0 + yy*s, 1.2*k, 0.12*s));
+      const mx = right ? st + 0.09 : L - st - 0.09, my = H - 1.0;
+      c.lineWidth = 3; c.beginPath(); c.moveTo(x0 + mx*s, y0 + my*s); c.lineTo(x0 + (mx + (right ? 0.1 : -0.1))*s, y0 + my*s); c.stroke();
+      c.beginPath(); c.arc(x0 + mx*s, y0 + my*s, 0.8*k, 0, 7); c.fill();
+    }
+  }
+  // quote: larghezza sopra, altezza (e sottofinestra) a destra, con le linee di richiamo
+  const yd = y0 - 4*k, xd = x0 + w + 5*k;
+  c.strokeStyle = '#000'; c.lineWidth = 1.2; c.beginPath();
+  [x0, x0 + w].forEach(x => { c.moveTo(x, y0 - 1*k); c.lineTo(x, yd - 1*k); });
+  [y0, y0 + H*s].concat(h0 > 0 ? [y0 + h] : []).forEach(y => { c.moveTo(x0 + w + 1*k, y); c.lineTo(xd + 1*k, y); });
+  c.stroke();
+  abacoDim(c, x0, yd, x0 + w, yd, m2(L));
+  abacoDim(c, xd, y0, xd, y0 + H*s, m2(H));
+  if (h0 > 0) abacoDim(c, xd, y0 + H*s, xd, y0 + h, m2(h0));
+}
+// celle del disegno (una tela per gruppo), con la scala comune piu' grande tra 1:20, 1:25, 1:50, 1:100 in cui entrano tutti
+function abacoItems() {
+  const G = abacoGroups(), all = G.win.concat(G.door); if (!all.length) return null;
+  const M = Math.round(12*ABK), pw = Math.round(210*ABK), ph = Math.round(297*ABK), top = M + Math.round(16*ABK);
+  const cw = Math.floor((pw - 2*M)/2), ch = Math.floor((ph - top - M)/3), A = abacoArea(cw, ch);
+  const ext = g => ({w:+g.op.width, h:opHb(g.op) + (g.op.type==='F' ? Math.max(0, +g.op.h0 || 0) : 0)});
+  let den = 200;
+  for (const d of [20, 25, 50, 100]) { const s = 1000/d*ABK; if (all.every(g => { const e = ext(g); return e.w*s <= A.aw && e.h*s <= A.ah; })) { den = d; break; } }
+  const s = 1000/den*ABK;
+  const mk = (g, door) => { const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch; const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, cw, ch); abacoCell(c, g, door, s, cw, ch); return {cv, door, g}; };
+  return {den, M, pw, ph, top, cw, ch, win:G.win.map(g => mk(g, false)), door:G.door.map(g => mk(g, true))};
+}
+// pagine A4 dell'abaco: 6 disegni per pagina; le porte ripartono da una pagina loro
+function abacoPages() {
+  const A = abacoItems(); if (!A) return [];
+  const pages = [], day = new Date().toLocaleDateString('it-IT'), mm = ABK;
+  const sec = (items, title) => {
+    for (let i0 = 0; i0 < items.length; i0 += 6) {
+      const cv = document.createElement('canvas'); cv.width = A.pw; cv.height = A.ph;
+      const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, A.pw, A.ph); c.textBaseline = 'middle';
+      c.fillStyle = '#000'; c.font = 'bold '+Math.round(14*300/72)+'px '+FONT; c.textAlign = 'left';
+      c.fillText((hasProject() ? viewName() : 'Rilievo')+' - '+title+(i0 ? ' (segue)' : ''), A.M, A.M + Math.round(4*mm));
+      c.font = 'italic '+Math.round(8*300/72)+'px '+FONT; c.fillStyle = '#828282'; c.textAlign = 'right';
+      c.fillText('Aggiornato il '+day, A.pw - A.M, A.M + Math.round(4*mm)); c.textAlign = 'left';
+      c.fillText('Scala 1:'+A.den+'. Misure in metri: vano murario (larghezza x altezza). Serramenti uguali in un disegno solo, con la quantità.', A.M, A.M + Math.round(8.6*mm));
+      { const ml = metaHead(); if (ml) c.fillText(ml, A.M, A.M + Math.round(12.4*mm)); }
+      items.slice(i0, i0 + 6).forEach((it, n) => c.drawImage(it.cv, A.M + (n%2)*A.cw, A.top + Math.floor(n/2)*A.ch));
+      pages.push(cv);
+    }
+  };
+  if (A.win.length) sec(A.win, 'Abaco serramenti: finestre e porte-finestre');
+  if (A.door.length) sec(A.door, 'Abaco serramenti: porte');
   return pages;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RELAZIONE IN WORD (2.47): file .docx scritto nel browser, senza librerie. Archivio ZIP senza compressione ("store") con CRC32 e
+//  i file OOXML minimi: [Content_Types].xml, _rels, word/document.xml, word/styles.xml, docProps/core.xml, word/media (PNG).
+//  Tabelle Word vere (modificabili), tavola e abaco come immagini.
+// ═══════════════════════════════════════════════════════════
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let j = 0; j < 8; j++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipStore(files, mime) {                      // files: [{name, data: stringa o Uint8Array}]
+  const enc = new TextEncoder(), parts = [], cen = []; let off = 0;
+  const d = new Date(), dt = ((d.getFullYear()-1980) << 9) | ((d.getMonth()+1) << 5) | d.getDate(), tm = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  files.forEach(f => {
+    const nm = enc.encode(f.name), data = typeof f.data==='string' ? enc.encode(f.data) : f.data, crc = crc32(data);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0, true); h.setUint16(8, 0, true); h.setUint16(10, tm, true); h.setUint16(12, dt, true);
+    h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, nm.length, true); h.setUint16(28, 0, true);
+    parts.push(new Uint8Array(h.buffer), nm, data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0, true); c.setUint16(10, 0, true); c.setUint16(12, tm, true); c.setUint16(14, dt, true);
+    c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, nm.length, true);
+    c.setUint16(30, 0, true); c.setUint16(32, 0, true); c.setUint16(34, 0, true); c.setUint16(36, 0, true); c.setUint32(38, 0, true); c.setUint32(42, off, true);
+    cen.push(new Uint8Array(c.buffer), nm);
+    off += 30 + nm.length + data.length;
+  });
+  const csz = cen.reduce((t, b) => t + b.length, 0), e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(4, 0, true); e.setUint16(6, 0, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+  e.setUint32(12, csz, true); e.setUint32(16, off, true); e.setUint16(20, 0, true);
+  return new Blob(parts.concat(cen, [new Uint8Array(e.buffer)]), {type:mime || 'application/zip'});
+}
+function xmlEsc(s) { return String(s==null ? '' : s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function dxRun(t, o) {
+  o = o || {}; const pr = (o.b ? '<w:b/>' : '')+(o.i ? '<w:i/>' : '')+(o.col ? '<w:color w:val="'+o.col+'"/>' : '')+(o.sz ? '<w:sz w:val="'+o.sz+'"/><w:szCs w:val="'+o.sz+'"/>' : '');
+  return '<w:r>'+(pr ? '<w:rPr>'+pr+'</w:rPr>' : '')+'<w:t xml:space="preserve">'+xmlEsc(t)+'</w:t></w:r>';
+}
+function dxP(runs, o) {
+  o = o || {}; const pr = (o.style ? '<w:pStyle w:val="'+o.style+'"/>' : '')+(o.keep ? '<w:keepNext/>' : '')+(o.pb ? '<w:pageBreakBefore/>' : '')+(o.jc ? '<w:jc w:val="'+o.jc+'"/>' : '');
+  return '<w:p>'+(pr ? '<w:pPr>'+pr+'</w:pPr>' : '')+(runs || '')+'</w:p>';
+}
+function dxTable(tv) {
+  const n = tv.head.length, isNum = s => /^-?[\d.,]+%?( \(\d+\))?$/.test(String(s)), bd = 'w:val="single" w:sz="4" w:space="0" w:color="9AA3AD"';
+  const cell = (t, o) => '<w:tc><w:tcPr>'+(o.span ? '<w:gridSpan w:val="'+o.span+'"/>' : '')+(o.fill ? '<w:shd w:val="clear" w:color="auto" w:fill="'+o.fill+'"/>' : '')+'</w:tcPr>'+
+    '<w:p><w:pPr><w:spacing w:before="0" w:after="0"/>'+(o.right ? '<w:jc w:val="right"/>' : '')+'</w:pPr>'+dxRun(t, {b:o.b, sz:16})+'</w:p></w:tc>';
+  let x = '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblBorders><w:top '+bd+'/><w:left '+bd+'/><w:bottom '+bd+'/><w:right '+bd+'/><w:insideH '+bd+'/><w:insideV '+bd+'/></w:tblBorders>'+
+    '<w:tblLayout w:type="autofit"/><w:tblCellMar><w:left w:w="57" w:type="dxa"/><w:right w:w="57" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>'+('<w:gridCol w:w="'+Math.floor(9638/Math.max(1, n))+'"/>').repeat(n)+'</w:tblGrid>';
+  x += '<w:tr><w:trPr><w:tblHeader/></w:trPr>'+tv.head.map(h => cell(h, {b:true, fill:'E4E8EE'})).join('')+'</w:tr>';
+  tv.rows.forEach((r, i) => {
+    const k = tv.kinds ? tv.kinds[i] : '';
+    if (k==='g') { x += '<w:tr>'+cell(r[0], {b:true, fill:'DDE8F5', span:n})+'</w:tr>'; return; }
+    x += '<w:tr>'+r.map(v => cell(v, {b:k==='t' || k==='s', right:isNum(v), fill:k==='t' ? 'F2F2F2' : ''})).join('')+'</w:tr>';
+  });
+  return x+'</w:tbl>';
+}
+function dxImgRun(n, wEmu, hEmu) {
+  const a = 'http://schemas.openxmlformats.org/drawingml/2006/main', nm = 'Immagine '+n;
+  return '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="'+wEmu+'" cy="'+hEmu+'"/><wp:docPr id="'+n+'" name="'+nm+'"/>'+
+    '<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="'+a+'" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="'+a+'"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'+
+    '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="'+n+'" name="'+nm+'"/><pic:cNvPicPr/></pic:nvPicPr>'+
+    '<pic:blipFill><a:blip r:embed="rIdImg'+n+'"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="'+wEmu+'" cy="'+hEmu+'"/></a:xfrm>'+
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>';
+}
+const DOCX_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'+
+  '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:sz w:val="20"/><w:szCs w:val="20"/><w:lang w:val="it-IT"/></w:rPr></w:rPrDefault>'+
+  '<w:pPrDefault><w:pPr><w:spacing w:after="80" w:line="259" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>'+
+  '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>'+
+  '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:after="160"/></w:pPr><w:rPr><w:b/><w:color w:val="1F3864"/><w:sz w:val="36"/><w:szCs w:val="36"/></w:rPr></w:style>'+
+  '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="240" w:after="80"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:color w:val="1F3864"/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr></w:style>'+
+  '<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="200" w:after="60"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style>'+
+  '<w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="caption"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:rPr><w:i/><w:color w:val="555555"/><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr></w:style>'+
+  '<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:tblPr><w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>'+
+  '</w:styles>';
+// contenuto della relazione: dati del rilievo, tavola (o le due tavole del confronto), tabelle scelte, abaco se scelto
+function docxExport(E, den, plans, views) {
+  const imgs = [], cm = 360000, body = [];
+  const img = (cv, wcm) => { imgs.push(cv); const n = imgs.length, w = Math.round(wcm*cm); return dxImgRun(n, w, Math.round(w*cv.height/cv.width)); };
+  const m = state.meta || {}, day = new Date().toLocaleDateString('it-IT');
+  body.push(dxP(dxRun(m.oggetto || 'Relazione di rilievo'), {style:'Title'}));
+  META_FIELDS.forEach(([id, label]) => { if (id!=='oggetto' && m[id]) body.push(dxP(dxRun(label.replace(/ \(.*\)$/, '')+': ', {b:true})+dxRun(m[id]))); });
+  body.push(dxP(dxRun('Aggiornato il '+day+'. Misure in metri.', {i:true, col:'555555'})));
+  views.forEach((v, i) => {
+    if (!plans[i]) return;
+    body.push(dxP(dxRun('Tavola'+(views.length > 1 || hasProject() ? ' - '+withView(v, viewName) : '')), {style:'Heading1', pb:i > 0}));
+    body.push(dxP(img(plans[i], 17), {jc:'center'}));
+    body.push(dxP(dxRun('Disegno in scala 1:'+den+' su A4, come immagine. Per modificare il disegno usa l\'esportazione DXF.'), {style:'Caption'}));
+  });
+  const ids = E.tables || [];
+  if (ids.length) {
+    body.push(dxP(dxRun('Tabelle'), {style:'Heading1', pb:true}));
+    const groups = E.both ? withOrd(E.ord, () => tableGroups(ids)) : [{v:state.view, ids}];
+    groups.forEach(g => withView(g.v, () => withOrd(E.ord, () => TABLES.filter(t => g.ids.includes(t.id)).forEach(t => {
+      const d = t.data(); if (!d) return;
+      body.push(dxP(dxRun((g.titleFn || tableTitle)(t)), {style:'Heading2'}));
+      body.push(dxTable(tableView(d, true)));
+      (TABLE_NOTES[t.id] || []).forEach(nt => body.push(dxP(dxRun(nt), {style:'Caption'})));
+      if (t.id==='amb') ambSchemaPages(day).forEach(cv => body.push(dxP(img(cv, 16), {jc:'center'})));
+    }))));
+  }
+  if (E.abaco) {
+    const A = withView(E.both ? 'prog' : state.view, abacoItems);
+    if (A) {
+      body.push(dxP(dxRun('Abaco serramenti'), {style:'Heading1', pb:true}));
+      body.push(dxP(dxRun('Scala 1:'+A.den+'. Misure in metri: vano murario (larghezza x altezza). Serramenti uguali in un disegno solo, con la quantità.'), {style:'Caption'}));
+      [['Finestre e porte-finestre', A.win], ['Porte', A.door]].forEach(([tt, list]) => {
+        if (!list.length) return;
+        body.push(dxP(dxRun(tt), {style:'Heading2'}));
+        for (let i = 0; i < list.length; i += 2) body.push(dxP(list.slice(i, i+2).map(it => img(it.cv, 8.3)).join(dxRun(' ')), {jc:'center'}));
+      });
+    }
+  }
+  const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '+
+             'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"';
+  const doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:document '+NS+'><w:body>'+body.join('')+
+    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>';
+  setTip('Preparo il file Word...');
+  Promise.all(imgs.map(cv => new Promise(res => cv.toBlob(b => { if (!b) { res(null); return; } b.arrayBuffer().then(x => res(new Uint8Array(x))); }, 'image/png')))).then(pngs => {
+    if (pngs.some(p => !p)) { setTip('Esportazione Word non riuscita: prova con una zona più piccola.', 'warn'); return; }
+    const rel = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
+    const files = [
+      {name:'[Content_Types].xml', data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/>'+
+        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'+
+        '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'+
+        '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>'},
+      {name:'_rels/.rels', data:rel+'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'+
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>'},
+      {name:'docProps/core.xml', data:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'+
+        '<dc:title>'+xmlEsc(m.oggetto || 'Relazione di rilievo')+'</dc:title><dc:creator>App Rilievo</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">'+new Date().toISOString().replace(/\.\d+Z$/, 'Z')+'</dcterms:created></cp:coreProperties>'},
+      {name:'word/_rels/document.xml.rels', data:rel+'<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'+
+        pngs.map((_, i) => '<Relationship Id="rIdImg'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image'+(i+1)+'.png"/>').join('')+'</Relationships>'},
+      {name:'word/document.xml', data:doc},
+      {name:'word/styles.xml', data:DOCX_STYLES},
+    ].concat(pngs.map((p, i) => ({name:'word/media/image'+(i+1)+'.png', data:p})));
+    const name = stamp()+'_relazione_rilievo_1-'+den+(hasProject() && !E.both ? (prog() ? '_progetto' : '_stato_di_fatto') : E.both ? '_confronto' : '')+'.docx';
+    download(name, zipStore(files, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    setTip('Relazione Word esportata: tabelle modificabili, tavola'+(E.abaco ? ' e abaco' : '')+' come immagini.', 'ok');
+  });
 }
 // canvas -> JPEG a 300 dpi {jpg, wpx, hpx}; null se il browser non ce la fa
 function canvasJpg(cv) {
@@ -7747,27 +8428,36 @@ function canvasJpg(cv) {
     b.arrayBuffer().then(buf => { const jpg = new Uint8Array(buf); jfifDpi(jpg, 300); res({jpg, wpx:cv.width, hpx:cv.height}); });
   }, 'image/jpeg', 0.92));
 }
-// menu File: "tab" = solo tabelle (PDF, JPG o CSV), "full" = PDF unico con il disegno in scala e dietro le tabelle
+// menu File: "tab" = solo tabelle (PDF, JPG o CSV), "full" = PDF unico con il disegno in scala e dietro le tabelle, "docx" = relazione in Word.
+// Caselle facoltative: Disegni serramenti (abaco), Dati per ordine (colonne in piu' per finestre e porte); con il disegno anche le quote
 function exportTablesMenu(mode) {
   hideAllMenus();
-  const av = TABLES.filter(t => t.data());
+  const av = TABLES.filter(t => t.data()), hasOp = state.openings.some(o => !hid(o)), draw2 = mode!=='tab';
   if (mode==='tab' && !av.length) { setTip('Nessuna tabella da esportare: servono ambienti, serramenti o muri e ambienti classificati.'); return; }
-  const fields = av.map(t => ({label:t.title, id:'t_'+t.id, type:'check', value:'1'}));
-  if (mode==='full' && hasProject()) fields.push({label:'Stato di fatto e Progetto: le due tavole e le tabelle di entrambi', id:'both', type:'check', value:'1'});
+  if (draw2 && !drawingBounds()) { setTip('Niente da esportare.'); return; }
+  const fields = (av.length ? [{type:'head', label:'Tabelle'}] : []).concat(av.map(t => ({label:t.title, id:'t_'+t.id, type:'check', value:'1'})));
+  if (hasOp) fields.push({type:'head', label:'Serramenti'},
+    {label:'Disegni serramenti (abaco: prospetti quotati, porte a parte)', id:'abaco', type:'check', value:''},
+    {label:'Dati per ordine (più colonne nelle tabelle di finestre e porte)', id:'ord', type:'check', value:''});
+  if (draw2 && hasProject()) fields.push({label:'Stato di fatto e Progetto: le due tavole e le tabelle di entrambi', id:'both', type:'check', value:'1'});
   if (mode==='tab') fields.push({label:'Formato', id:'fmt', type:'select', value:'pdf',
     options:[{value:'pdf', label:'PDF - un file con tutte le pagine'}, {value:'jpg', label:'JPG - un\'immagine per pagina'},
              {value:'csv', label:'CSV - per Excel, un file per tabella con tutte le colonne'}]});
-  askDialog(mode==='tab' ? 'Esporta tabelle' : 'Esporta rilievo completo', fields,
-    mode==='tab' ? 'Ci sono solo le tabelle che il rilievo ha: togli la spunta a quelle da non esportare.'
-                 : 'Un solo PDF: il disegno in scala, poi le tabelle spuntate. Dopo OK scegli zona e scala del disegno.', v => {
-    const ids = av.filter(t => v['t_'+t.id]).map(t => t.id);
-    if (mode==='full') { startExport('full'); if (state.exp) { state.exp.tables = ids; state.exp.both = !!v.both; } return; }
-    if (!ids.length) { setTip('Nessuna tabella spuntata.'); return; }
+  if (draw2) quoteFields().forEach(f => fields.push(f));
+  const title = mode==='tab' ? 'Esporta tabelle' : mode==='docx' ? 'Esporta relazione (Word)' : 'Esporta rilievo completo';
+  const hint = mode==='tab' ? 'Ci sono solo le tabelle che il rilievo ha: togli la spunta a quelle da non esportare. Il CSV non ha i disegni dei serramenti.'
+             : mode==='docx' ? 'Un file Word modificabile: dati del rilievo, tavola come immagine, tabelle vere e, se scelto, l\'abaco. Le quote valgono solo per questa esportazione. Dopo OK scegli zona e scala del disegno.'
+             : 'Un solo PDF: il disegno in scala, poi le tabelle spuntate. Le quote valgono solo per questa esportazione. Dopo OK scegli zona e scala del disegno.';
+  askDialog(title, fields, hint, v => {
+    const ids = av.filter(t => v['t_'+t.id]).map(t => t.id), abaco = !!v.abaco, ord = !!v.ord;
+    if (draw2) { startExport(mode); if (state.exp) Object.assign(state.exp, {tables:ids, both:!!v.both, abaco, ord, xq:quoteRead(v)}); return; }
+    if (!ids.length && !(abaco && v.fmt!=='csv')) { setTip('Nessuna tabella spuntata.'); return; }
     if (v.fmt==='csv') {
-      av.filter(t => ids.includes(t.id)).forEach(t => { const tv = tableView(t.data(), false); downloadCSV(stamp()+'_'+tableFile(t)+'.csv', [tv.head].concat(tv.rows)); });
+      withOrd(ord, () => av.filter(t => ids.includes(t.id)).forEach(t => { const tv = tableView(t.data(), false); downloadCSV(stamp()+'_'+tableFile(t)+'.csv', [tv.head].concat(tv.rows)); }));
       setTip('Tabelle esportate in CSV: '+ids.length+(ids.length===1 ? ' file.' : ' file, uno per tabella.')); return;
     }
-    Promise.all(tablePages(ids).map(canvasJpg)).then(pp => {
+    const pages = numberPages(withOrd(ord, () => tablePages(ids)).concat(abaco ? abacoPages() : []));
+    Promise.all(pages.map(canvasJpg)).then(pp => {
       pp = pp.filter(Boolean);
       if (v.fmt==='jpg') pp.forEach((p,k) => download(stamp()+'_tabelle_'+String(k+1).padStart(2,'0')+'.jpg', p.jpg, 'image/jpeg'));
       else download(stamp()+'_tabelle.pdf', makePdf(pp), 'application/pdf');
@@ -7875,7 +8565,7 @@ function readDialog() {
   });
   return v;
 }
-function closeDialog(){ document.getElementById('dialog-overlay').classList.remove('show'); }
+function closeDialog(){ document.getElementById('dialog-overlay').classList.remove('show'); dlgButtons('OK', 'Annulla'); }
 
 function dialogConfirm() {
   const v  = readDialog();
@@ -10637,8 +11327,9 @@ function opTableRender() {
   const body = $id('optab-body'); if (!body) return;
   const cuts = wallCuts(), inAmb = new Map();
   state.ambienti.filter(a => live(a) && !isBalcone(a)).forEach(a => ambOpenings(a, cuts).forEach(i => inAmb.set(i, (inAmb.get(i) || []).concat(a.name))));
+  // prima finestre e porte-finestre, poi le porte in un blocco a parte (gli ordini si fanno separati)
   const idx = state.openings.map((o,i) => i).filter(i => !hid(state.openings[i]))
-    .sort((a,b) => String(state.openings[a].label).localeCompare(String(state.openings[b].label), 'it', {numeric:true}));
+    .sort((a,b) => ((state.openings[a].type==='P') - (state.openings[b].type==='P')) || String(state.openings[a].label).localeCompare(String(state.openings[b].label), 'it', {numeric:true}));
   if (!idx.length) { body.innerHTML = '<p style="color:#ccc;padding:12px">Nessun serramento: inseriscili dal menu Inserisci, poi torna qui per le misure.</p>'; return; }
   const cs = 'background:#0d1b36;border:1px solid #2a3f66;border-radius:6px;color:#eee;padding:6px;font-size:14px;';
   const th = t => '<th style="position:sticky;top:0;background:#16213e;color:#aaa;font-size:12px;font-weight:normal;text-align:left;padding:4px 6px">'+t+'</th>';
@@ -10646,8 +11337,11 @@ function opTableRender() {
   const esc = v => String(v==null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
   let h = '<table style="border-collapse:collapse"><tr>'+['Nome','Tipo','Larghezza','Altezza','Davanzale','Nicchia','Ambiente','Dati energetici'].map(th).join('')+'</tr>';
   const selI = state.sel && state.sel.kind==='opening' ? state.sel.idx : -1;             // il serramento scelto sulla pianta: riga evidenziata e portata in vista all'apertura
+  const grp = t => '<tr class="optab-grp"><td colspan="8" style="padding:10px 6px 4px;color:#ffe066;font-weight:bold;font-size:13px">'+t+'</td></tr>';
   idx.forEach((i,r) => {
-    const o = state.openings[i], L = locked(o), dis = L ? ' disabled' : '';
+    const o = state.openings[i], L = locked(o), dis = L ? ' disabled' : '', pv = r ? state.openings[idx[r-1]] : null;
+    if (!r && o.type!=='P') h += grp('Finestre e porte-finestre');
+    if (o.type==='P' && (!pv || pv.type!=='P')) h += grp('Porte');
     h += '<tr data-row="'+i+'" style="background:'+(i===selI ? 'rgba(255,224,102,.28)' : r%2 ? 'rgba(187,112,40,.12)' : 'transparent')+(i===selI ? ';outline:2px solid #ffe066' : '')+'">'+
       '<td style="padding:3px 6px"><input data-i="'+i+'" data-k="label" value="'+esc(o.label)+'"'+dis+' style="'+cs+'width:70px"></td>'+
       '<td style="padding:3px 6px"><select data-i="'+i+'" data-k="type"'+dis+' style="'+cs+'">'+['F','PF','P'].map(t => '<option value="'+t+'"'+(o.type===t ? ' selected' : '')+'>'+OP_TXT.tipo[t]+'</option>').join('')+'</select></td>'+
@@ -10656,7 +11350,7 @@ function opTableRender() {
       '<td style="padding:3px 6px">'+(o.type==='F' ? num(i,'h0',o.h0 ?? OPENING_DEF.F.h0,L) : '<span style="color:#666">-</span>')+'</td>'+
       '<td style="padding:3px 6px">'+num(i,'spessore',o.spessore || '',L)+'</td>'+
       '<td style="padding:3px 6px;color:#ccc;font-size:13px;white-space:nowrap">'+esc((inAmb.get(i) || []).join(' / ') || '-')+'</td>'+
-      '<td style="padding:3px 6px"><button data-en="'+i+'" style="'+cs+'cursor:pointer">'+(o.type==='P' ? (o.energy ? '📋 Trasm./note: compilati' : '📋 Trasm./note') : (o.energy ? '📋 Compilati' : '📋 Da compilare'))+'</button></td></tr>';
+      '<td style="padding:3px 6px"><button data-en="'+i+'" style="'+cs+'cursor:pointer">'+(o.type==='P' ? (o.energy ? '📋 Trasm./note: compilati' : '📋 Trasm./note') : (enDone(o) ? '📋 Compilati' : '📋 Da compilare'))+'</button></td></tr>';
   });
   body.innerHTML = h+'</table>';
   body.querySelectorAll('[data-k]').forEach(el => el.addEventListener('change', () => opTableSet(+el.dataset.i, el.dataset.k, el.value)));
@@ -10768,11 +11462,11 @@ function placePaste(ax, ay) {
   saveHistory();
   const pn = CLIP.pts.map(p => newPoint(ax+p.dx, ay+p.dy)), sn = [], on = [];
   CLIP.segs.forEach(g => { state.segments.push({...JSON.parse(JSON.stringify(g)), a:pn[g.a], b:pn[g.b]}); sn.push(state.segments.length-1); });
-  CLIP.ops.forEach(o => { const c = JSON.parse(JSON.stringify(o)); c.segIdx = sn[o.segIdx]; c.label = nextOpeningLabel(c.type); state.openings.push(c); on.push(state.openings.length-1); });
+  CLIP.ops.forEach(o => { const c = JSON.parse(JSON.stringify(o)); delete c.glass; c.segIdx = sn[o.segIdx]; c.label = nextOpeningLabel(c.type); state.openings.push(c); on.push(state.openings.length-1); });
   CLIP.ambs.forEach(a => {
-    const c = JSON.parse(JSON.stringify(a)), base = roomBase(c.name);
+    const c = JSON.parse(JSON.stringify(a));
     c.indices = a.indices.map(i => pn[i]); c.color = AMB_COLORS[state.ambienti.length % AMB_COLORS.length];
-    c.name = base ? roomName(base, null) : c.name+' (copia)';        // numerazione come per un ambiente nuovo
+    c.name = rnBase(c.name) || c.name;                               // numerazione come per un ambiente nuovo (roomRenum)
     state.ambienti.push(c);
   });
   setTool('select');
@@ -10922,8 +11616,10 @@ function drawCartiglio(Wl, Hl) {
 var TABLE_NOTES = {
   amb:  ['Sup. = superficie, Alt. = altezza. Aperture: tra parentesi il numero di serramenti contati sul bordo dell\'ambiente.',
          'RAI = rapporto aeroilluminante: finestre e porte-finestre sulla superficie dell\'ambiente, minimo 1/8. (!) = non rispettato.'],
-  serr: ['Largh. = larghezza, Alt. = altezza, Dav. = davanzale, Sp. = spessore. Misure della bucatura, in metri.',
-         'Spessore del vetro, distanziatore, cassonetto e misure delle specchiature sono nel file CSV, che ha tutte le colonne.'],
+  serr: ['Largh. = larghezza, Alt. = altezza, Dav. = davanzale, Sp. = spessore. Misure della bucatura, in metri. Le porte sono in una tabella a parte.',
+         'Spessore del vetro, distanziatore, cassonetto e misure delle specchiature sono nel file CSV, che ha tutte le colonne. Con "Dati per ordine" cassonetto e sottofinestra sono anche qui.'],
+  porte: ['Largh. = larghezza, Alt. = altezza, Sp. = spessore. Misure del vano, in metri.',
+          'Mano: guardando la porta dal lato verso cui apre (il lato da cui si tira), cerniere a destra = DX, a sinistra = SX.'],
 };
 // CAMPITURA DEI MURI (#d6d6d6): riempimento dello spessore, dal filo interno di ogni ambiente fino alla faccia opposta del muro
 // (la stessa che da' lo spessore automatico), interrotto dai serramenti. Gli angoli e gli innesti a T si chiudono con il
@@ -11039,7 +11735,7 @@ function verifyItems() {
     if (g.layer!=='MURI_EST' && !segOk(g, Math.hypot(B.x-A.x, B.y-A.y))) nv.push(i);
   });
   if (dub.length) out.push({t:dub.length+' muri non assegnati', d:'Tipo proposto dall\'app, da confermare', segs:dub});
-  if (nv.length) out.push({t:nv.length+' quote non verificate in loco', d:'Misure lette dal disegno e non convalidate', segs:nv});
+  if (nv.length) out.push({t:nv.length+' quote non verificate in loco', d:'Misure lette dal disegno e non convalidate', segs:nv, all:{label:'✔ Valida tutte', fn:() => validateAll(nv)}});
   const A = state.ambienti.map((a,k) => ({a, k})).filter(x => live(x.a)), names = l => l.map(x => x.a.name).join(', '), ks = l => l.map(x => x.k);
   const noName = A.filter(x => !roomBase(x.a.name) && !ambNoVol(x.a));
   if (noName.length) out.push({t:noName.length+' ambienti senza nome', d:names(noName), ambs:ks(noName)});
@@ -11052,7 +11748,7 @@ function verifyItems() {
   if (vi.length) out.push({t:vi.length+' volte incomplete', d:names(vi), ambs:ks(vi)});
   const rai = A.filter(x => raiWarn(x.a, cuts));
   if (rai.length) out.push({t:rai.length+' ambienti sotto il rapporto aeroilluminante', d:rai.map(x => x.a.name+' ('+raiWarn(x.a, cuts).txt+')').join(', '), ambs:ks(rai)});
-  const noE = []; state.openings.forEach((o,i) => { if (live(o) && o.type!=='P' && !o.energy) noE.push(i); });
+  const noE = []; state.openings.forEach((o,i) => { if (live(o) && o.type!=='P' && !enDone(o)) noE.push(i); });
   if (noE.length) out.push({t:noE.length+' serramenti senza dati energetici', d:noE.map(i => state.openings[i].label).join(', '), ops:noE});
   return out;
 }
@@ -11074,7 +11770,20 @@ function verifyOpen() {
   items.forEach(it => {
     const d = document.createElement('div'), b = document.createElement('b'), s = document.createElement('small');
     d.className = 'vr-row'; b.textContent = '⚠ '+it.t; s.textContent = it.d; d.append(b, s); d.onclick = () => verifyGo(it); box.appendChild(d);
+    if (it.all) {                                    // azione in blocco sulla riga (es. "Valida tutte"): un solo passo di Annulla
+      const k = document.createElement('button'); k.type = 'button'; k.className = 'vr-all'; k.textContent = it.all.label;
+      k.onclick = e => { e.stopPropagation(); closeDialog(); _dlgFields = null; _dlgOk = null; _dlgCancel = null; it.all.fn(); };
+      d.appendChild(k);
+    }
   });
+}
+// convalida in un colpo le quote indicate (Verifica rilievo): la misura del disegno vale come verificata
+function validateAll(list) {
+  const ok = list.filter(i => { const g = state.segments[i]; return g && state.points[g.a] && state.points[g.b]; });
+  if (!ok.length) return;
+  saveHistory();
+  ok.forEach(i => { const g = state.segments[i], A = state.points[g.a], B = state.points[g.b]; g.ok = true; g.okLen = Math.hypot(B.x-A.x, B.y-A.y); });
+  commit(ok.length+(ok.length===1 ? ' quota validata' : ' quote validate')+' così come sono. Annulla le riporta da verificare.');
 }
 
 function toggleLegend() {
@@ -11193,8 +11902,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.46';
-const APP_NOTE = ["Muri parametrici: l'ambiente comanda, con le sue misure nette, e il muro gli sta attorno. Tocchi un muro di un ambiente e compaiono le maniglie: blu = misura netta (dal centro del lato al lato di fronte, come il laser), verde = spessore, bianca = sposta la tramezza (una stanza cresce, l'altra cala), gialle agli estremi = allunga il lato. Trascini, oppure tocchi la maniglia e scrivi il numero. Le misure nette degli altri ambienti non cambiano mai: sono gli ambienti vicini a spostarsi", "Vale per ogni forma di ambiente: rettangoli, forme a L, lati inclinati. Tra due pareti non parallele lo spessore è uno solo, misurato a metà muro", "Tramezza tra due ambienti: è un numero, non più lo spazio che avanza. Cambi lo spessore e la stanza accanto si sposta con tutto quello che ha dietro. Lo spessore scritto vale come misurato", "Spessori standard una volta sola (menu Disegna, \"Spessori standard\"): muri esterni 30 cm e tramezze 10 cm di partenza, modificabili per tutto il rilievo; le eccezioni si correggono muro per muro. Nella Stanza rettangolare non si scrive più lo spessore", "La stanza nuova si attacca da sola: disegnata entro 50 cm da un'altra, va a mettersi alla distanza della tramezza standard. Vale anche per l'ambiente creato da punti o da area, quando ha punti suoi e nessun muro già disegnato attorno", "Misure che non chiudono: se gli spessori non possono tornare tutti, il residuo va sulle tramezze non misurate e si vede sul disegno (esempio \"10+2\": tramezza voluta 10, residuo 2), con un solo messaggio per residuo", "Ambiente modificato a mano: se sposti a mano i punti o i muri di un ambiente parametrico, quell'ambiente non è più parametrico e porta il segno \"non parametrico\"; i suoi muri restano disegnati. Dal menu dell'ambiente: \"Torna parametrico\". Le linee libere si usano come prima", "Sul telefono, con un muro selezionato, compaiono in basso i pulsanti Netta, Spessore, Lato e Sposta per scrivere i numeri; le maniglie si vedono quando il muro è abbastanza lungo a video. Il numero scritto resta il modo più preciso", "Quota verde dello spessore, \"Spessore e tipo\" e \"Imposta misura\" sui muri di un ambiente parametrico passano dal muro parametrico: nessuna stanza si deforma. Sul muro di un ambiente parametrico il primo tocco mostra le maniglie, il secondo apre il menu della linea", "Corretto: una finestra o una porta messa sulla faccia esterna di un muro non sparisce più quando il muro viene ridisegnato (spessore cambiato, stanza nuova accanto): passa sulla linea nuova", "Limiti: gli ambienti ottenuti dal ricalco (PDF, DXF, catastale) e quelli disegnati con muri a doppia linea restano come prima, non parametrici; i muri esterni non vengono allineati tra loro (un filo esterno unico non è imposto); le piccole sacche chiuse tra stanze non vengono più riempite da sole"];
+const APP_VERSION = '2.47';
+const APP_NOTE = ["Tabella ambienti in due blocchi, ognuno con il suo subtotale di superficie netta: \"Ambienti interni\" (utile, mansarde, soppalchi abitabili, taverne e non classificati) e \"Altri ambienti non abitabili\" (sottotetti, soppalchi non abitabili, balconi, terrazzi, logge, verande, portici, esterni, cantine, locali accessori, box, posti auto). Vale in PDF, JPG, CSV e Word; la tabella della superficie commerciale non cambia", "Disegni dei serramenti (abaco): casella \"Disegni serramenti\" nelle esportazioni Tabelle, Rilievo completo e Word. Per ogni serramento il prospetto con telaio, specchiature e quote larghezza x altezza; sotto la finestra il sottofinestra, quotato. Serramenti uguali in un disegno solo con la quantità (x3) e le sigle; le porte in una sezione a parte, viste dal lato in cui aprono", "Relazione in Word (menu File, \"Esporta relazione (Word)\"): un file .docx modificabile con i dati del rilievo in testa, la tavola come immagine, le stesse tabelle del PDF come tabelle vere di Word e, se scelto, l'abaco dei serramenti. Per modificare il disegno resta il DXF", "Porte in una tabella a parte, separata da \"Finestre e porte-finestre\" (a video nella Tabella serramenti, in PDF, JPG, CSV e Word). Casella \"Dati per ordine\": per le porte apertura (battente o scorrevole), mano (DX o SX guardando dal lato in cui apre), verso (da dove si tira e da dove si spinge), spessore del muro; per finestre e porte-finestre ante, specchiature, sottofinestra (altezza e spessore), cassonetto, oscurante e spessore del muro. Nella finestra della porta si sceglie se è battente o scorrevole", "Inserendo una finestra o una porta-finestra compaiono subito i divisori verticali e orizzontali delle specchiature: sono gli stessi dei dati energetici, scritti qui li ritrovi là e viceversa. Il serramento resta \"dati energetici da compilare\" finché non compili la scheda", "Tolta la \"Porta a vetro\": la porta è sempre in legno, una porta vetrata si inserisce come porta-finestra. I progetti con porte a vetro si aprono come sempre e un avviso dice quali porte sono diventate porte normali", "Verifica rilievo: accanto alle quote non verificate c'è \"Valida tutte\", che le valida in un colpo; Annulla le riporta da verificare", "Scelta delle quote all'esportazione: prima di esportare il disegno (PDF, JPG, Rilievo completo, Word, DXF) scegli quali quote mettere: spessori dei muri, lunghezze dei muri, anche quelle non verificate, nome e misure dei serramenti, dati degli ambienti, misure dei pilastri, dati delle scale. Le caselle partono come la Vista e la scelta vale solo per quella esportazione", "Nomi degli ambienti: un nome usato una volta sola non ha numero (\"Camera\"); quando ne nasce un secondo diventano \"Camera 1\" e \"Camera 2\", e così via. Vale per tutti i nomi, anche Balcone, Terrazzo e quelli scritti a mano. Cancellando o rinominando, i numeri si ricompattano e chi resta da solo perde il numero. I progetti già fatti non si rinominano all'apertura", "Spezza e crea ambiente: un muro disegnato che attraversa un ambiente da un lato all'altro (o che parte da un lato e arriva su un altro) fa comparire la proposta, con i punti d'incrocio segnati. Su un ambiente parametrico nascono due ambienti parametrici separati da una tramezza standard (la linea è il suo asse) e legati tra loro; l'originale tiene nome, altezza e categoria nella parte più grande, alla nuova dai il nome. Su un ambiente non parametrico le linee si spezzano negli incroci e nascono i due ambienti. Vale anche per forme a L e lati inclinati; \"Solo la linea\" disegna il muro come prima", "Modifica, \"Cancella disegni temporanei\": toglie in una volta tutte le linee di costruzione e le quote temporanee, dopo una conferma; Annulla le riporta", "Schema delle specchiature sul telefono: ora è una striscia orizzontale che scorre col dito, poco sopra la barra in basso, e il disegno resta libero. Sul computer resta la colonna a sinistra"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
