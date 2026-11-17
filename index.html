@@ -164,6 +164,8 @@
       background:rgba(22,33,62,.96); border:1px solid #4a9eff; border-radius:10px; padding:4px 6px; box-shadow:0 4px 14px rgba(0,0,0,.5); font-size:13px; color:#ddd; }
     #sel-bar button { background:#0f3460; color:#eee; border:1px solid #1a4a7a; border-radius:6px; padding:6px 9px; font-size:13px; cursor:pointer; white-space:nowrap; }
     #sel-bar button.on  { background:#1a6a3a; border-color:#2a9a5a; }
+    #wp-bar { position:fixed; left:var(--tb-w,0px); right:0; bottom:calc(28px + var(--tb-h,0px)); z-index:156; display:none; align-items:center; gap:6px; flex-wrap:wrap; background:rgba(22,33,62,.97); border-top:1px solid #ffe066; padding:7px 8px; font-size:13px; color:#ffe066; }
+    #wp-bar button { background:#0f3460; color:#eee; border:2px solid #1a4a7a; border-radius:8px; padding:10px 9px; font-size:14px; cursor:pointer; white-space:nowrap; }
     #sel-bar button.del { background:#e94560; border-color:#e94560; }
     #selb-n { padding:0 4px; color:#ffe066; white-space:nowrap; }
     #paste-pop { position:fixed; left:0; top:0; z-index:165; display:none; align-items:center; gap:4px; background:rgba(22,33,62,.96); border:1px solid #4a9eff; border-radius:10px; padding:4px 6px; box-shadow:0 4px 14px rgba(0,0,0,.5); }
@@ -283,6 +285,7 @@
 <div id="group-draw" class="floating-menu">
   <div class="menu-item tool-item" id="ti-wall" onclick="pickTool('wall')"><span class="ti">▭</span><span class="tt"><b>Muro</b><small>Traccia i muri, un vertice dopo l'altro</small></span></div>
   <div class="menu-item tool-item" id="ti-room" onclick="pickTool('room')"><span class="ti">⬚</span><span class="tt"><b>Stanza rettangolare</b><small>Trascina un rettangolo: 4 muri e l'ambiente in un colpo</small></span></div>
+  <div class="menu-item tool-item" id="ti-wstd" onclick="wpStdDialog()"><span class="ti">▥</span><span class="tt"><b>Spessori standard</b><small>Muri esterni e tramezze, una volta per tutto il rilievo</small></span></div>
   <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Ambiente</div><div class="grp-b">
     <div class="menu-item tool-item" id="ti-roompts" onclick="pickTool('roompts')"><span class="ti">⬠</span><span class="tt"><b>Ambiente da punti</b><small>Tocca i vertici in ordine: nel Progetto, per le stanze unite</small></span></div>
     <div class="menu-item tool-item" id="ti-boundary" onclick="pickTool('boundary')"><span class="ti">⬚</span><span class="tt"><b>Ambiente da area</b><small>Tocca dentro un'area chiusa da muri: il contorno lo trova l'app</small></span></div>
@@ -428,6 +431,7 @@
 <div id="amb-context" class="floating-menu ctx smart"><div class="ctx-in">
   <div class="menu-item" data-demo onclick="ambMenuAction('demo')"></div>
   <div class="menu-item" data-lock onclick="ambMenuAction('edit')">✎ Modifica ambiente<small class="md">Nome, altezza e categoria; mostra superficie e pareti</small></div>
+  <div class="menu-item" id="am-wpon" onclick="ambMenuAction('wpon')">⟲ Torna parametrico<small class="md">Le misure di adesso valgono come misure nette; tornano maniglie e legami con i vicini</small></div>
   <div class="menu-item" data-lock id="am-vgraf" onclick="ambMenuAction('vgraf')">⌒ Volta sul disegno<small class="md">Tocchi i quattro punti d'imposta sul disegno, poi le quote</small></div>
   <div class="menu-item" data-lock id="am-volta" onclick="ambMenuAction('volta')">⌒ Volta<small class="md">A botte o a crociera: quote d'imposta e in chiave, tratteggio in pianta, H min e H max</small></div>
   <div class="menu-item" data-lock id="am-novolta" onclick="ambMenuAction('novolta')">⌓ Togli volta<small class="md">Torna al soffitto piano, con l'altezza dell'ambiente</small></div>
@@ -535,6 +539,7 @@
 <div id="leg-box"></div>
 <div id="guide-card"></div>
 <button id="move-base-btn"  class="fab" onclick="toggleMoveBase()"      style="bottom:calc(144px + var(--tb-h,0px));background:#1a6a3a;border:1px solid #2a9a5a">✥ Base in spostamento - tocca per finire</button>
+<div id="wp-bar"></div>
 <div id="sel-bar">
   <span id="selb-n" title="Elementi selezionati"></span>
   <button id="selb-add" title="Ogni tocco aggiunge o toglie un elemento" onclick="toggleMulti()">➕ Aggiungi</button>
@@ -1723,6 +1728,7 @@ function drawNow() {
   drawPilastri();
   drawOpenings();
   drawOpeningHandles();
+  wpDraw();
   drawCircles();
   drawWallPreview();
   drawRectPreview();
@@ -2358,10 +2364,10 @@ function wallThickMenuAction(only) {
     [...all].forEach(i => { const g = state.segments[i]; if (v.ct!=='__keep') g.commType = v.ct || undefined; delete g.cv; delete g.cvOp; g.wt = now; });
     let plain = [];
     if (isFinite(th) && th>0) {
-      plain = wallSetThick(idxs, th);                                         // lo spessore si disegna: la linea opposta si sposta (o nasce) a quella distanza
+      plain = wallSetThick(wpThickFromMenu(idxs, th), th);                                         // lo spessore si disegna: la linea opposta si sposta (o nasce) a quella distanza
       plain.forEach(i => { const g = state.segments[i]; if (g) { g.thick = th; delete g.thAuto; } });     // dove non si puo' disegnare resta solo scritto
     }
-    autoWallThick();
+    wpThickAfter(); autoWallThick();
     commit('Spessore/tipo aggiornato su '+idxs.length+' mur'+(idxs.length>1 ? 'i' : 'o')+(plain.length ? '; su '+plain.length+' non c\'e\' una linea da spostare: spessore solo scritto.' : '.'), true);
   });
 }
@@ -2644,6 +2650,7 @@ function ambMenuAction(action) {
   const s = state.sel; if (!s || s.kind!=='ambiente') return;
   const amb = state.ambienti[s.idx]; if (!amb) return;
   if (action==='demo') { setDemo([], [], [s.idx], amb.fase!=='demo'); return; }
+  if (action==='wpon') { wpRestore(s.idx); return; }
   if (action==='volta') { voltaDialog(s.idx); return; }
   if (action==='vgraf') { voltaGraf(s.idx); return; }
   if (action==='novolta') { const a = state.ambienti[s.idx]; if (!a || !a.volta) return; saveHistory(); delete a.volta; state.sel = null; commit('Volta tolta da '+a.name+': soffitto piano.'); return; }
@@ -3016,7 +3023,7 @@ function isSel(kind, idx) { return state.sel && state.sel.kind===kind && state.s
 // ═══════════════════════════════════════════════════════════
 const TIPS = {
   select:   'Tocca un\'entità per il menu. Trascina nel vuoto = selezione a riquadro. Vista: due dita, oppure il pulsante ✋ in alto a destra.',
-  room:     'Trascina da un angolo all\'angolo opposto: nascono 4 muri e l\'ambiente. Gli angoli si agganciano ai punti e alla base. Puoi disegnarne altre di seguito.',
+  room:     'Trascina da un angolo all\'angolo opposto: nasce l\'ambiente con i suoi muri (spessori standard). Vicino a un\'altra stanza si attacca da sola con la tramezza standard. Puoi disegnarne altre di seguito.',
   wall:     'Muro come polilinea: clic sul punto di partenza, poi un clic per ogni vertice (angolo guidato ogni 5°, forte sui 15°, sugli angoli della base e sui punti esistenti). Fine: clic sull\'ultimo punto, doppio clic o ESC.',
   point:    'Clicca per aggiungere punti, quanti ne vuoi. Seleziona per uscire.',
   connect:  'Clicca il punto A, poi il punto B.',
@@ -3847,121 +3854,735 @@ function drawRoomPreview() {
   [[r.x0,r.y0,r.a],[r.x1,r.y1,r.b]].forEach(([x,y,pi]) => { if (pi==null) return; const q = w2s(x,y); ctx.strokeStyle='#ffe066'; ctx.beginPath(); ctx.arc(q.x,q.y,12,0,Math.PI*2); ctx.stroke(); });
   ctx.restore();
 }
-function finishRoom() {
-  const r = state.roomDraw; state.roomDraw = null;
-  if (!r) return;
-  const w0 = Math.abs(r.x1-r.x0), h0 = Math.abs(r.y1-r.y0);
-  if (w0 < 0.3 || h0 < 0.3) { draw(); setTip('Stanza non creata: trascina un rettangolo di almeno 30 x 30 cm.'); return; }
-  const sx = r.x1 >= r.x0 ? 1 : -1, sy = r.y1 >= r.y0 ? 1 : -1;
-  const nm0 = freeAmbName();
-  askDialog('Stanza rettangolare', roomNameFields(nm0).concat([
-    {label:'Larghezza (m)', id:'w', value:w0.toFixed(2), type:'number'},
-    {label:'Profondità (m)', id:'d', value:h0.toFixed(2), type:'number'},
-    {label:'Altezza netta (m)', id:'h', value:lastAmbH().toFixed(2), type:'number'},
-    {label:'Spessore del muro attorno (cm) - 0 = solo il perimetro interno', id:'t', value:'15', type:'number'},
-  ]), 'Misure lette dal trascinamento: correggile con quelle rilevate (sono le misure nette, interne). L\'angolo da cui sei partito resta fermo. Il muro attorno si disegna da solo e si raccorda con le stanze vicine (entro 1 m, il muro tra due stanze è lo spazio che le separa). Lo spessore si cambia poi toccando la sua quota verde.', v => {
-    const w = parseFloat(v.w), d = parseFloat(v.d), hh = parseFloat(v.h), tcm = parseFloat(v.t);
-    if (!(w>0) || !(d>0) || !(hh>0)) { draw(); return; }
-    const tw = tcm > 0 ? Math.min(tcm, 100)/100 : 0;
-    saveHistory();
-    const keepEnd = Math.abs(w-w0) < 0.005 && Math.abs(d-h0) < 0.005;     // misure invariate: l'angolo d'arrivo resta agganciato
-    const C = [{x:r.x0, y:r.y0}, {x:r.x0+sx*w, y:r.y0}, {x:r.x0+sx*w, y:r.y0+sy*d}, {x:r.x0, y:r.y0+sy*d}];
-    const ids = C.map((p,k) => {
-      if (k===0 && r.a!=null && state.points[r.a]) return r.a;
-      if (k===2 && keepEnd && r.b!=null && state.points[r.b]) return r.b;
-      const near = state.points.findIndex(P => Math.hypot(P.x-p.x, P.y-p.y) < 0.01);      // coincide con un punto esistente: niente doppioni
-      return near>=0 ? near : newPoint(p.x, p.y);
+// ═══════════════════════════════════════════════════════════
+//  MURI PARAMETRICI (2.46). L'ambiente e' la figura primaria: le sue misure nette non si toccano mai. Il muro e' derivato:
+//  - lato che guarda fuori: spessore `a.wt[k]` (k = lato vero, vedi wpRing) e faccia esterna generata (linee `mo`, rebuildWalls);
+//  - lato affacciato al lato di un altro ambiente: tramezza = legame in `state.wlinks` {a, b, ka, kb, t, lk}, t = spessore voluto,
+//    lk = misurato (non cede). Le stanze sono corpi rigidi che traslano: wpSolve le sposta finche' gli spessori tornano; se non
+//    possono tornare tutti, il residuo va sulle tramezze non misurate e si vede sul disegno ("10+2").
+//  Nessun oggetto muro salvato e nessun vincolo sul filo esterno. Un ambiente modificato a mano perde la parametricita' (`a.wpx`):
+//  resta nel disegno dei muri ma non ha piu' maniglie ne' legami, e porta un segno. Campi tutti facoltativi nel .json.
+// ═══════════════════════════════════════════════════════════
+if (!state.wlinks) state.wlinks = [];
+const WP_COL = 0.003;                                     // vertice allineato entro 3 mm: non e' uno spigolo
+const wpR2 = v => Math.round(v*100)/100, wpR4 = v => Math.round(v*1e4)/1e4;
+var WPL = [];                                             // legami dell'ultima lettura, con la geometria (vedi wpSync)
+var _wpGen = null, _wpAfter = null;                                        // firma di cio' da cui sono nate le linee generate
+function wpStd() { if (!state.wstd || !(state.wstd.ext > 0) || !(state.wstd.int > 0)) state.wstd = {ext:0.30, int:0.10}; return state.wstd; }
+function wpFase() { return prog() ? 'nuovo' : 'es'; }
+// lati veri dell'ambiente: i vertici allineati (attacchi delle tramezze, punti in piu') non contano. C = spigoli in giro, ci = loro posto nell'anello,
+// S = lati (p -> q, lunghezza L, direzione u, normale n verso FUORI)
+function wpRing(a) {
+  const ix = a.indices, n = ix.length, P = ix.map(i => state.points[i]);
+  if (n < 3 || P.some(p => !p)) return null;
+  const C = [], ci = [];
+  for (let k = 0; k < n; k++) {
+    const A = P[(k+n-1)%n], B = P[k], D = P[(k+1)%n], L = Math.hypot(D.x-A.x, D.y-A.y);
+    const d = L < 1e-9 ? 1 : Math.abs((B.x-A.x)*(D.y-A.y) - (B.y-A.y)*(D.x-A.x))/L;
+    if (d > WP_COL || (B.x-A.x)*(D.x-B.x) + (B.y-A.y)*(D.y-B.y) <= 0) { C.push(B); ci.push(k); }
+  }
+  const m = C.length; if (m < 3) return null;
+  let a2 = 0; for (let k = 0; k < m; k++) { const p = C[k], q = C[(k+1)%m]; a2 += p.x*q.y - q.x*p.y; }
+  if (Math.abs(a2) < 1e-6) return null;
+  const sg = a2 > 0 ? 1 : -1, S = [];
+  for (let k = 0; k < m; k++) {
+    const p = C[k], q = C[(k+1)%m], L = Math.hypot(q.x-p.x, q.y-p.y) || 1e-9, ux = (q.x-p.x)/L, uy = (q.y-p.y)/L;
+    S.push({p, q, L, ux, uy, nx:sg*uy, ny:-sg*ux});
+  }
+  return {C, ci, S, m, P, n};
+}
+// firma della forma (spigoli riferiti al primo): non cambia se l'ambiente trasla o se gli si aggiunge un punto su un lato
+function wpSig(R) { const o = R.C[0]; return R.C.map(c => [Math.round((c.x-o.x)*1000), Math.round((c.y-o.y)*1000)]); }
+function wpSame(a, R) {
+  const s = a.wsg; if (!Array.isArray(s) || s.length!==R.m) return false;
+  return wpSig(R).every((q, i) => s[i] && Math.abs(q[0]-s[i][0]) <= 3 && Math.abs(q[1]-s[i][1]) <= 3);
+}
+function wpStamp(a) { const R = wpRing(a); if (R) a.wsg = wpSig(R); return R; }
+// l'ambiente puo' muoversi da solo: nessun altro ambiente usa i suoi punti
+function wpOwn(a) { const set = new Set(a.indices); return !state.ambienti.some(b => b!==a && b.indices.some(i => set.has(i))); }
+// progetti fino alla 2.45: le stanze rettangolari con `sp` [y-min, x-max, y-max, x-min] passano allo spessore per lato
+function wpAdopt() {
+  state.ambienti.forEach(a => {
+    if (!Array.isArray(a.sp) || a.wt) return;
+    const R = wpRing(a); if (!R) return;
+    a.wt = R.S.map(s => +a.sp[Math.abs(s.nx) > Math.abs(s.ny) ? (s.nx > 0 ? 1 : 3) : (s.ny > 0 ? 2 : 0)] || 0);
+    delete a.sp; a.wsg = wpSig(R);
+    if (!wpOwn(a)) a.wpx = 1;
+  });
+}
+function wpIds() {                                         // numero stabile dell'ambiente; una copia incollata ne prende uno nuovo
+  const seen = new Set(); let mx = 0;
+  state.ambienti.forEach(a => { if (a.rid > mx) mx = a.rid; });
+  state.ambienti.forEach(a => { if (!a.wt) return; if (!a.rid || seen.has(a.rid)) a.rid = ++mx; seen.add(a.rid); });
+}
+// ambienti con lo spessore per lato. all = anche quelli non piu' parametrici (servono al disegno dei muri)
+function wpRooms(all) {
+  const out = [];
+  state.ambienti.forEach((a, k) => {
+    if (!Array.isArray(a.wt) || !live(a) || hid(a) || (a.wpx && !all)) return;
+    const R = wpRing(a); if (!R || a.wt.length!==R.m) return;
+    R.a = a; R.k = k; R.rid = a.rid; out.push(R);
+  });
+  return out;
+}
+// lungo la normale n dal punto M fino alla retta del lato t: distanza (null se parallele)
+function wpRay(M, nx, ny, t) { const den = nx*t.uy - ny*t.ux; return Math.abs(den) < 1e-6 ? null : ((t.p.x-M.x)*t.uy - (t.p.y-M.y)*t.ux)/den; }
+// tratto del lato s coperto dal lato t (proiezione), in metri da s.p
+function wpSpan(s, t) {
+  const a0 = (t.p.x-s.p.x)*s.ux + (t.p.y-s.p.y)*s.uy, a1 = (t.q.x-s.p.x)*s.ux + (t.q.y-s.p.y)*s.uy;
+  return {lo:Math.max(0, Math.min(a0, a1)), hi:Math.min(s.L, Math.max(a0, a1))};
+}
+// il lato kb di B e' la faccia opposta del lato ka di A: stessi criteri delle facce accoppiate (fino a 20 gradi, entro 1 m, sovrapposti
+// per meta' del piu' corto). Con facce non parallele lo spessore e' uno solo, a meta' del tratto comune. w = come cambia lo spessore se B si sposta
+function wpFace(A, ka, B, kb, gmin) {
+  const s = A.S[ka], t = B.S[kb];
+  if (s.nx*t.nx + s.ny*t.ny >= 0 || Math.abs(s.ux*t.uy - s.uy*t.ux) > FACE_SIN) return null;
+  const sp = wpSpan(s, t); if (sp.hi - sp.lo < 0.05 || sp.hi - sp.lo < 0.5*Math.min(s.L, t.L)) return null;
+  const mid = (sp.lo+sp.hi)/2, M = {x:s.p.x + s.ux*mid, y:s.p.y + s.uy*mid}, den = s.nx*t.uy - s.ny*t.ux;
+  const g = wpRay(M, s.nx, s.ny, t); if (g===null || g < gmin || g > WALL_FACE_MAX) return null;
+  return {g, lo:sp.lo, hi:sp.hi, M, w:{x:t.uy/den, y:-t.ux/den}};
+}
+// LEGAMI: si rileggono dalla geometria a ogni passo; quelli gia' noti tengono il loro spessore voluto. Un legame nuovo vale lo spazio che c'e';
+// se tocca l'ambiente appena creato (newRid) ed e' entro 50 cm, vale la tramezza standard: la stanza si attacca alle vicine.
+function wpSync(newRid) {
+  wpAdopt(); wpIds();
+  const rooms = wpRooms(false), old = state.wlinks || [], keep = [], L = [];
+  const polys = state.ambienti.filter(a => live(a) && !hid(a) && a.indices.length >= 3).map(a => a.indices.map(i => state.points[i]).filter(Boolean));
+  rooms.forEach(A => rooms.forEach(B => {
+    if (!(A.rid < B.rid) || (A.a.fase || 'es')!==(B.a.fase || 'es')) return;
+    const nw = newRid!==undefined && newRid!==null && (A.rid===newRid || B.rid===newRid);
+    for (let ka = 0; ka < A.m; ka++) for (let kb = 0; kb < B.m; kb++) {
+      const f = wpFace(A, ka, B, kb, nw ? -0.6 : 0.02); if (!f) continue;
+      if (f.g > 0.04) {                                      // in mezzo non deve esserci un altro ambiente
+        const q = {x:f.M.x + A.S[ka].nx*f.g/2, y:f.M.y + A.S[ka].ny*f.g/2};
+        if (polys.some(p => p.length >= 3 && inPoly(p, q.x, q.y))) continue;
+      }
+      let l = old.find(o => o.a===A.rid && o.b===B.rid && o.ka===ka && o.kb===kb);
+      if (!l) l = {a:A.rid, b:B.rid, ka, kb, t: nw && f.g <= 0.5 ? wpStd().int : Math.max(0.02, Math.round(f.g*1000)/1000)};
+      l.g = wpR4(f.g);
+      keep.push(l); L.push({l, A, ka, B, kb, f});
+    }
+  }));
+  // legami di ambienti che in questa vista non si vedono (Stato di fatto / Progetto): restano come sono
+  const vis = new Set(rooms.map(R => R.rid)), all = new Set(state.ambienti.filter(a => a.wt && !a.wpx).map(a => a.rid));
+  old.forEach(o => { if ((!vis.has(o.a) || !vis.has(o.b)) && all.has(o.a) && all.has(o.b) && !keep.includes(o)) keep.push(o); });
+  state.wlinks = keep; WPL = L;
+  return {rooms, L};
+}
+// sistema lineare piccolo (eliminazione di Gauss con perno)
+function wpGauss(N, b) {
+  const n = b.length;
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c+1; r < n; r++) if (Math.abs(N[r][c]) > Math.abs(N[p][c])) p = r;
+    if (Math.abs(N[p][c]) < 1e-14) continue;
+    if (p!==c) { const tr = N[c]; N[c] = N[p]; N[p] = tr; const tb = b[c]; b[c] = b[p]; b[p] = tb; }
+    for (let r = c+1; r < n; r++) { const f = N[r][c]/N[c][c]; if (!f) continue; for (let k = c; k < n; k++) N[r][k] -= f*N[c][k]; b[r] -= f*b[c]; }
+  }
+  const x = new Array(n).fill(0);
+  for (let c = n-1; c >= 0; c--) { let s = b[c]; for (let k = c+1; k < n; k++) s -= N[c][k]*x[k]; x[c] = Math.abs(N[c][c]) < 1e-14 ? 0 : s/N[c][c]; }
+  return x;
+}
+// RISOLUTORE: ogni ambiente parametrico trasla (due incognite), la forma resta. fixed = rid degli ambienti che non si muovono.
+// Gerarchia dei pesi: ambiente fermo e tramezza misurata non cedono; la tramezza standard cede; "resta dove sei" e' debolissimo.
+function wpSolve(fixed, newRid) {
+  const FIX = 1e9, LOCK = 1e6, SOFT = 1, STAY = 1e-4, fx = new Set(fixed || []);
+  for (let pass = 0; pass < 2; pass++) {
+    const {rooms, L} = wpSync(newRid); if (!rooms.length || !L.length) break;
+    rooms.forEach(R => { if (locked(R.a)) fx.add(R.rid); });      // nel Progetto il rilievo esistente non si sposta
+    const ix = new Map(rooms.map((R, i) => [R.rid, i])), n = rooms.length*2;
+    const N = Array.from({length:n}, () => new Array(n).fill(0)), b = new Array(n).fill(0);
+    const eq = (terms, rhs, w) => { terms.forEach(([i, ci]) => { b[i] += w*ci*rhs; terms.forEach(([j, cj]) => { N[i][j] += w*ci*cj; }); }); };
+    rooms.forEach((R, i) => { const w = fx.has(R.rid) ? FIX : STAY; eq([[2*i, 1]], 0, w); eq([[2*i+1, 1]], 0, w); });
+    L.forEach(e => {
+      const i = ix.get(e.A.rid), j = ix.get(e.B.rid), w = e.f.w;
+      eq([[2*j, w.x], [2*j+1, w.y], [2*i, -w.x], [2*i+1, -w.y]], e.l.t - e.f.g, e.l.lk ? LOCK : SOFT);
     });
-    ids.forEach((id,k) => { const nx = ids[(k+1)%4]; if (!segExists(id, nx)) state.segments.push({a:id, b:nx}); });
-    const n = state.ambienti.length;
-    state.ambienti.push({ indices:ids, name:roomNameRead(v, null, nm0), h:hh, color:AMB_COLORS[n%AMB_COLORS.length], category:'utile', fase:prog() ? 'nuovo' : 'es', sp: tw>0 ? [tw,tw,tw,tw] : undefined });
-    const nw = tw>0 ? rebuildWalls(prog() ? 'nuovo' : 'es') : 0;
-    commit('Stanza creata: '+(w*d).toFixed(2)+' m²'+(tw>0 ? ', muri di '+Math.round(tw*100)+' cm raccordati con le stanze vicine' : '')+'. Trascina per la prossima, oppure Seleziona per finire.', true);
-  }, () => draw());
-  roomNameUI();
+    const x = wpGauss(N, b); let mv = 0;
+    rooms.forEach((R, i) => {
+      const dx = wpR4(x[2*i]), dy = wpR4(x[2*i+1]); if (!isFinite(dx) || !isFinite(dy) || (!dx && !dy)) return;
+      mv = Math.max(mv, Math.abs(dx), Math.abs(dy));
+      new Set(R.a.indices).forEach(pi => { const p = state.points[pi]; if (p) { p.x = wpR4(p.x + dx); p.y = wpR4(p.y + dy); } });
+    });
+    if (mv < 0.0002) break;
+  }
+  wpSync();
+}
+function wpResText() {                                     // un messaggio solo per ogni residuo
+  const by = new Map(state.ambienti.filter(a => a.rid).map(a => [a.rid, a])), t = [];
+  (state.wlinks || []).forEach(l => {
+    if (!(Math.abs(l.g - l.t) > 0.0005)) return; const A = by.get(l.a), B = by.get(l.b); if (!A || !B) return;
+    t.push('tramezza tra '+A.name+' e '+B.name+' '+wpResLabel(l)+' cm');
+  });
+  return t.length ? ' Le misure non chiudono: '+t.join('; ')+' (spessore voluto + residuo).' : '';
+}
+function wpResLabel(l) { const r = (l.g - l.t)*100; return num(l.t*100, 1).replace(',0', '')+(r > 0 ? '+' : '-')+num(Math.abs(r), 1).replace(',0', ''); }
+function wpApply(fixed, msg, newRid) {
+  wpSolve(fixed, newRid);
+  rebuildWalls(wpFase());
+  commit(msg + wpResText(), true);
+}
+// misura netta al centro del lato: quella del laser appoggiato al muro (fino al primo lato di fronte)
+function wpNet(R, k) {
+  const s = R.S[k], M = {x:(s.p.x+s.q.x)/2, y:(s.p.y+s.q.y)/2}, dx = -s.nx, dy = -s.ny; let best = null;
+  R.S.forEach((t, j) => {
+    if (j===k) return; const den = dx*t.uy - dy*t.ux; if (Math.abs(den) < 1e-9) return;
+    const g = ((t.p.x-M.x)*t.uy - (t.p.y-M.y)*t.ux)/den, al = ((t.p.x-M.x)*dy - (t.p.y-M.y)*dx)/den;
+    if (g > 1e-4 && al > -1e-6 && al < t.L + 1e-6 && (best===null || g < best)) best = g;
+  });
+  return best;
+}
+// sposta il lato k in parallelo di d (positivo = verso fuori): gli estremi scorrono sui lati accanto, che cambiano solo lunghezza.
+// false = non si puo' (un lato si annullerebbe); in quel caso non tocca nulla
+function wpOffset(R, k, d) {
+  if (!d) return true;
+  const m = R.m, n = R.n, s = R.S[k], pv = R.S[(k+m-1)%m], nx = R.S[(k+1)%m];
+  const O = {x:s.p.x + s.nx*d, y:s.p.y + s.ny*d}, u = {x:s.ux, y:s.uy};
+  const N0 = (Math.abs(s.ux*pv.uy - s.uy*pv.ux) > 0.08 && lineX(O, u, pv.p, {x:pv.ux, y:pv.uy})) || {x:s.p.x + s.nx*d, y:s.p.y + s.ny*d};
+  const N1 = (Math.abs(s.ux*nx.uy - s.uy*nx.ux) > 0.08 && lineX(O, u, nx.q, {x:nx.ux, y:nx.uy})) || {x:s.q.x + s.nx*d, y:s.q.y + s.ny*d};
+  const i0 = R.ci[k], i1 = R.ci[(k+1)%m], Vp = R.P[(i0+n-1)%n], Vn = R.P[(i1+1)%n];
+  if ((N1.x-N0.x)*s.ux + (N1.y-N0.y)*s.uy < 0.05) return false;
+  if ((N0.x-Vp.x)*pv.ux + (N0.y-Vp.y)*pv.uy < 0.02 || (Vn.x-N1.x)*nx.ux + (Vn.y-N1.y)*nx.uy < 0.02) return false;
+  for (let j = (i0+1)%n; j!==i1; j = (j+1)%n) { const p = R.P[j]; p.x = wpR4(p.x + s.nx*d); p.y = wpR4(p.y + s.ny*d); }
+  R.P[i0].x = wpR4(N0.x); R.P[i0].y = wpR4(N0.y); R.P[i1].x = wpR4(N1.x); R.P[i1].y = wpR4(N1.y);
+  return true;
 }
 
-// ── RETE DI MURI DELLE STANZE RETTANGOLARI ──
-// Ogni stanza col suo `sp` = [spessore lato y-min, x-max, y-max, x-min] ha attorno una fascia di muro. Tra due stanze affacciate (stesso asse, a meno di 1 m,
-// sovrapposte per meta' almeno) il muro e' lo spazio che le separa. Le linee esterne sono il contorno dell'unione di stanze, fasce e spazi: angoli e T
-// restano chiusi da soli. Le linee generate portano `mo` e vengono ricalcolate (le altre linee non si toccano).
-function roomRectOf(a) {
-  if (!a.sp || a.indices.length!==4) return null;
-  const P = a.indices.map(i => state.points[i]); if (P.some(p => !p)) return null;
-  const xs = P.map(p => p.x), ys = P.map(p => p.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-  if (!P.every(p => (Math.abs(p.x-x0)<0.005 || Math.abs(p.x-x1)<0.005) && (Math.abs(p.y-y0)<0.005 || Math.abs(p.y-y1)<0.005))) return null;
-  return {x0, x1, y0, y1};
-}
+// ── FACCE ESTERNE GENERATE ──
+// Per ogni lato con spessore: la faccia esterna (lato spostato in fuori, spigoli con i lati accanto) e la fascia di muro. Delle facce resta
+// solo cio' che e' contorno dell'unione di ambienti, fasce e tramezze: un tratto vale se da una parte c'e' muro (o stanza) e dall'altra niente.
+// Angoli, T e incroci si chiudono da soli. Le linee generate (`mo`) gia' uguali restano con i loro serramenti; quando una linea cambia,
+// i serramenti passano sulla linea nuova (mai cancellati). Le altre linee non si toccano.
 function rebuildWalls(fase) {
-  const rooms = [];
-  state.ambienti.forEach(a => { if ((a.fase || 'es')!==fase) return; const R = roomRectOf(a); if (R) rooms.push(Object.assign(R, {sp:a.sp})); });
-  const rects = [];                                                        // zone di muro o di stanza, tutte rettangoli con gli assi
-  rooms.forEach((R, i) => {
-    rects.push({x0:R.x0, x1:R.x1, y0:R.y0, y1:R.y1});
-    rects.push({x0:R.x0-R.sp[3], x1:R.x1+R.sp[1], y0:R.y0-R.sp[0], y1:R.y1+R.sp[2]});
-    rooms.forEach((S, j) => {
-      if (j<=i) return;
-      const gx = S.x0-R.x1, gx2 = R.x0-S.x1, gy = S.y0-R.y1, gy2 = R.y0-S.y1;
-      const ovY0 = Math.max(R.y0, S.y0), ovY1 = Math.min(R.y1, S.y1), ovX0 = Math.max(R.x0, S.x0), ovX1 = Math.min(R.x1, S.x1);
-      const okY = ovY1-ovY0 >= 0.5*Math.min(R.y1-R.y0, S.y1-S.y0), okX = ovX1-ovX0 >= 0.5*Math.min(R.x1-R.x0, S.x1-S.x0);
-      const eq = (p, q) => Math.abs(p-q) < 1e-6;           // alle estremita' della sovrapposizione il muro arriva fino al filo esterno della stanza che li' finisce
-      const yLo = ovY0 - Math.max(eq(R.y0, ovY0) ? R.sp[0] : 0, eq(S.y0, ovY0) ? S.sp[0] : 0), yHi = ovY1 + Math.max(eq(R.y1, ovY1) ? R.sp[2] : 0, eq(S.y1, ovY1) ? S.sp[2] : 0);
-      const xLo = ovX0 - Math.max(eq(R.x0, ovX0) ? R.sp[3] : 0, eq(S.x0, ovX0) ? S.sp[3] : 0), xHi = ovX1 + Math.max(eq(R.x1, ovX1) ? R.sp[1] : 0, eq(S.x1, ovX1) ? S.sp[1] : 0);
-      if (okY && gx > 0.03 && gx <= WALL_FACE_MAX) rects.push({x0:R.x1, x1:S.x0, y0:yLo, y1:yHi});
-      if (okY && gx2 > 0.03 && gx2 <= WALL_FACE_MAX) rects.push({x0:S.x1, x1:R.x0, y0:yLo, y1:yHi});
-      if (okX && gy > 0.03 && gy <= WALL_FACE_MAX) rects.push({x0:xLo, x1:xHi, y0:R.y1, y1:S.y0});
-      if (okX && gy2 > 0.03 && gy2 <= WALL_FACE_MAX) rects.push({x0:xLo, x1:xHi, y0:S.y1, y1:R.y0});
-    });
+  wpSync();
+  const rooms = wpRooms(true).filter(R => (R.a.fase || 'es')===fase), regs = [], cand = [];
+  const reg = pts => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; pts.forEach(p => { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }); regs.push({pts, x0, y0, x1, y1}); };
+  state.ambienti.forEach(a => { if ((a.fase || 'es')!==fase || !live(a) || hid(a)) return; const p = a.indices.map(i => state.points[i]).filter(Boolean); if (p.length >= 3) reg(p); });
+  rooms.forEach(R => {
+    const m = R.m, t = R.a.wt, Q = [];
+    for (let k = 0; k < m; k++) {                         // spigolo esterno all'angolo k: incontro delle due facce spostate
+      const s0 = R.S[(k+m-1)%m], s1 = R.S[k], t0 = +t[(k+m-1)%m] || 0, t1 = +t[k] || 0, c = R.C[k];
+      const A0 = {x:c.x + s0.nx*t0, y:c.y + s0.ny*t0}, A1 = {x:c.x + s1.nx*t1, y:c.y + s1.ny*t1};
+      let X = Math.abs(s0.ux*s1.uy - s0.uy*s1.ux) > 0.05 ? lineX(A0, {x:s0.ux, y:s0.uy}, A1, {x:s1.ux, y:s1.uy}) : null;
+      if (X && Math.hypot(X.x-c.x, X.y-c.y) > 3*Math.max(t0, t1) + 0.02) X = null;     // angolo troppo acuto: si smussa
+      Q.push(X ? {a:X, b:X, cut:false} : {a:A0, b:A1, cut:true});
+    }
+    for (let k = 0; k < m; k++) {
+      const t0 = +t[(k+m-1)%m] || 0, t1 = +t[k] || 0, c = R.C[k], c2 = R.C[(k+1)%m], q = Q[k], q2 = Q[(k+1)%m], t2 = +t[(k+1)%m] || 0;
+      if (q.cut && t0 > 0 && t1 > 0) { cand.push([q.a, q.b]); reg([c, q.a, q.b]); }
+      if (!(t1 > 0)) continue;
+      cand.push([q.b, q2.a]); reg([c, c2, q2.a, q.b]);
+      if (!(t0 > 0)) cand.push([c, q.b]);                 // il muro finisce: testata
+      if (!(t2 > 0)) cand.push([c2, q2.a]);
+    }
   });
-  const rd = v => Math.round(v*1e4)/1e4, want = new Map();
-  if (rects.length) {
-    const xs = [...new Set(rects.flatMap(r => [rd(r.x0), rd(r.x1)]))].sort((p, q) => p-q), ys = [...new Set(rects.flatMap(r => [rd(r.y0), rd(r.y1)]))].sort((p, q) => p-q);
-    const NX = xs.length-1, NY = ys.length-1;
-    const g0 = Array.from({length:NX}, (_, i) => Array.from({length:NY}, (_, j) => rects.some(r => rd(r.x0)<=xs[i] && rd(r.x1)>=xs[i+1] && rd(r.y0)<=ys[j] && rd(r.y1)>=ys[j+1])));
-    const reach = (i, j, di, dj) => { let len = 0; for (let a = i+di, b = j+dj; a>=0 && b>=0 && a<NX && b<NY; a += di, b += dj) { if (g0[a][b]) return len; len += di ? xs[a+1]-xs[a] : ys[b+1]-ys[b]; if (len > WALL_FACE_MAX) return Infinity; } return Infinity; };
-    const g1 = g0.map((col, i) => col.map((c, j) => c || ([[1,0],[-1,0],[0,1],[0,-1]].every(([di, dj]) => reach(i, j, di, dj) <= WALL_FACE_MAX))));   // sacche chiuse da muro su tutti i lati a meno di 1 m: sono muro
-    const cov = (i, j) => i<0 || j<0 || i>=NX || j>=NY ? false : g1[i][j];
-    const onSide = (vert, c, m) => rooms.some(R => vert ? ((Math.abs(c-R.x0)<1e-3 || Math.abs(c-R.x1)<1e-3) && m>R.y0 && m<R.y1) : ((Math.abs(c-R.y0)<1e-3 || Math.abs(c-R.y1)<1e-3) && m>R.x0 && m<R.x1));
-    const add = (x0, y0, x1, y1) => want.set([x0, y0, x1, y1].join('|'), {x0, y0, x1, y1});
-    for (let ix = 0; ix < xs.length; ix++) {                              // bordi verticali: tra la cella a sinistra e quella a destra
-      let st = null;
-      for (let j = 0; j < ys.length-1; j++) {
-        const edge = cov(ix-1, j)!==cov(ix, j) && !onSide(true, xs[ix], (ys[j]+ys[j+1])/2);
-        if (edge && st===null) st = ys[j];
-        if ((!edge || j===ys.length-2) && st!==null) { add(xs[ix], st, xs[ix], edge ? ys[j+1] : ys[j]); st = null; }
+  WPL.forEach(e => {                                       // lo spazio tra due facce affacciate e' muro
+    if ((e.A.a.fase || 'es')!==fase || !(e.f.g > 0.005)) return;
+    const s = e.A.S[e.ka], t = e.B.S[e.kb], P0 = {x:s.p.x + s.ux*e.f.lo, y:s.p.y + s.uy*e.f.lo}, P1 = {x:s.p.x + s.ux*e.f.hi, y:s.p.y + s.uy*e.f.hi};
+    const g0 = wpRay(P0, s.nx, s.ny, t), g1 = wpRay(P1, s.nx, s.ny, t); if (g0===null || g1===null || g0 < 0 || g1 < 0) return;
+    reg([P0, P1, {x:P1.x + s.nx*g1, y:P1.y + s.ny*g1}, {x:P0.x + s.nx*g0, y:P0.y + s.ny*g0}]);
+  });
+  const E = 0.002, inside = (x, y) => regs.some(r => x >= r.x0-E && x <= r.x1+E && y >= r.y0-E && y <= r.y1+E && inPoly(r.pts, x, y));
+  const pieces = [];
+  cand.forEach(([P, Q]) => {
+    const dx = Q.x-P.x, dy = Q.y-P.y, len = Math.hypot(dx, dy); if (len < 0.002) return;
+    const x0 = Math.min(P.x, Q.x)-E, x1 = Math.max(P.x, Q.x)+E, y0 = Math.min(P.y, Q.y)-E, y1 = Math.max(P.y, Q.y)+E, cuts = [0, 1];
+    regs.forEach(r => {
+      if (r.x1 < x0 || r.x0 > x1 || r.y1 < y0 || r.y0 > y1) return;
+      for (let i = 0, n = r.pts.length; i < n; i++) {
+        const A = r.pts[i], B = r.pts[(i+1)%n], ex = B.x-A.x, ey = B.y-A.y, den = dx*ey - dy*ex; if (Math.abs(den) < 1e-12) continue;
+        const tt = ((A.x-P.x)*ey - (A.y-P.y)*ex)/den, ss = ((A.x-P.x)*dy - (A.y-P.y)*dx)/den;
+        if (ss > -1e-7 && ss < 1+1e-7 && tt > 1e-7 && tt < 1-1e-7) cuts.push(tt);
       }
+    });
+    cuts.sort((p, q) => p-q);
+    const nx = -dy/len, ny = dx/len;
+    for (let i = 0; i < cuts.length-1; i++) {
+      const a = cuts[i], b = cuts[i+1]; if ((b-a)*len < 0.001) continue;
+      const mx = P.x + dx*(a+b)/2, my = P.y + dy*(a+b)/2;
+      if (inside(mx + nx*E, my + ny*E)!==inside(mx - nx*E, my - ny*E)) pieces.push([{x:P.x + dx*a, y:P.y + dy*a}, {x:P.x + dx*b, y:P.y + dy*b}]);
     }
-    for (let iy = 0; iy < ys.length; iy++) {
-      let st = null;
-      for (let i = 0; i < xs.length-1; i++) {
-        const edge = cov(i, iy-1)!==cov(i, iy) && !onSide(false, ys[iy], (xs[i]+xs[i+1])/2);
-        if (edge && st===null) st = xs[i];
-        if ((!edge || i===xs.length-2) && st!==null) { add(st, ys[iy], edge ? xs[i+1] : xs[i], ys[iy]); st = null; }
-      }
-    }
-  }
-  const key = (A, B) => { const p = [rd(A.x), rd(A.y)], q = [rd(B.x), rd(B.y)], f = (p[0]<q[0] || (p[0]===q[0] && p[1]<=q[1])) ? [p, q] : [q, p]; return f[0].concat(f[1]).join('|'); };
-  const have = new Map(), segDel = new Set();                              // le linee generate gia' uguali restano (con i loro serramenti)
+  });
+  // tratti sulla stessa retta che si toccano o si coprono diventano una linea sola
+  const groups = new Map();
+  pieces.forEach(([P, Q]) => {
+    let ux = Q.x-P.x, uy = Q.y-P.y; const l = Math.hypot(ux, uy); ux /= l; uy /= l;
+    if (ux < -1e-9 || (Math.abs(ux) <= 1e-9 && uy < 0)) { ux = -ux; uy = -uy; }
+    let th = Math.atan2(uy, ux); if (th < -Math.PI/2 + 5e-4) { th += Math.PI; ux = -ux; uy = -uy; }
+    const c = -P.x*uy + P.y*ux, key = Math.round(th*2000)+'|'+Math.round(c*2000), s0 = P.x*ux + P.y*uy, s1 = Q.x*ux + Q.y*uy;
+    if (!groups.has(key)) groups.set(key, {ux, uy, c, iv:[]});
+    groups.get(key).iv.push([Math.min(s0, s1), Math.max(s0, s1)]);
+  });
+  const rd = wpR4, want = new Map();
+  const key = (A, B) => { const p = [rd(A.x), rd(A.y)], q = [rd(B.x), rd(B.y)], f = (p[0] < q[0] || (p[0]===q[0] && p[1] <= q[1])) ? [p, q] : [q, p]; return f[0].concat(f[1]).join('|'); };
+  groups.forEach(G => {
+    G.iv.sort((p, q) => p[0]-q[0]);
+    let cur = null;
+    const flush = () => { if (!cur || cur[1]-cur[0] < 0.005) return; const A = {x:rd(G.ux*cur[0] - G.uy*G.c), y:rd(G.uy*cur[0] + G.ux*G.c)}, B = {x:rd(G.ux*cur[1] - G.uy*G.c), y:rd(G.uy*cur[1] + G.ux*G.c)}; want.set(key(A, B), {A, B}); };
+    G.iv.forEach(v => { if (cur && v[0] <= cur[1] + 0.002) cur[1] = Math.max(cur[1], v[1]); else { flush(); cur = [v[0], v[1]]; } });
+    flush();
+  });
+  // linee generate di prima: le uguali restano, le altre lasciano il posto
+  const have = new Map(), segDel = new Set();
   state.segments.forEach((g, i) => {
     if (!g.mo || (g.fase || 'es')!==fase) return;
     const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) { segDel.add(i); return; }
     const k = key(A, B); if (want.has(k) && !have.has(k)) have.set(k, i); else segDel.add(i);
   });
+  // serramenti sulle linee che cambiano: dove devono stare (riferiti all'ambiente se si sa, altrimenti dove sono)
+  const moved = [];
+  state.openings.forEach((op, oi) => {
+    if (!segDel.has(op.segIdx)) return;
+    const g = state.segments[op.segIdx], A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return;
+    let W = {x:A.x + (B.x-A.x)*op.t, y:A.y + (B.y-A.y)*op.t}, exact = false;
+    const R = op.ow && rooms.find(r => r.rid===op.ow.r), s = R && R.S[op.ow.k];
+    if (s) { const th = +R.a.wt[op.ow.k] || 0; W = {x:s.p.x + s.ux*op.ow.s + s.nx*th, y:s.p.y + s.uy*op.ow.s + s.ny*th}; exact = true; }
+    moved.push({op, W, exact, dir:{x:B.x-A.x, y:B.y-A.y}});
+  });
+  let added = 0;
+  const ptAt = (x, y) => { const near = state.points.findIndex(P => Math.abs(P.x-x) < 0.001 && Math.abs(P.y-y) < 0.001); if (near >= 0) return near; const n = newPoint(x, y); state.points[n].mo = 1; state.points[n].fase = fase; return n; };
+  want.forEach((e, k) => {
+    if (have.has(k)) return;
+    const a = ptAt(e.A.x, e.A.y), b = ptAt(e.B.x, e.B.y); if (a===b || segExists(a, b)) return;
+    state.segments.push({a, b, mo:1, fase}); added++;
+  });
+  moved.forEach(mv => {                                   // la linea generata piu' vicina che passa di li'
+    let best = null;
+    state.segments.forEach((g, i) => {
+      if (!g.mo || segDel.has(i) || (g.fase || 'es')!==fase) return;
+      const A = state.points[g.a], B = state.points[g.b], L2 = (B.x-A.x)**2 + (B.y-A.y)**2; if (L2 < 1e-6) return;
+      const L = Math.sqrt(L2), dl = Math.hypot(mv.dir.x, mv.dir.y) || 1;
+      if (Math.abs((B.x-A.x)*mv.dir.y - (B.y-A.y)*mv.dir.x)/(L*dl) > FACE_SIN) return;
+      const tt = ((mv.W.x-A.x)*(B.x-A.x) + (mv.W.y-A.y)*(B.y-A.y))/L2, d = Math.abs((mv.W.x-A.x)*(B.y-A.y) - (mv.W.y-A.y)*(B.x-A.x))/L;
+      if (tt < -0.02 || tt > 1.02 || d > (mv.exact ? 0.05 : 0.6)) return;
+      if (!best || d < best.d) best = {d, i, tt};
+    });
+    if (best) { mv.op.segIdx = best.i; mv.op.t = clampOpeningT(mv.op, Math.min(1, Math.max(0, best.tt))); }
+    else { const g = state.segments[mv.op.segIdx]; segDel.delete(mv.op.segIdx); if (g) delete g.mo; }      // nessuna linea nuova li': la vecchia resta come linea libera, con il suo serramento
+  });
   const used = new Set(); state.segments.forEach((g, i) => { if (!segDel.has(i)) { used.add(g.a); used.add(g.b); } });
   state.ambienti.forEach(a => a.indices.forEach(i => used.add(i)));
   const pts = new Set(); state.points.forEach((p, i) => { if (p.mo && !used.has(i)) pts.add(i); });
-  if (segDel.size || pts.size) removeItems(pts, segDel, new Set());
-  let added = 0;
-  const ptAt = (x, y) => { const near = state.points.findIndex(P => Math.hypot(P.x-x, P.y-y) < 0.01); if (near>=0) return near; const n = newPoint(x, y); state.points[n].mo = 1; return n; };
-  want.forEach((e, k) => {
-    const A = {x:e.x0, y:e.y0}, B = {x:e.x1, y:e.y1};
-    if (state.segments.some(g => g.mo && (g.fase || 'es')===fase && state.points[g.a] && state.points[g.b] && key(state.points[g.a], state.points[g.b])===k)) return;
-    const a = ptAt(A.x, A.y), b = ptAt(B.x, B.y); if (a===b || segExists(a, b)) return;
-    state.segments.push({a, b, mo:1, fase}); added++;
-  });
+  if (segDel.size || pts.size) { const ws = state.wpSel; removeItems(pts, segDel, new Set()); state.wpSel = ws; }
+  _wpGen = wpGenSig();
   return added;
 }
-// spessore del muro generato dalla stanza: toccando la sua quota verde si cambia (per quel lato)
+function wpGenSig() {
+  let h = 7;
+  state.ambienti.forEach(a => {
+    if (!Array.isArray(a.wt) || !live(a) || hid(a)) return;
+    h = (Math.imul(h, 31) + (a.wpx ? 5 : 3))|0;
+    a.wt.forEach(t => { h = (Math.imul(h, 31) + Math.round(t*1000))|0; });
+    a.indices.forEach(i => { const p = state.points[i]; if (p) h = (Math.imul(h, 31) + Math.round(p.x*1000)*7 + Math.round(p.y*1000)*13)|0; });
+  });
+  return h;
+}
+// serramenti sulle linee generate: la posizione si ricorda riferita al lato dell'ambiente (`ow`), cosi' seguono la stanza quando si sposta
+function wpAnchor() {
+  if (!state.openings.some(op => { const g = state.segments[op.segIdx]; return (g && g.mo) || op.ow; })) return;
+  const rooms = wpRooms(true);
+  state.openings.forEach((op, oi) => {
+    const g = state.segments[op.segIdx]; if (!g || !g.mo) { if (op.ow) delete op.ow; return; }
+    const W = openingCenterW(oi); if (!W) return; let best = null;
+    rooms.forEach(R => R.S.forEach((s, k) => {
+      const th = +R.a.wt[k] || 0; if (!(th > 0)) return;
+      const al = (W.x-s.p.x)*s.ux + (W.y-s.p.y)*s.uy, off = (W.x-s.p.x)*s.nx + (W.y-s.p.y)*s.ny, d = Math.abs(off - th);
+      if (d > 0.02 || al < -th-0.05 || al > s.L+th+0.05) return;
+      if (!best || d < best.d) best = {d, r:R.rid, k, s:wpR4(al)};
+    }));
+    if (best) op.ow = {r:best.r, k:best.k, s:best.s}; else if (op.ow) delete op.ow;
+  });
+}
+// a ogni salvataggio della bozza: un ambiente parametrico la cui forma e' cambiata senza passare dalle maniglie (punti o muri spostati a mano,
+// misura imposta dalla quota, punti messi in comune) non e' piu' parametrico e viene segnalato; se serve le facce esterne si rifanno
+function wpWatch() {
+  try {
+    if (state.wpDrag) return;
+    if (_wpGen===null && !state.ambienti.some(a => a.wt || a.sp)) return;        // nessun ambiente con muri derivati: niente da fare
+    wpAdopt(); wpIds();
+    const lost = [];
+    state.ambienti.forEach(a => {
+      if (!Array.isArray(a.wt) || a.wpx) return;
+      const R = wpRing(a);
+      if (R && wpSame(a, R) && wpOwn(a)) return;
+      a.wpx = 1; lost.push(a.name);
+    });
+    state.ambienti.forEach(a => {                          // ambiente non piu' parametrico con gli spigoli cambiati: spessori riallineati ai lati di adesso
+      if (!Array.isArray(a.wt) || !a.wpx) return;
+      const R = wpRing(a); if (!R) return;
+      if (a.wt.length!==R.m) { const v = a.wt.find(t => t > 0) || wpStd().ext; a.wt = R.S.map(() => v); }
+      a.wsg = wpSig(R);
+    });
+    // le facce esterne si rifanno se gli ambienti sono cambiati; non mentre si sta scegliendo una serie di punti (gli indici cambierebbero sotto le mani)
+    const busy = state.wallOrigin!==null || state.connectFrom!==null || !!state.roomPts || !!state.pending || (state.trilPoints && state.trilPoints.length > 0);
+    if (_wpGen===null) _wpGen = wpGenSig();
+    else if (wpGenSig()!==_wpGen && !busy) { rebuildWalls(wpFase()); autoWallThick(); draw(); }
+    wpSync(); wpAnchor();
+    if (state.wpSel && !wpWall()) state.wpSel = null;
+    if (lost.length) setTimeout(() => setTip((lost.length===1 ? lost[0]+' non è più parametrico' : lost.join(', ')+' non sono più parametrici')+': la forma è stata cambiata a mano. I muri restano disegnati, ma l\'app non lo sposta più e non ne garantisce le misure (segno ⚠ sull\'ambiente; dal suo menu "Torna parametrico").', 'warn'), 0);
+  } catch (err) { console.error('muri parametrici', err); }
+}
+// l'ambiente torna parametrico con la forma che ha adesso
+function wpRestore(idx) {
+  const a = state.ambienti[idx]; if (!a || !a.wpx) return;
+  if (locked(a)) { lockTip(); return; }
+  if (!wpOwn(a)) { setTip(a.name+' ha punti in comune con un altro ambiente: non può muoversi da solo, quindi resta non parametrico.', 'warn'); return; }
+  const R = wpRing(a); if (!R) { setTip('Forma non valida.', 'warn'); return; }
+  saveHistory();
+  delete a.wpx; if (!Array.isArray(a.wt) || a.wt.length!==R.m) a.wt = R.S.map(() => wpStd().ext);
+  a.wsg = wpSig(R); state.sel = null;
+  wpApply(wpRooms(false).map(r => r.rid), a.name+' è di nuovo parametrico: le misure di adesso valgono come misure nette.');
+}
+// un ambiente appena registrato da punti o da area nasce parametrico se sta da solo: punti suoi e nessun muro gia' disegnato attorno
+// (una linea parallela entro 1 m oltre un suo lato che non sia di un ambiente parametrico). Sui disegni a linee e sui ricalchi resta com'e'.
+function wpTryParam(a) {
+  try {
+    if (!a || a.wt || !wpOwn(a)) return false;
+    const R = wpRing(a); if (!R) return false;
+    const par = new Set(); wpRooms(true).forEach(r => r.a.indices.forEach(i => par.add(i)));
+    const n = a.indices.length, edges = [];
+    for (let k = 0; k < n; k++) {
+      const i = a.indices[k], j = a.indices[(k+1)%n];
+      edges.push([i, j, state.segments.findIndex(g => (g.a===i && g.b===j) || (g.a===j && g.b===i))]);
+    }
+    for (const [i, j, si] of edges) {
+      if (si < 0) continue;
+      const A = state.points[i], B = state.points[j]; if (Math.hypot(B.x-A.x, B.y-A.y) < 0.3) continue;
+      const M = {x:(A.x+B.x)/2, y:(A.y+B.y)/2}, r = oppositeFace(si, M, M), h = r && state.segments[r.k];
+      if (h && !h.mo && !(par.has(h.a) && par.has(h.b))) return false;
+    }
+    edges.forEach(([i, j, si]) => { if (si < 0) state.segments.push({a:i, b:j, fase:a.fase}); });
+    a.wt = R.S.map(() => wpStd().ext); a.wsg = wpSig(R); wpIds();
+    return true;
+  } catch (err) { console.error('muri parametrici', err); return false; }
+}
+
+// ── IL MURO SELEZIONATO: un lato di un ambiente parametrico; se di fronte c'e' il lato di un altro ambiente e' una tramezza ──
+function wpWall() {
+  const s = state.wpSel; if (!s) return null;
+  const {rooms, L} = wpSync(), R = rooms.find(r => r.rid===s.rid); if (!R || !(s.k < R.m) || locked(R.a)) return null;
+  const sd = R.S[s.k]; let e = null;
+  if (s.b) e = L.find(x => (x.A.rid===s.rid && x.ka===s.k && x.B.rid===s.b) || (x.B.rid===s.rid && x.kb===s.k && x.A.rid===s.b)) || null;
+  const W = {R, k:s.k, sd, e, O:null, ko:-1, lo:0, hi:sd.L, t:+R.a.wt[s.k] || 0};
+  if (e) { const mine = e.A.rid===s.rid; W.O = mine ? e.B : e.A; W.ko = mine ? e.kb : e.ka; W.t = e.f.g; const sp = mine ? e.f : wpSpan(sd, W.O.S[W.ko]); W.lo = sp.lo; W.hi = sp.hi; }
+  return W;
+}
+function wpPt(W, al, off) { return {x:W.sd.p.x + W.sd.ux*al + W.sd.nx*off, y:W.sd.p.y + W.sd.uy*al + W.sd.ny*off}; }
+function wpScreenLen(W) { return (W.hi - W.lo)*state.zoom; }
+function wpHandlesOn(W) { return !COARSE || wpScreenLen(W) >= 200; }      // su telefono, con il muro corto a video, vale il pannello in basso
+function wpHandles(W) {                                    // sfalsate lungo il muro: una tramezza e' larga pochi pixel
+  const L = W.hi - W.lo, h = [];
+  h.push({k:'in', p:wpPt(W, W.lo + L*(W.e ? 0.30 : 0.38), 0)});
+  if (W.e) h.push({k:'mid', p:wpPt(W, W.lo + L*0.5, W.t/2)});
+  h.push({k:'out', p:wpPt(W, W.lo + L*(W.e ? 0.70 : 0.62), W.t)});
+  h.push({k:'e0', p:wpPt(W, 0, 0)}, {k:'e1', p:wpPt(W, W.sd.L, 0)});
+  return h;
+}
+// la tramezza che copre il punto a `al` metri lungo il lato k di R (null = li' il lato guarda fuori). L = legami letti da wpSync
+function wpLinkAt(L, R, k, al) {
+  let out = null;
+  L.forEach(e => {
+    const mine = e.A.rid===R.rid && e.ka===k, his = e.B.rid===R.rid && e.kb===k; if (!mine && !his) return;
+    const sp = mine ? e.f : wpSpan(R.S[k], e.A.S[e.ka]); if (al < sp.lo - 0.01 || al > sp.hi + 0.01) return;
+    out = {e, b: mine ? e.B.rid : e.A.rid};
+  });
+  return out;
+}
+function wpHit(sx, sy) {                                   // il lato di un ambiente parametrico, o la fascia del suo muro, sotto il dito
+  const w = s2w(sx, sy), tol = HIT_SEG_PX/state.zoom, {rooms, L} = wpSync(); let best = null;
+  rooms.forEach(R => {
+    if (locked(R.a)) return;
+    R.S.forEach((s, k) => {
+      const al = (w.x-s.p.x)*s.ux + (w.y-s.p.y)*s.uy, off = (w.x-s.p.x)*s.nx + (w.y-s.p.y)*s.ny;
+      if (al < -tol || al > s.L + tol || off < -tol) return;
+      const lk = wpLinkAt(L, R, k, al), T = lk ? lk.e.f.g : (+R.a.wt[k] || 0);
+      if (off > T + tol) return;
+      const d = Math.abs(off); if (!best || d < best.d) best = {d, rid:R.rid, k, b: lk ? lk.b : null};
+    });
+  });
+  return best ? {rid:best.rid, k:best.k, b:best.b} : null;
+}
+// la linea si e' un pezzo del lato vero k di un ambiente parametrico: quale. whole = la linea e' tutto il lato
+function wpSideOf(si) {
+  const g = state.segments[si]; if (!g) return null;
+  const {rooms, L} = wpSync();
+  for (const R of rooms) {
+    if (locked(R.a)) continue;
+    const ix = R.a.indices, n = ix.length;
+    for (let j = 0; j < n; j++) {
+      const u = ix[j], v = ix[(j+1)%n]; if (!((u===g.a && v===g.b) || (u===g.b && v===g.a))) continue;
+      for (let k = 0; k < R.m; k++) {
+        const c0 = R.ci[k], c1 = R.ci[(k+1)%R.m];
+        if (c0 < c1 ? (j >= c0 && j < c1) : (j >= c0 || j < c1)) return {R, k, L, whole: j===c0 && (j+1)%n===c1};
+      }
+    }
+  }
+  return null;
+}
+// "Spessore e tipo" dal menu della linea: sui muri degli ambienti parametrici lo spessore passa dal muro parametrico (le stanze si spostano,
+// nessuna si deforma). Ritorna le linee rimaste da trattare alla vecchia maniera
+function wpThickFromMenu(idxs, th) {
+  const rest = [], fixed = new Set(); let done = 0;
+  try {
+    idxs.forEach(i => {
+      const g = state.segments[i]; let j = i;
+      if (g && g.mo) { const q = wallPartnerIdx(i); if (q!==null) j = q; }
+      const so = wpSideOf(j), h = state.segments[j], A = h && state.points[h.a], B = h && state.points[h.b];
+      if (!so || !A || !B) { rest.push(i); return; }
+      const s = so.R.S[so.k], al = ((A.x+B.x)/2 - s.p.x)*s.ux + ((A.y+B.y)/2 - s.p.y)*s.uy, lk = wpLinkAt(so.L, so.R, so.k, al);
+      wpSetT({R:so.R, k:so.k, e: lk ? lk.e : null}, th); fixed.add(so.R.rid); done++;
+    });
+    if (done) _wpAfter = [...fixed];                       // le stanze si spostano dopo (wpThickAfter), quando gli indici delle linee non servono piu'
+  } catch (err) { console.error('muri parametrici', err); return idxs; }
+  return rest;
+}
+function wpThickAfter() {
+  const f = _wpAfter; _wpAfter = null; if (!f) return;
+  try { wpSolve(f); rebuildWalls(wpFase()); } catch (err) { console.error('muri parametrici', err); }
+}
+// "Imposta misura" sulla quota di un lato intero di un ambiente parametrico: la lunghezza cambia spostando il lato accanto (dalla parte della fine
+// del lato), l'ambiente resta parametrico e i vicini si spostano. false = non e' il caso, vale la vecchia maniera
+function wpLenFromQuota(si, m) {
+  try {
+    const so = wpSideOf(si); if (!so || !so.whole) return false;
+    saveHistory();
+    const txt = wpDo({R:so.R, k:so.k, sd:so.R.S[so.k], e:null}, 'e1', m);
+    if (txt===null) { state.history.pop(); return false; }
+    const g = state.segments[si]; if (g) { g.ok = true; g.okLen = m; }
+    wpApply([so.R.rid], txt+', validato.');
+    return true;
+  } catch (err) { console.error('muri parametrici', err); return false; }
+}
+function wpHitHandle(sx, sy) {
+  const W = wpWall(); if (!W || !wpHandlesOn(W)) return null;
+  let best = null, bd = HIT_HANDLE_PX;
+  wpHandles(W).forEach(h => { const q = w2s(h.p.x, h.p.y), d = Math.hypot(q.x-sx, q.y-sy); if (d < bd) { bd = d; best = h; } });
+  return best;
+}
+// un tocco sul muro di un ambiente parametrico lo seleziona (maniglie); un secondo tocco sullo stesso muro apre il menu della linea, come sempre
+function wpClick(sx, sy) {
+  try {
+    const h = wpHit(sx, sy);
+    if (!h) { if (state.wpSel) { state.wpSel = null; draw(); } return false; }
+    if (state.wpSel && state.wpSel.rid===h.rid && state.wpSel.k===h.k) { state.wpSel = null; return false; }
+    state.wpSel = h; state.sel = null;
+    const W = wpWall(); if (!W) { state.wpSel = null; return false; }
+    setTip((W.e ? 'Tramezza tra '+W.R.a.name+' e '+W.O.a.name : 'Muro esterno di '+W.R.a.name)+', '+num(W.t*100, 1).replace(',0', '')+' cm. '+(wpHandlesOn(W) ? 'Maniglie: blu misura netta, verde spessore'+(W.e ? ', bianca sposta la tramezza' : '')+', gialle allunga il lato. Trascina, oppure tocca la maniglia e scrivi il numero.' : 'Usa i pulsanti in basso per scrivere i numeri.')+' Un altro tocco sul muro apre il menu della linea.');
+    draw(); return true;
+  } catch (err) { console.error('muri parametrici', err); state.wpSel = null; return false; }
+}
+function wpDown(sx, sy) {
+  try {
+    if (!state.wpSel) return false;
+    const h = wpHitHandle(sx, sy); if (!h) return false;
+    const W = wpWall(), snap = [];
+    wpRooms(false).forEach(R => new Set(R.P).forEach(p => snap.push([p, p.x, p.y])));
+    state.wpDrag = {h:h.k, s0:{x:sx, y:sy}, snap, t0:W.t, lk0:W.e ? !!W.e.l.lk : false, lt0:W.e ? W.e.l.t : 0, wt0:W.R.a.wt.slice(), m0:wpNet(W.R, W.k), len0:W.sd.L};
+    return true;
+  } catch (err) { console.error('muri parametrici', err); state.wpDrag = null; return false; }
+}
+function wpDragBack(d) {                                   // ogni passo del trascinamento riparte dalla situazione di partenza
+  d.snap.forEach(([p, x, y]) => { p.x = x; p.y = y; });
+  wpRooms(false).forEach(R => { R.a.wsg = wpSig(R); });
+  const W = wpWall(); if (!W) return null;
+  W.R.a.wt = d.wt0.slice(); if (W.e) { W.e.l.t = d.lt0; if (d.lk0) W.e.l.lk = 1; else delete W.e.l.lk; }
+  return wpWall();
+}
+// cambia lo spessore: tramezza = legame misurato (si sposta l'altra stanza con quello che ha dietro); esterno = spessore del lato
+function wpSetT(W, t) {
+  t = Math.min(WALL_FACE_MAX, Math.max(W.e ? 0.03 : 0, wpR2(t)));
+  if (W.e) { W.e.l.t = t; W.e.l.lk = 1; } else W.R.a.wt[W.k] = t;
+  return t;
+}
+// le quattro azioni sul muro. v = valore voluto (misura netta, spessore, lunghezza del lato) oppure spostamento della tramezza. Ritorna il testo, o null se non si puo'
+function wpDo(W, h, v) {
+  if (h==='in') {
+    const m0 = wpNet(W.R, W.k); if (m0===null) return null;
+    if (!wpOffset(W.R, W.k, v - m0)) return null;
+    wpStamp(W.R.a); return W.R.a.name+': misura netta '+num(v)+' m';
+  }
+  if (h==='out') { const t = wpSetT(W, v); return 'Spessore '+num(t*100, 1).replace(',0', '')+' cm'; }
+  if (h==='mid') {
+    if (!W.e) return null;
+    if (!wpOffset(W.R, W.k, v)) return null;
+    const O = wpRing(W.O.a); if (!O || !wpOffset(O, W.ko, -v)) { const R = wpRing(W.R.a); if (R) wpOffset(R, W.k, -v); return null; }
+    const R1 = wpStamp(W.R.a), O1 = wpStamp(W.O.a), a = R1 && wpNet(R1, W.k), b = O1 && wpNet(O1, W.ko);
+    return 'Tramezza spostata di '+num(Math.abs(v)*100, 0)+' cm'+(a && b ? ': '+W.R.a.name+' '+num(a)+' m, '+W.O.a.name+' '+num(b)+' m' : '');
+  }
+  const m = W.R.m, adj = h==='e1' ? (W.k+1)%m : (W.k+m-1)%m, na = W.R.S[adj], dot = W.sd.ux*na.nx + W.sd.uy*na.ny;      // gialle: si allunga il lato muovendo il lato accanto
+  if (Math.abs(dot) < 0.2) return null;
+  const mv = (h==='e1' ? 1 : -1)*(v - W.sd.L);
+  if (!wpOffset(W.R, adj, mv*dot)) return null;
+  wpStamp(W.R.a); return W.R.a.name+': lato '+num(v)+' m';
+}
+function wpDragTo(sx, sy, ev) {
+  try {
+    const d = state.wpDrag; if (!d) return;
+    const W = wpDragBack(d); if (!W) return;
+    // trascinamento di precisione: sotto una certa scala la maniglia avanza meno del dito (3 px per cm col mouse, 5 col dito), cosi' il centimetro si prende anche a vista d'insieme
+    const sc = Math.max(state.zoom, COARSE ? 500 : 300), dx = (sx - d.s0.x)/sc, dy = -(sy - d.s0.y)/sc;
+    const dn = dx*W.sd.nx + dy*W.sd.ny, du = dx*W.sd.ux + dy*W.sd.uy;
+    let txt = null;
+    if (d.h==='in') { if (d.m0!==null) txt = wpDo(W, 'in', Math.max(0.2, wpR2(d.m0 + dn))); }
+    else if (d.h==='out') txt = wpDo(W, 'out', d.t0 + dn);
+    else if (d.h==='mid') txt = wpDo(W, 'mid', wpR2(dn));
+    else txt = wpDo(W, d.h, Math.max(0.1, wpR2(d.len0 + (d.h==='e1' ? du : -du))));
+    if (txt===null) { wpDragBack(d); txt = 'Fin qui non si può'; }
+    wpSolve([W.R.rid]); rebuildWalls(wpFase());
+    showTooltip(txt, ev.clientX, ev.clientY); draw();
+  } catch (err) { console.error('muri parametrici', err); }
+}
+function wpUp() {
+  const d = state.wpDrag; state.wpDrag = null; hideTooltip(); if (!d) return;
+  try {
+    if (state.moved) { dragEnd(true); commit('Muro modificato: le misure nette degli altri ambienti non sono cambiate.'+wpResText(), true); return; }
+    wpDragBack(d); dragEnd(false); wpAsk(d.h);              // tocco senza trascinare: il numero si scrive
+  } catch (err) { console.error('muri parametrici', err); dragEnd(false); draw(); }
+}
+function wpAsk(h) {
+  const W = wpWall(); if (!W) return;
+  const run = (v, okMsg) => {
+    const W2 = wpWall(); if (!W2) return;
+    saveHistory();
+    const txt = wpDo(W2, h, v);
+    if (txt===null) { state.history.pop(); setTip('Non si può: con questo valore un lato dell\'ambiente si annullerebbe.', 'warn'); draw(); return; }
+    wpApply([W2.R.rid], txt + '.' + (okMsg || ''));
+  };
+  if (h==='out') {
+    askDialog(W.e ? 'Spessore della tramezza' : 'Spessore del muro esterno', [{label:'Spessore (cm)'+(W.e ? '' : ' - 0 = nessun muro su questo lato'), id:'t', value:String(+(W.t*100).toFixed(1)), type:'number'}],
+      W.e ? 'Le misure nette restano: si sposta '+W.O.a.name+' con quello che ha dietro. Lo spessore scritto vale come misurato e non cede più.' : 'Vale per questo lato di '+W.R.a.name+'. Le facce esterne vicine si raccordano da sole.', v => {
+        const t = parseFloat(v.t); if (!(t >= 0) || t > 100 || (W.e && !(t > 0))) { draw(); return; }
+        run(t/100);
+      }, () => draw());
+    return;
+  }
+  if (h==='mid') {
+    askDialog('Sposta la tramezza', [{label:'Di quanti cm verso '+W.O.a.name+' (negativo = verso '+W.R.a.name+')', id:'d', value:'', type:'number'}], 'Un ambiente cresce e l\'altro cala della stessa misura; lo spessore resta.', v => {
+      const d = parseFloat(v.d); if (!isFinite(d) || !d) { draw(); return; }
+      run(d/100);
+    }, () => draw());
+    return;
+  }
+  if (h==='in') {
+    const m0 = wpNet(W.R, W.k); if (m0===null) { setTip('Su questo lato non trovo un lato di fronte da cui misurare.'); return; }
+    askDialog('Misura netta di '+W.R.a.name, [{label:'Misura netta (m), dal centro di questo lato al lato di fronte', id:'m', value:m0.toFixed(2), type:'number'}], 'Si sposta questo lato; il resto dell\'ambiente resta fermo e gli ambienti oltre il muro si spostano. Gli spessori restano.', v => {
+      const m = parseFloat(v.m); if (!(m > 0)) { draw(); return; }
+      run(m);
+    }, () => draw());
+    return;
+  }
+  askDialog('Lunghezza del lato di '+W.R.a.name, [{label:'Lunghezza netta del lato (m)', id:'m', value:W.sd.L.toFixed(2), type:'number'}], 'Si sposta il lato accanto, dalla parte della maniglia; gli ambienti oltre quel muro si spostano.', v => {
+    const m = parseFloat(v.m); if (!(m > 0)) { draw(); return; }
+    run(m);
+  }, () => draw());
+}
+// pannello in basso (telefono): i numeri del muro selezionato, da toccare e scrivere
+function wpBar(W) {
+  const el = $id('wp-bar'); if (!el) return;
+  if (!W || !COARSE || PRINT) { setDisp(el, 'none'); return; }
+  const m0 = wpNet(W.R, W.k), sig = [W.R.rid, W.k, W.e ? 1 : 0, m0 ? m0.toFixed(2) : '', W.t.toFixed(3), W.sd.L.toFixed(2)].join('|');
+  if (el.dataset.sig!==sig) {
+    el.dataset.sig = sig;
+    el.innerHTML = '<span>'+(W.e ? 'Tramezza' : 'Muro esterno')+'</span>'
+      + (m0 ? '<button data-h="in" style="border-color:#4aa3ff">Netta '+num(m0)+' m</button>' : '')
+      + '<button data-h="out" style="border-color:#5ef38c">Spessore '+num(W.t*100, 1).replace(',0', '')+' cm</button>'
+      + '<button data-h="e1" style="border-color:#ffe066">Lato '+num(W.sd.L)+' m</button>'
+      + (W.e ? '<button data-h="mid">Sposta</button>' : '')
+      + '<button data-h="x">✖</button>';
+    el.querySelectorAll('button').forEach(b => { b.onclick = () => { if (b.dataset.h==='x') { state.wpSel = null; draw(); } else wpAsk(b.dataset.h); }; });
+  }
+  setDisp(el, 'flex');
+}
+function wpDraw() {
+  try {
+    if (PRINT) return;
+    if (!state.ambienti.some(a => a.wt)) { wpBar(null); return; }
+    if (state.wpSel && state.tool!=='select') state.wpSel = null;
+    const W = wpWall();                                    // rilegge anche i legami (WPL)
+    ctx.save(); ctx.font = 'bold 12px '+FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    WPL.forEach(e => {                                     // tramezze che hanno preso un residuo: sempre in vista
+      if (!(Math.abs(e.l.g - e.l.t) > 0.0005)) return;
+      const q = w2s(e.f.M.x + e.A.S[e.ka].nx*e.f.g/2, e.f.M.y + e.A.S[e.ka].ny*e.f.g/2), s = wpResLabel(e.l), tw = ctx.measureText(s).width + 8;
+      ctx.fillStyle = '#ff9f1c'; ctx.fillRect(q.x-tw/2, q.y-9, tw, 18); ctx.fillStyle = '#111'; ctx.fillText(s, q.x, q.y);
+    });
+    state.ambienti.forEach(a => {                          // ambiente non piu' parametrico: segno sopra il nome
+      if (!a.wt || !a.wpx || !live(a) || hid(a)) return; const q = ambLabelPos(a); if (!q) return;
+      const s = '⚠ non parametrico', tw = ctx.measureText(s).width + 10;
+      ctx.fillStyle = 'rgba(20,24,44,.9)'; ctx.fillRect(q.x-tw/2, q.y-58, tw, 18); ctx.strokeStyle = '#ff9f1c'; ctx.lineWidth = 1; ctx.strokeRect(q.x-tw/2, q.y-58, tw, 18);
+      ctx.fillStyle = '#ff9f1c'; ctx.fillText(s, q.x, q.y-49);
+    });
+    ctx.restore();
+    wpBar(W); if (!W) return;
+    const P = (al, off) => { const p = wpPt(W, al, off); return w2s(p.x, p.y); }, a = P(W.lo, 0), b = P(W.hi, 0), c = P(W.hi, W.t), d = P(W.lo, W.t);
+    ctx.save(); ctx.fillStyle = 'rgba(255,224,102,.28)'; ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.closePath(); ctx.fill(); ctx.stroke();
+    if (wpHandlesOn(W)) {
+      const hs = COARSE ? 10 : 7, col = {in:'#4aa3ff', out:'#5ef38c', mid:'#ffffff', e0:'#ffe066', e1:'#ffe066'}, m0 = wpNet(W.R, W.k);
+      ctx.font = 'bold 12px '+FONT; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      wpHandles(W).forEach(h => {
+        const q = w2s(h.p.x, h.p.y); ctx.fillStyle = col[h.k]; ctx.strokeStyle = '#10182c'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        if (h.k==='e0' || h.k==='e1') ctx.arc(q.x, q.y, hs, 0, Math.PI*2);
+        else if (h.k==='mid') { ctx.moveTo(q.x, q.y-hs-2); ctx.lineTo(q.x+hs+2, q.y); ctx.lineTo(q.x, q.y+hs+2); ctx.lineTo(q.x-hs-2, q.y); ctx.closePath(); }
+        else ctx.rect(q.x-hs, q.y-hs, hs*2, hs*2);
+        ctx.fill(); ctx.stroke();
+        const lab = h.k==='in' ? (m0 ? num(m0) : '') : h.k==='out' ? num(W.t*100, 1).replace(',0', '') : '';
+        if (lab) { ctx.fillStyle = col[h.k]; haloText(lab, q.x+hs+5, q.y); ctx.fillText(lab, q.x+hs+5, q.y); }
+      });
+    }
+    ctx.restore();
+  } catch (err) { console.error('muri parametrici', err); }
+}
+// spessori standard, una volta per tutto il rilievo
+function wpStdDialog() {
+  hideAllMenus(); const st = wpStd();
+  askDialog('Spessori standard dei muri', [
+    {label:'Muri esterni (cm)', id:'e', value:String(Math.round(st.ext*100)), type:'number'},
+    {label:'Tramezze tra due ambienti (cm)', id:'i', value:String(Math.round(st.int*100)), type:'number'},
+  ], 'Valgono per gli ambienti nuovi e, in quelli già disegnati, per i muri che hanno ancora lo spessore standard (quelli misurati non cambiano). Cambiando le tramezze gli ambienti si spostano; le misure nette restano.', v => {
+    const e = parseFloat(v.e)/100, i = parseFloat(v.i)/100; if (!(e > 0) || !(i > 0) || e > 1 || i > 1) { draw(); return; }
+    saveHistory(); const old = {ext:st.ext, int:st.int}; st.ext = e; st.int = i;
+    const rooms = wpRooms(false).filter(R => !locked(R.a));
+    rooms.forEach(R => { R.a.wt = R.a.wt.map(t => Math.abs(t - old.ext) < 0.0005 ? e : t); });
+    wpSync(); (state.wlinks || []).forEach(l => { if (!l.lk && Math.abs(l.t - old.int) < 0.0005) l.t = i; });
+    wpApply(rooms.length ? [rooms[0].rid] : [], 'Spessori standard: esterni '+Math.round(e*100)+' cm, tramezze '+Math.round(i*100)+' cm.');
+  }, () => draw());
+}
+// la quota verde dello spessore: sui muri degli ambienti parametrici apre lo spessore del muro (anche della tramezza tra due ambienti)
+function thickQuoteDialog(si) {
+  const g = state.segments[si]; if (!g) return;
+  const so = wpSideOf(si), A = state.points[g.a], B = state.points[g.b];
+  if (!so || !A || !B) { setTip('Questo spessore è dato dalla distanza tra le due linee: per cambiarlo sposta una delle due, oppure usa "Spessore e tipo muro" dal menu del muro.'); return; }
+  const s = so.R.S[so.k], f = g.thF ?? 0.5, al = (A.x + (B.x-A.x)*f - s.p.x)*s.ux + (A.y + (B.y-A.y)*f - s.p.y)*s.uy, lk = wpLinkAt(so.L, so.R, so.k, al);
+  state.wpSel = {rid:so.R.rid, k:so.k, b: lk ? lk.b : null}; state.sel = null;
+  wpAsk('out');
+}
+// stanza rettangolare: nasce parametrica, con gli spessori standard, e si attacca alle stanze vicine con la tramezza standard
+function finishRoom() {
+  const r = state.roomDraw; state.roomDraw = null;
+  if (!r) return;
+  const w0 = Math.abs(r.x1-r.x0), h0 = Math.abs(r.y1-r.y0);
+  if (w0 < 0.3 || h0 < 0.3) { draw(); setTip('Stanza non creata: trascina un rettangolo di almeno 30 x 30 cm.'); return; }
+  const sx = r.x1 >= r.x0 ? 1 : -1, sy = r.y1 >= r.y0 ? 1 : -1, nm0 = freeAmbName(), st = wpStd();
+  askDialog('Stanza rettangolare', roomNameFields(nm0).concat([
+    {label:'Larghezza (m)', id:'w', value:w0.toFixed(2), type:'number'},
+    {label:'Profondità (m)', id:'d', value:h0.toFixed(2), type:'number'},
+    {label:'Altezza netta (m)', id:'h', value:lastAmbH().toFixed(2), type:'number'},
+  ]), 'Misure lette dal trascinamento: correggile con quelle rilevate (misure nette, interne). Muri: esterni '+Math.round(st.ext*100)+' cm, tramezze '+Math.round(st.int*100)+' cm (standard, da Disegna > Spessori standard); le eccezioni si correggono dopo toccando il muro. Se è entro 50 cm da un\'altra stanza si attacca da sola, con la tramezza standard.', v => {
+    const w = parseFloat(v.w), d = parseFloat(v.d), hh = parseFloat(v.h);
+    if (!(w>0) || !(d>0) || !(hh>0)) { draw(); return; }
+    saveHistory();
+    const fase = wpFase(), old = wpSync().rooms.map(R => R.rid);
+    const C = [{x:r.x0, y:r.y0}, {x:r.x0+sx*w, y:r.y0}, {x:r.x0+sx*w, y:r.y0+sy*d}, {x:r.x0, y:r.y0+sy*d}];
+    const ids = C.map(p => newPoint(p.x, p.y));                             // punti suoi: la stanza deve potersi spostare da sola
+    ids.forEach((id, k) => { state.segments.push({a:id, b:ids[(k+1)%4]}); });
+    let rid = 1; state.ambienti.forEach(a => { if (a.rid >= rid) rid = a.rid + 1; });
+    const am = { indices:ids, name:roomNameRead(v, null, nm0), h:hh, color:AMB_COLORS[state.ambienti.length%AMB_COLORS.length], category:'utile', fase, wt:[st.ext, st.ext, st.ext, st.ext], rid };
+    state.ambienti.push(am); wpStamp(am);
+    wpApply(old, 'Stanza creata: '+(w*d).toFixed(2)+' m², muri esterni di '+Math.round(st.ext*100)+' cm. Trascina per la prossima, oppure Seleziona per finire.', rid);
+  }, () => draw());
+  roomNameUI();
+}
+// la quota verde dello spessore: toccandola si cambia lo spessore di quel muro (vedi thickQuoteDialog)
 function hitThickQuote(sx, sy) {
   if (!THKQ) return null;
   for (let i = state.segments.length-1; i >= 0; i--) {
@@ -3972,21 +4593,6 @@ function hitThickQuote(sx, sy) {
     if (Math.abs(sx-cx) <= 28 && Math.abs(sy-cy) <= 12) return i;
   }
   return null;
-}
-function thickQuoteDialog(si) {
-  const g = state.segments[si]; if (!g) return;
-  const a = state.ambienti.find(x => x.sp && ringHasEdge(x, g.a, g.b)), R = a && roomRectOf(a), A = state.points[g.a], B = state.points[g.b];
-  if (!R || !A || !B) { setTip('Questo spessore è dato dalla distanza tra le due linee: per cambiarlo sposta una delle due, oppure usa "Spessore e tipo muro" dal menu del muro.'); return; }
-  const vert = Math.abs(A.x-B.x) < 0.005, side = vert ? (Math.abs(A.x-R.x0) < 0.005 ? 3 : 1) : (Math.abs(A.y-R.y0) < 0.005 ? 0 : 2);
-  if (Math.abs(g.thick - a.sp[side]) > 0.006) { setTip('Questo muro è lo spazio tra due stanze ('+Math.round(g.thick*100)+' cm): per cambiarlo sposta una delle due stanze.'); return; }
-  if (locked(a)) { lockTip(); return; }
-  const fase = a.fase || 'es';
-  askDialog('Spessore del muro', [{label:'Spessore (cm) - 0 = nessun muro su questo lato', id:'t', value:String(Math.round(a.sp[side]*100)), type:'number'}],
-    'Vale per questo lato di '+a.name+'. Le linee dei muri vicini si raccordano da sole.', v => {
-      const t = parseFloat(v.t); if (!(t >= 0) || t > 100) { draw(); return; }
-      saveHistory(); a.sp[side] = t/100; rebuildWalls(fase);
-      commit('Spessore del muro: '+Math.round(t)+' cm.');
-    }, () => draw());
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4534,7 +5140,13 @@ function askRoom(cycle) {
       indices: cycle, name: (n => state.ambienti.some(a => a.name===n) ? freeAmbName() : n)(roomNameRead(v, null, nm0)),     // mai un nome gia' usato
       h, color: AMB_COLORS[state.ambienti.length%AMB_COLORS.length], category:'utile'    // nasce interno: si cambia solo balcone, cantina, box...
     });
-    commit('Ambiente registrato: '+area.toFixed(2)+' m², '+(area*h).toFixed(2)+' m³.');
+    const am = state.ambienti[state.ambienti.length-1], msg = 'Ambiente registrato: '+area.toFixed(2)+' m², '+(area*h).toFixed(2)+' m³.';
+    assignFase();
+    if (wpTryParam(am)) {                            // punti suoi e nessun muro gia' disegnato attorno: parametrico, con i muri standard
+      try { wpSolve(wpSync().rooms.filter(R => R.rid!==am.rid).map(R => R.rid), am.rid); rebuildWalls(wpFase()); } catch (err) { console.error('muri parametrici', err); }
+      commit(msg+' È parametrico: muri esterni di '+Math.round(wpStd().ext*100)+' cm; entro 50 cm da un altro ambiente parametrico si attacca con la tramezza standard.'+wpResText()); return;
+    }
+    commit(msg);
   });
   roomNameUI();
 }
@@ -4555,6 +5167,7 @@ function quotaMenuAction(action) {
       {label:'Misura rilevata (m)', id:'m', value:len.toFixed(2), type:'number'},
     ], 'Gli estremi si spostano in modo uguale lungo il muro e i muri collegati seguono.', v => {
       const m = parseFloat(v.m); if (!isFinite(m) || m<=0) return;
+      if (wpLenFromQuota(sl.idx, m)) return;         // lato intero di un ambiente parametrico: si sposta il lato accanto, l'ambiente resta parametrico
       setWallLength(sl.idx, m);
     });
   }
@@ -4616,6 +5229,7 @@ function showMenu(id, x, y, above, avoid) {
   if (id==='amb-context') {
     const a = state.sel && state.sel.kind==='ambiente' && state.ambienti[state.sel.idx], has = !!(a && a.volta);
     document.getElementById('am-novolta').style.display = has && !lk ? '' : 'none';
+    document.getElementById('am-wpon').style.display = a && a.wpx && !lk ? '' : 'none';
     document.getElementById('am-volta').firstChild.textContent = has ? '⌒ Modifica volta (finestra)' : '⌒ Volta (finestra)';
     document.getElementById('am-vgraf').firstChild.textContent = has ? '⌒ Rifai i punti sul disegno' : '⌒ Volta sul disegno';
   }
@@ -5287,6 +5901,8 @@ function handleClick(sx, sy, clientX, clientY, shift) {
       ['costr',    hitCostr(sx,sy),       'entity-context'],
       ['ambiente', hitAmbiente(sx,sy),    'amb-context'],
     ].find(h => h[1]!==null);
+    // muro di un ambiente parametrico: il primo tocco lo seleziona con le maniglie, il secondo apre il menu della linea
+    if (!pick || pick[0]==='segment' || pick[0]==='ambiente') { if (wpClick(sx, sy)) return; } else if (state.wpSel) state.wpSel = null;
     if (pick) {
       state.sel = {kind:pick[0], idx:pick[1]};
       if (pick[0]==='segment') state.sel.t = segmentT(pick[1], sx, sy);
@@ -5494,7 +6110,7 @@ canvas.addEventListener('pointerdown', e => {
   if (state.pointers.size===2) {            // due dita: pinch, annullo ogni altra azione
     if (state.selBox && state.selBox.keep) Object.assign(state, state.selBox.keep);   // il primo dito non era un riquadro: la selezione resta
     state.pinchUsed=true; clearAssist();
-    state.isPanning=false; state.drag=null; state.rectDraw=null; state.roomDraw=null; state.stairResize=null;
+    state.isPanning=false; state.drag=null; state.rectDraw=null; state.roomDraw=null; state.stairResize=null; state.wpDrag=null;
     state.pencilCurrent=null; state.selBox=null;
     const p=[...state.pointers.values()];
     state.pinchDist = Math.hypot(p[0].x-p[1].x, p[0].y-p[1].y);
@@ -5543,6 +6159,7 @@ canvas.addEventListener('pointerdown', e => {
       const base = e.shiftKey || state.multi ? selCopy() : null;
       if (e.shiftKey) { state.selBox={x0:sx,y0:sy,x1:sx,y1:sy,keep,base,shift:true}; return; }
       // nel Progetto il rilievo esistente non si trascina: il tocco apre solo il menu
+      if (wpDown(sx,sy)) return;                               // maniglie del muro parametrico selezionato
       if (doorArrowTap(sx,sy)) { state.doorTap = true; return; }
       const hh = hitOpeningHandle(sx,sy); if (hh && !locked(state.openings[hh.idx])) { state.openingResize=hh; return; }
       const sh = hitStairHandle(sx,sy);   if (sh && !locked(state.scale[sh.idx])) { state.stairResize=sh; return; }
@@ -5610,7 +6227,8 @@ canvas.addEventListener('pointermove', e => {
   if (state.isPanning) { doPan(e.clientX, e.clientY); return; }
   if (state.exp && state.exp.drag) { expMove(sx, sy); return; }
   // il dito trema: finche' non supera la soglia di clic nulla si sposta (un tocco su un punto non lo deve muovere)
-  if (!state.moved && (state.drag || state.openingDrag || state.openingResize || state.stairResize)) return;
+  if (!state.moved && (state.drag || state.openingDrag || state.openingResize || state.stairResize || state.wpDrag)) return;
+  if (state.wpDrag) { dragSnap(); wpDragTo(sx, sy, e); return; }
 
   if (state.pencilCurrent) { state.pencilCurrent.pts.push(s2w(sx,sy)); draw(); return; }
   if (state.rectDraw)      { const w=s2w(sx,sy); state.rectDraw.x1=w.x; state.rectDraw.y1=w.y; draw(); return; }
@@ -5688,7 +6306,7 @@ canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', e => {
   state.pointers.delete(e.pointerId); state.panGesture = false; endPan(); hideTooltip(); clearAssist();
   state.pinchDist=null; state.pinchMid=null; state.selBox=null; if (!state.pointers.size) state.pinchUsed=false;
-  state.drag=null; state.openingDrag=null; state.openingResize=null; state.stairResize=null; state.rectDraw=null; state.roomDraw=null; state.pencilCurrent=null;
+  state.drag=null; state.openingDrag=null; state.openingResize=null; state.stairResize=null; state.rectDraw=null; state.roomDraw=null; state.pencilCurrent=null; state.wpDrag=null;
   if (state.dragSnap) { dragEnd(true); persist(); }
   draw();
 });
@@ -5709,6 +6327,7 @@ function endPointer(e) {
   const {x:sx, y:sy} = evtPos(e);
   endPan();
   if (state.doorTap) { state.doorTap = false; draw(); return; }                // il tocco era su una freccia della porta: non e' un clic sul disegno
+  if (state.wpDrag) { wpUp(); return; }
 
   if (state.pencilCurrent) {
     if (state.pencilCurrent.pts.length>1) { saveHistory(); state.pencilLines.push(state.pencilCurrent); persist(); state.pencilCurrent=null; setTool('select'); }
@@ -5903,7 +6522,7 @@ function clearAll() {
 // ═══════════════════════════════════════════════════════════
 //  UNDO + SALVATAGGIO AUTOMATICO
 // ═══════════════════════════════════════════════════════════
-const SNAP_KEYS = ['points','segments','ambienti','openings','pilastri','scale','labels','pencilLines','tratti','misure','costr'];   // 'tratti' e 'misure' sono facoltativi: i progetti vecchi si aprono senza
+const SNAP_KEYS = ['points','segments','ambienti','openings','pilastri','scale','labels','pencilLines','tratti','misure','costr','wlinks'];   // 'tratti' e 'misure' sono facoltativi: i progetti vecchi si aprono senza
 const COUNTERS  = ['pilastroCounter','scalaCounter','pointCounter'];   // numeri che non si riusano (PIL, SCALA, P)
 
 // le foto dei punti pesano: nelle copie di Annulla ce n'e' una per passo (fino a 60), quindi i dati stanno in un deposito unico (pid)
@@ -5982,6 +6601,7 @@ function migrate(o) {
 }
 function snapshot(inline) {
   const o = {fmt:DATA_FMT, meta:state.meta || {}};
+  if (state.wstd) o.wstd = state.wstd;                               // spessori standard dei muri (facoltativo)
   SNAP_KEYS.concat(COUNTERS).forEach(k => o[k] = state[k]);
   o.points = state.points.map(p => {
     if (!p.photo || !p.photo.data) return p;
@@ -6003,6 +6623,7 @@ function restore(o) {
   SNAP_KEYS.forEach(k => { state[k] = o[k] || []; });               // una parte mancante nel file significa vuota, non "resta quella di prima"
   COUNTERS.forEach(k => state[k] = o[k] || 0);
   state.meta = o.meta || {};                                         // dati del rilievo: assenti nei progetti vecchi = vuoti
+  state.wstd = o.wstd || null; state.wpSel = null; state.wpDrag = null; _wpGen = null;      // muri parametrici: spessori standard del progetto; le linee generate salvate restano come sono
   photosIn(state.points);
   state.sel=null; state.selSet=null; state.selOpen=null; state.selSeg=null; state.selPen=null; state.pending=null; state.cand=null; state.circles=[];
   state.multi=false; state.moveSel=false;
@@ -6032,6 +6653,7 @@ function commit(msg, keepTool){
 
 let _persistTimer=null;
 function persist() {
+  wpWatch();                                 // muri parametrici: ambienti cambiati a mano, facce esterne da rifare
   clearTimeout(_persistTimer);
   _persistTimer = setTimeout(() => {
     try {
@@ -10571,8 +11193,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.45';
-const APP_NOTE = ["Ricalco dei PDF vettoriali (tavole dal CAD) più affidabile: una porta disegnata come semplice varco tra due teste di muro, anche senza arco e con battute di pochi centimetri, chiude l'ambiente, così le stanze non si fondono più tra loro. Un pilastro o una cassetta davanti a un muro non viene scambiato per una porta", "Finestre: vale solo il disegno del serramento dentro lo spessore di un muro verso l'esterno (linee del vetro e del telaio), mai tra due stanze né sui gradini di una scala. La larghezza è la luce netta. Niente più finestre lette più volte o inventate", "Muri con il loro spessore: per ogni lato di un ambiente l'app legge la faccia opposta del muro (fino a 65 cm) e che cosa c'è oltre. Con Applica i muri arrivano già con spessore e tipo: Esterno dove c'è una finestra sicura, altrimenti tipo proposto da validare (fucsia tratteggiato)", "Arredi e sanitari staccati dai muri non fanno più perdere la stanza e non diventano stanze", "Incerti in evidenza: ciò che l'app non dà per sicuro (ambiente dubbio, porta dedotta dal solo varco, finestra senza il disegno del vetro, muro senza faccia opposta) è in fucsia nell'anteprima e nell'elenco \"Da controllare\", con il motivo e il pulsante per andarci sopra. Ambienti e finestre incerti partono senza spunta; togliendo la spunta a una porta dedotta il varco si riapre e gli ambienti si riuniscono", "Catastali, scansioni e JPG: via le finestre doppie, quelle sui gradini e quelle tra due stanze. Le stanze disegnate a linea singola dentro muri spessi (con il confine tratteggiato) ora vengono riconosciute; le figure chiuse con poco muro attorno (balcone, cortile, vano scala) sono proposte come incerte, senza spunta, invece di sparire. Lette anche le tavole a linee blu o viola; i PDF ruotati o a strisce si importano alla risoluzione vera dell'immagine", "Risoluzione insufficiente: il messaggio ora dice quanto manca e che cosa fare. Con un PDF a immagine indica i dpi del file e quelli che servono (esempio: \"il file è a circa 100 dpi e ne servono almeno 172: scansiona a 200 dpi o più\"); con JPG e foto la regola è 200 dpi per una pianta 1:200 e 100 dpi per una 1:100. Resta \"Prova comunque\"", "Limiti noti: i nomi degli ambienti non vengono letti (nei PDF i testi sono quasi sempre curve); nelle catastali i locali molto piccoli pieni di scritte possono mancare o uscire incerti; gli arredi disegnati attaccati ai muri non sono ancora distinti dai muri"];
+const APP_VERSION = '2.46';
+const APP_NOTE = ["Muri parametrici: l'ambiente comanda, con le sue misure nette, e il muro gli sta attorno. Tocchi un muro di un ambiente e compaiono le maniglie: blu = misura netta (dal centro del lato al lato di fronte, come il laser), verde = spessore, bianca = sposta la tramezza (una stanza cresce, l'altra cala), gialle agli estremi = allunga il lato. Trascini, oppure tocchi la maniglia e scrivi il numero. Le misure nette degli altri ambienti non cambiano mai: sono gli ambienti vicini a spostarsi", "Vale per ogni forma di ambiente: rettangoli, forme a L, lati inclinati. Tra due pareti non parallele lo spessore è uno solo, misurato a metà muro", "Tramezza tra due ambienti: è un numero, non più lo spazio che avanza. Cambi lo spessore e la stanza accanto si sposta con tutto quello che ha dietro. Lo spessore scritto vale come misurato", "Spessori standard una volta sola (menu Disegna, \"Spessori standard\"): muri esterni 30 cm e tramezze 10 cm di partenza, modificabili per tutto il rilievo; le eccezioni si correggono muro per muro. Nella Stanza rettangolare non si scrive più lo spessore", "La stanza nuova si attacca da sola: disegnata entro 50 cm da un'altra, va a mettersi alla distanza della tramezza standard. Vale anche per l'ambiente creato da punti o da area, quando ha punti suoi e nessun muro già disegnato attorno", "Misure che non chiudono: se gli spessori non possono tornare tutti, il residuo va sulle tramezze non misurate e si vede sul disegno (esempio \"10+2\": tramezza voluta 10, residuo 2), con un solo messaggio per residuo", "Ambiente modificato a mano: se sposti a mano i punti o i muri di un ambiente parametrico, quell'ambiente non è più parametrico e porta il segno \"non parametrico\"; i suoi muri restano disegnati. Dal menu dell'ambiente: \"Torna parametrico\". Le linee libere si usano come prima", "Sul telefono, con un muro selezionato, compaiono in basso i pulsanti Netta, Spessore, Lato e Sposta per scrivere i numeri; le maniglie si vedono quando il muro è abbastanza lungo a video. Il numero scritto resta il modo più preciso", "Quota verde dello spessore, \"Spessore e tipo\" e \"Imposta misura\" sui muri di un ambiente parametrico passano dal muro parametrico: nessuna stanza si deforma. Sul muro di un ambiente parametrico il primo tocco mostra le maniglie, il secondo apre il menu della linea", "Corretto: una finestra o una porta messa sulla faccia esterna di un muro non sparisce più quando il muro viene ridisegnato (spessore cambiato, stanza nuova accanto): passa sulla linea nuova", "Limiti: gli ambienti ottenuti dal ricalco (PDF, DXF, catastale) e quelli disegnati con muri a doppia linea restano come prima, non parametrici; i muri esterni non vengono allineati tra loro (un filo esterno unico non è imposto); le piccole sacche chiuse tra stanze non vengono più riempite da sole"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
