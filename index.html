@@ -4229,9 +4229,17 @@ const WP_COL = 0.003;                                     // vertice allineato e
 const wpR2 = v => Math.round(v*100)/100, wpR4 = v => Math.round(v*1e4)/1e4;
 var WPL = [];                                             // legami dell'ultima lettura, con la geometria (vedi wpSync)
 var _wpGen = null, _wpAfter = null;                                        // firma di cio' da cui sono nate le linee generate
-// 2.50: standard proposti 40 cm verso l'esterno, 25 cm tramezze e verso altri ambienti, 25 cm verso il vano scala (`sc`, facoltativo); i progetti che li hanno gia' salvati li tengono
-function wpStd() { if (!state.wstd || !(state.wstd.ext > 0) || !(state.wstd.int > 0)) state.wstd = {ext:0.40, int:0.25, sc:0.25}; if (!(state.wstd.sc > 0)) state.wstd.sc = 0.25; return state.wstd; }
-function wpStdOf(c) { const st = wpStd(); return c===1 ? st.ext : c===2 ? st.sc : st.int; }      // per classe del lato (wpCls): 1 esterno, 2 vano scala, 0/3 verso un ambiente
+// 2.51: standard proposti 40 cm verso l'esterno (un solo valore per tutti gli esterni, wpSetExt), 10 cm tramezze tra ambienti (bollino A compreso),
+// 25 cm verso vano scala o non riscaldati (`sc`, facoltativo); i progetti che li hanno gia' salvati li tengono
+function wpStd() { if (!state.wstd || !(state.wstd.ext > 0) || !(state.wstd.int > 0)) state.wstd = {ext:0.40, int:0.10, sc:0.25}; if (!(state.wstd.sc > 0)) state.wstd.sc = 0.25; return state.wstd; }
+// 2.51: spessore unico dei muri esterni: cambia lo standard e tutti i muri esterni che lo avevano, in tutte le stanze (quelli scritti a mano restano)
+function wpSetExt(e) {
+  const st = wpStd(), o = st.ext; st.ext = e; if (Math.abs(e - o) < 0.0005) return 0;
+  const per = wpPerim(); let n = 0;
+  wpRooms(false).filter(R => !locked(R.a)).forEach(R => { R.a.wt = R.a.wt.map((t, k) => { const c = wpCls(R, k, per); if ((c===1 || c===0) && Math.abs(t - o) < 0.0005) { if (c===1) n++; return e; } return t; }); });
+  return n;
+}
+function wpStdOf(c) { const st = wpStd(); return c===1 ? st.ext : c===2 ? st.sc : st.int; }      // per classe del lato (wpCls): 1 esterno, 2 vano scala o non riscaldato, 0/3 verso un ambiente (tramezza)
 function wpFase() { return prog() ? 'nuovo' : 'es'; }
 // lati veri dell'ambiente: i vertici allineati (attacchi delle tramezze, punti in piu') non contano. C = spigoli in giro, ci = loro posto nell'anello,
 // S = lati (p -> q, lunghezza L, direzione u, normale n verso FUORI)
@@ -4688,7 +4696,7 @@ function wpMakeGo(list, skip) {
   rebuildWalls(wpFase());
   const mv = made.filter(m => { const p = state.points[m.a.indices[0]], q = P0.get(m.a); return p && Math.hypot(p.x-q.x, p.y-q.y) > 0.001; }).map(m => m.a.name);
   let msg = (made.length===1 ? made[0].a.name+' è parametrico' : made.length+' ambienti parametrici')+': le misure di adesso valgono come nette, muri esterni e tramezze generati'
-    +(nl ? ', '+nl+(nl===1 ? ' quota convalidata diventata lucchetto' : ' quote convalidate diventate lucchetti') : '')+'. Spessori: dalle linee già disegnate se coerenti, altrimenti '+Math.round(st.ext*100)+' cm verso l\'esterno, '+Math.round(st.int*100)+' cm verso altri ambienti (bollini E/S/A nel Rilievo in loco).';
+    +(nl ? ', '+nl+(nl===1 ? ' quota convalidata diventata lucchetto' : ' quote convalidate diventate lucchetti') : '')+'. Spessori: dalle linee già disegnate se coerenti, altrimenti '+Math.round(st.ext*100)+' cm verso l\'esterno, '+Math.round(st.sc*100)+' cm verso vano scala o non riscaldati, '+Math.round(st.int*100)+' cm le tramezze verso altri ambienti (bollini E/S/A nel Rilievo in loco).';
   if (seeds.length) msg += ' Tramezza di '+Math.round(st.int*100)+' cm tra le stanze che si toccavano'+(mv.length ? ': spostate per farle posto '+mv.join(', ')+' (misure nette invariate, controlla i muri disegnati a mano attorno)' : '')+'.';
   if (no90.length) msg += ' Non ortogonali ('+no90.join(', ')+'): angoli come disegnati, nessun vincolo a 90 gradi; per aprirli sposta i punti, poi di nuovo Rendi parametrico.';
   if (skip.length) msg += ' Saltati, lasciati come sono: '+skip.join('; ')+'.';
@@ -5080,10 +5088,10 @@ function wpDraw() {
 function wpStdDialog() {
   hideAllMenus(); const st = wpStd();
   askDialog('Spessori standard dei muri', [
-    {label:'Muri esterni (cm)', id:'e', value:String(Math.round(st.ext*100)), type:'number'},
-    {label:'Tramezze e muri verso altri ambienti (cm)', id:'i', value:String(Math.round(st.int*100)), type:'number'},
-    {label:'Muri verso il vano scala (cm)', id:'s', value:String(Math.round(st.sc*100)), type:'number'},
-  ], 'Valgono per gli ambienti nuovi e, in quelli già disegnati, per i muri che hanno ancora lo spessore standard (quelli misurati non cambiano). Cambiando le tramezze gli ambienti si spostano; le misure nette restano.', v => {
+    {label:'Muri esterni, uno per tutti (cm)', id:'e', value:String(Math.round(st.ext*100)), type:'number'},
+    {label:'Tramezze tra ambienti (cm)', id:'i', value:String(Math.round(st.int*100)), type:'number'},
+    {label:'Muri verso vano scala o non riscaldati (cm)', id:'s', value:String(Math.round(st.sc*100)), type:'number'},
+  ], 'Base: esterni 40 cm, tramezze 10 cm, vano scala o non riscaldati 25 cm. Valgono per gli ambienti nuovi e, in quelli già disegnati, per i muri che hanno ancora lo spessore standard (quelli misurati non cambiano). Lo spessore degli esterni si cambia una volta per tutti, anche dalla scheda del Rilievo in loco. Cambiando le tramezze gli ambienti si spostano; le misure nette restano.', v => {
     const e = parseFloat(v.e)/100, i = parseFloat(v.i)/100, s = parseFloat(v.s)/100; if (!(e > 0) || !(i > 0) || !(s > 0) || e > 1 || i > 1 || s > 1) { draw(); return; }
     saveHistory(); const old = {ext:st.ext, int:st.int, sc:st.sc}; st.ext = e; st.int = i; st.sc = s;
     const rooms = wpRooms(false).filter(R => !locked(R.a)), per = wpPerim();
@@ -5384,7 +5392,7 @@ function locoFields(R) {
   } else F.forEach((f, i) => { f.lab = 'Misura '+(i+1)+' di '+F.length; });
   F.push({t:'h', lab:'Altezza'});
   const per = wpPerim();                                   // 2.50: un campo spessore per tipo di lato presente (esterno, vano scala, altro ambiente)
-  [[1, 'Spessore muro esterno'], [2, 'Spessore muro vano scala'], [3, 'Spessore muro verso altro ambiente']].forEach(([c, lab]) => { if (R.S.some((s, k) => wpCls(R, k, per)===c)) F.push({t:'ext', c, lab}); });
+  [[1, 'Spessore muri esterni (tutti)'], [2, 'Spessore muro vano scala o non riscaldato'], [3, 'Spessore tramezza verso altro ambiente']].forEach(([c, lab]) => { if (R.S.some((s, k) => wpCls(R, k, per)===c)) F.push({t:'ext', c, lab}); });
   return F;
 }
 function locoOpen(rid, i) {
@@ -5395,7 +5403,8 @@ function locoFocus() { const el = $id('lb-in'); if (el && el.offsetParent) try {
 function locoVal(R, f) {
   if (f.t==='net') { const v = wpNet(R, f.k); return v===null ? '' : num(v); }
   if (f.t==='h') return num(+R.a.h || 0);
-  const per = wpPerim(), k = R.S.findIndex((s, k) => wpCls(R, k, per)===(f.c || 1)); return k < 0 ? '' : num((+R.a.wt[k] || 0)*100, 0);
+  if ((f.c || 1)===1) return num(wpStd().ext*100, 0);         // 2.51: esterni = un solo valore per tutti
+  const per = wpPerim(), k = R.S.findIndex((s, k) => wpCls(R, k, per)===f.c); return k < 0 ? '' : num((+R.a.wt[k] || 0)*100, 0);
 }
 const LOCO_C = '<div class="lb-r"><span class="lb-g" id="lb-hint">Rilievo in loco: tocca una stanza per le misure</span><button id="lb-all" title="Rendi parametrici tutti gli ambienti disegnati a linee: muri esterni e tramezze generati, quote convalidate = lucchetti">Parametrici</button><button id="lb-ria">Riassembla</button><button id="lb-out" title="Esci dal rilievo in loco">Esci</button></div>';
 const LOCO_R = '<div class="lb-r"><b class="lb-g" id="lb-name"></b><span id="lb-pos"></span><button id="lb-menu" title="Menu dell\'ambiente">⋯</button><button id="lb-ria">Riassembla</button><button id="lb-x" title="Chiudi la scheda">✖</button></div>'
@@ -5476,8 +5485,14 @@ function locoSet(rid, fd, txt, done) {
     saveHistory(); a.h = v; commit(a.name+': altezza '+num(v)+' m.', true); done(); return;
   }
   if (!(v >= 0 && v <= 100)) { setTip('Spessore non valido: scrivi i centimetri, ad esempio 35.', 'warn'); return; }
+  const c = fd.c || 1;
+  if (c===1 && !(v > 0)) { setTip('Spessore non valido: scrivi i centimetri, ad esempio 40.', 'warn'); return; }
   saveHistory(); const per = wpPerim();
-  const c = fd.c || 1; R.S.forEach((s, k) => { if (wpCls(R, k, per)===c) a.wt[k] = wpR4(v/100); });
+  if (c===1) {                                             // 2.51: un solo spessore per tutti i muri esterni, di tutte le stanze; quelli scritti a mano restano
+    const n = wpSetExt(wpR4(v/100));
+    rebuildWalls(wpFase()); commit('Muri esterni: '+num(v, 0)+' cm per tutti ('+n+(n===1 ? ' parete aggiornata' : ' pareti aggiornate')+'; quelli scritti a mano restano).', true); done(); return;
+  }
+  R.S.forEach((s, k) => { if (wpCls(R, k, per)===c) a.wt[k] = wpR4(v/100); });
   rebuildWalls(wpFase()); commit(a.name+': '+fd.lab.toLowerCase()+' '+num(v, 0)+' cm su tutte le sue pareti di questo tipo.', true); done();
 }
 // lucchetto: valida la misura com'e', oppure lo toglie
@@ -5525,10 +5540,10 @@ function locoTagTap(t) {
   const R = wpRooms(false).find(r => r.rid===t.rid); if (!R) return;
   saveHistory();
   const a = R.a; if (!Array.isArray(a.ext) || a.ext.length!==R.m) a.ext = R.S.map(() => null);
-  const nc = t.c===1 ? 2 : t.c===2 ? 3 : 1; a.ext[t.k] = nc;                 // 2.50: E -> S -> A (altro ambiente) -> E
+  const nc = t.c===1 ? 2 : t.c===2 ? 3 : 1; a.ext[t.k] = nc;                 // 2.50: E -> S -> A (altro ambiente) -> E; 2.51: E 40 (unico), S 25, A tramezza 10
   const std = Math.abs((+a.wt[t.k] || 0) - wpStdOf(t.c)) < 0.0005; if (std) a.wt[t.k] = wpStdOf(nc);      // lo spessore segue il tipo; quello scritto a mano resta
   rebuildWalls(wpFase());
-  commit(a.name+', parete '+wpDirName(R.S[t.k])+': '+['', 'esterno (perimetro fermo, filo di facciata)', 'vano scala (perimetro fermo, non è filo di facciata)', 'verso altro ambiente (come una tramezza: la parete si può spostare)'][nc]
+  commit(a.name+', parete '+wpDirName(R.S[t.k])+': '+['', 'esterno (perimetro fermo, filo di facciata)', 'vano scala o non riscaldato (perimetro fermo, non è filo di facciata)', 'verso altro ambiente (tramezza: la parete si può spostare)'][nc]
     +', spessore '+num((+a.wt[t.k] || 0)*100, 0)+' cm'+(std ? '' : ' (scritto a mano, non cambia)')+'.', true);
 }
 function locoDraw() {
@@ -12784,8 +12799,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.50';
-const APP_NOTE = ["Rendi parametrico: disegni gli ambienti a linee, inserisci e convalidi le misure, poi con un tocco l'ambiente diventa parametrico e l'app genera muri esterni e tramezze. Dal menu dell'ambiente \"Rendi parametrico\" (anche per rifarlo parametrico dopo averlo modificato a mano, a modifiche finite); per tutti insieme \"Rendi parametrici tutti\" in Disegna e \"Parametrici\" nella barra In loco", "Niente più parametrico automatico: registrando un ambiente da punti o da area resta disegnato a linee finché non tocchi il pulsante. Le stanze create con lo strumento Stanza restano parametriche come prima", "Le quote convalidate diventano lucchetti al momento del pulsante, così le misure restano ferme; i lucchetti si tolgono da soli quando l'ambiente non è più parametrico o cambia lati (le quote convalidate restano e li rifanno al tocco successivo)", "Spessori proposti: 40 cm verso l'esterno, 25 cm verso il vano scala e verso altri ambienti (Disegna > Spessori standard, ora con il vano scala). Se fuori dal lato c'è già una linea disegnata tra 5 e 80 cm, vale quello spessore e non nascono linee doppie. Nel Rilievo in loco il bollino passa da E (esterno) a S (vano scala) ad A (altro ambiente) e lo spessore segue il tipo, salvo quello scritto a mano; nella scheda della stanza un campo spessore per ogni tipo di parete", "Stanze con una linea in comune (una sola linea tra due stanze): \"Rendi parametrici tutti\" dà a ognuna punti suoi, mette la tramezza standard e sposta la stanza più piccola per farle posto, senza cambiare le misure nette. Gli ambienti che non si possono separare in modo sicuro restano come sono e il messaggio dice quali e perché", "Ambienti non ortogonali: diventano parametrici con gli angoli come disegnati, senza vincolo a 90 gradi; lati e diagonali convalidati restano bloccati, e se un'operazione li cambierebbe l'app lo dice e non la fa", "Scheda In loco: \"Larghezza/Lunghezza\" solo per i rettangoli dritti (prima anche con un lato inclinato fino a circa 25 gradi); le misure tra lati non paralleli non compaiono più, perché non sono misure da laser"];
+const APP_VERSION = '2.51';
+const APP_NOTE = ["Spessori dei muri corretti: le tramezze tra ambienti tornano a 10 cm (la 2.50 le metteva a 25), anche per Stanza al tocco, Spezza e crea ambiente, Rendi parametrico e Rendi parametrici tutti; le stanze che si toccano vengono separate da una tramezza di 10 cm. Si cambiano solo parete per parete con le misure in loco; lo spessore scritto a mano resta", "Verso vano scala o locali non riscaldati: 25 cm stimati. Verso l'esterno: 40 cm di base, un solo valore per tutti i muri esterni: cambiandolo nella scheda In loco (campo \"Spessore muri esterni (tutti)\") o in Disegna > Spessori standard si aggiornano i muri esterni standard di tutte le stanze, quelli scritti a mano restano", "Bollino nel Rilievo in loco: E (esterno, 40) - S (vano scala o non riscaldato, 25) - A (altro ambiente, tramezza 10) - E. Se fuori dal lato c'è una linea già disegnata, vale ancora la distanza letta dalle linee", "I progetti salvati con la 2.50 tengono i loro spessori standard (tramezze 25): per riportarle a 10 cm basta Disegna > Spessori standard"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
