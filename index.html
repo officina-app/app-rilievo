@@ -479,6 +479,7 @@
   <div class="menu-item" data-lock onclick="ambMenuAction('edit')">✎ Modifica ambiente<small class="md">Nome, altezza e categoria; mostra superficie e pareti</small></div>
   <div class="menu-item" data-lock id="am-move" onclick="ambMenuAction('move')">✥ Sposta ambiente<small class="md">Trascina l'ambiente con i suoi muri; al rilascio si aggancia alla stanza vicina</small></div>
   <div class="menu-item" id="am-wpon" onclick="ambMenuAction('wpon')">⟲ Torna parametrico<small class="md">Le misure di adesso valgono come misure nette; tornano maniglie e legami con i vicini</small></div>
+  <div class="menu-item" data-lock id="am-no90" onclick="ambMenuAction('no90')">∠ Ambiente non ortogonale<small class="md">Gli angoli a 90 gradi non si mantengono quando cambi le misure</small></div>
   <div class="menu-item" data-lock id="am-vgraf" onclick="ambMenuAction('vgraf')">⌒ Volta sul disegno<small class="md">Tocchi i quattro punti d'imposta sul disegno, poi le quote</small></div>
   <div class="menu-item" data-lock id="am-volta" onclick="ambMenuAction('volta')">⌒ Volta<small class="md">A botte o a crociera: quote d'imposta e in chiave, tratteggio in pianta, H min e H max</small></div>
   <div class="menu-item" data-lock id="am-novolta" onclick="ambMenuAction('novolta')">⌓ Togli volta<small class="md">Torna al soffitto piano, con l'altezza dell'ambiente</small></div>
@@ -1123,6 +1124,71 @@ function hitAmbLabel(sx, sy) {
 
 // ---- quote dei muri: posizione, convalida (valida finche' la lunghezza resta quella validata)
 function segOk(g, len) { return !!g.ok && Math.abs(len - g.okLen) < 0.01; }
+// 2.49 QUOTA CONVALIDATA BLINDATA: una quota convalidata non cambia piu' lunghezza, con nessuna operazione. okRecs() fotografa le linee convalidate
+// prima (saveHistory, primo passo di un trascinamento), okBroken() guarda dopo: se una e' cambiata, o ha perso la convalida senza "Togli convalida",
+// commit / dragEnd annullano l'operazione con il messaggio. _okFree = linee che l'operazione in corso puo' cambiare (la quota che si sta impostando, quelle a cui si toglie la convalida)
+var _okBase = null, _okDrag = null; const _okFree = new Set();
+function okRecs() { const r = []; state.segments.forEach(g => { const A = state.points[g.a], B = state.points[g.b]; if (A && B && segOk(g, Math.hypot(B.x-A.x, B.y-A.y))) r.push(g); }); return r; }
+function okBroken(recs) {
+  if (!recs || !recs.length) return null;
+  const on = new Set(state.segments);
+  for (const g of recs) {
+    if (_okFree.has(g) || !on.has(g)) continue;                 // linea cancellata: la cancellazione resta permessa
+    const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) continue;
+    if (!segOk(g, Math.hypot(B.x-A.x, B.y-A.y))) return g;
+  }
+  return null;
+}
+function okMsg(g, short) {
+  const A = state.points[g.a], B = state.points[g.b], nm = (A && B ? A.label+' - '+B.label+' ' : '')+'('+num(g.okLen)+' m)';
+  if (short) return 'Bloccato: la quota '+nm+' è convalidata ("Togli convalida" per cambiarla)';
+  return 'La quota '+nm+' è convalidata e non cambia lunghezza: per cambiarla tocca la quota e scegli "Togli convalida"'+(locoOn() ? ' (o togli il lucchetto dalla scheda della stanza)' : '')+'.';
+}
+// 2.49 ORTOGONALITA': gli angoli a 90 gradi (tolleranza 2 gradi) si mantengono quando si sposta un punto o si cambia la lunghezza di un muro.
+// Non valgono negli ambienti segnati "non ortogonali" (`no90`, campo facoltativo) ne' in quelli che hanno gia' un angolo diverso da 90 (rilevati da soli)
+const ORTHO_COS = Math.sin(2*Math.PI/180), ORTHO_COL = Math.cos(2*Math.PI/180);
+function orthoAng(O, P, Q) {                                   // |coseno| dell'angolo in O tra O->P e O->Q
+  if (!O || !P || !Q) return 1;
+  const ax = P.x-O.x, ay = P.y-O.y, bx = Q.x-O.x, by = Q.y-O.y, la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+  return la < 1e-6 || lb < 1e-6 ? 1 : Math.abs(ax*bx + ay*by)/(la*lb);
+}
+function roomOrtho(a) {                                        // tutti gli angoli a 90 (o 270) gradi; i punti allineati non contano
+  const P = a.indices.map(i => state.points[i]), n = P.length;
+  if (P.some(p => !p)) return false;
+  for (let k = 0; k < n; k++) { const c = orthoAng(P[k], P[(k+n-1)%n], P[(k+1)%n]); if (c > ORTHO_COS && c < ORTHO_COL) return false; }
+  return true;
+}
+function orthoOff() { const s = new Set(); state.ambienti.forEach(a => { if (a.no90 || !roomOrtho(a)) a.indices.forEach(i => s.add(i)); }); return s; }
+// sposta i punti seeds [[i, dx, dy]] e fa seguire i vicini: lungo una quota convalidata il vicino trasla con il punto (la quota non cambia);
+// su un angolo retto il vicino scorre sull'altro suo muro (il muro tra i due non ruota, gli angoli restano a 90). Si propaga finche' serve.
+// Il punto mosso a mano fa seguire i vicini solo se ha lui stesso un angolo retto (la punta libera di una linea non trascina l'angolo a cui e' attaccata).
+// Ritorna le posizioni di prima (keepBack le rimette)
+function keepMove(seeds) {
+  const off = orthoOff(), adj = new Map(), D = new Map(), Qu = [];
+  const add = (i, j, g) => { if (!adj.has(i)) adj.set(i, []); adj.get(i).push([j, g]); };
+  state.segments.forEach(g => { if (g.a!==g.b && state.points[g.a] && state.points[g.b]) { add(g.a, g.b, g); add(g.b, g.a, g); } });
+  const right = (o, x) => (adj.get(o) || []).some(([y]) => y!==x && orthoAng(state.points[o], state.points[x], state.points[y]) <= ORTHO_COS);
+  const isSeed = new Set(seeds.map(s => s[0])), seedOk = new Set(seeds.filter(([i]) => !off.has(i) && (adj.get(i) || []).some(([x]) => right(i, x))).map(s => s[0]));
+  seeds.forEach(([i, dx, dy]) => { D.set(i, {x:dx, y:dy}); Qu.push(i); });
+  for (let h = 0; h < Qu.length; h++) {
+    const i = Qu[h], d = D.get(i), P = state.points[i]; if (!P || Math.hypot(d.x, d.y) < 1e-9) continue;
+    const orth = !off.has(i) && (!isSeed.has(i) || seedOk.has(i));
+    for (const [j, g] of adj.get(i) || []) {
+      if (D.has(j)) continue;
+      const Q = state.points[j]; if (locked(Q) || hid(Q)) continue;
+      const L = Math.hypot(Q.x-P.x, Q.y-P.y); if (L < 1e-6) continue;
+      let m = null;
+      if (segOk(g, L) && !_okFree.has(g)) m = {x:d.x, y:d.y};
+      else if (orth && !off.has(j) && right(j, i)) { const ux = (Q.x-P.x)/L, uy = (Q.y-P.y)/L, dp = d.x*ux + d.y*uy; m = {x:d.x - ux*dp, y:d.y - uy*dp}; }
+      if (!m || Math.hypot(m.x, m.y) < 1e-9) continue;
+      D.set(j, m); Qu.push(j);
+    }
+  }
+  const prev = [];
+  D.forEach((d, i) => { const p = state.points[i]; if (p && (d.x || d.y)) { prev.push([p, p.x, p.y]); p.x += d.x; p.y += d.y; } });
+  return prev;
+}
+function keepBack(prev) { prev.forEach(([p, x, y]) => { p.x = x; p.y = y; }); }
 function quotaInfo(i) {
   const g = state.segments[i]; if (!xqOn('qint', QINT) || !g || hid(g) || g.layer==='MURI_EST') return null;     // i muri esterni non hanno quota; spente da Vista (o non scelte all'esportazione) = nessuna quota
   const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return null;
@@ -2727,6 +2793,12 @@ function ambMenuAction(action) {
   if (action==='demo') { setDemo([], [], [s.idx], amb.fase!=='demo'); return; }
   if (action==='wpon') { wpRestore(s.idx); return; }
   if (action==='move') { moveRoomStart(s.idx); return; }
+  if (action==='no90') {                                   // 2.49: campo facoltativo `no90`, salvato nel progetto
+    saveHistory(); if (amb.no90) delete amb.no90; else amb.no90 = 1;
+    commit(amb.no90 ? amb.name+': non ortogonale, gli angoli non si mantengono quando cambi le misure.'
+                    : amb.name+(roomOrtho(amb) ? ': ortogonale, gli angoli a 90 gradi si mantengono.' : ': tolto il segno, ma ha angoli non a 90 gradi e l\'app continua a non mantenerli.'));
+    return;
+  }
   if (action==='volta') { voltaDialog(s.idx); return; }
   if (action==='vgraf') { voltaGraf(s.idx); return; }
   if (action==='novolta') { const a = state.ambienti[s.idx]; if (!a || !a.volta) return; saveHistory(); delete a.volta; state.sel = null; commit('Volta tolta da '+a.name+': soffitto piano.'); return; }
@@ -3324,7 +3396,20 @@ function dragPointTo(i, w, sx, sy) {
     if (r) { x=r.x; y=r.y; guides=r.guides; marks=r.marks; text=r.text; }
   }
   const js = jointSlide(i, x, y); if (js) { x = js.x; y = js.y; text = 'scorre lungo il muro esistente'; }
-  P.x=x; P.y=y;
+  // 2.49: lungo una quota convalidata il punto scorre solo di traverso (il vicino trasla con lui); gli angoli retti si mantengono (keepMove)
+  let dx = x-P.x, dy = y-P.y; const us = [];
+  state.segments.forEach(g => {
+    const j = g.a===i ? g.b : g.b===i ? g.a : null, Q = j!==null && j!==i ? state.points[j] : null; if (!Q) return;
+    const L = Math.hypot(Q.x-P.x, Q.y-P.y); if (L > 1e-6 && segOk(g, L)) us.push({x:(Q.x-P.x)/L, y:(Q.y-P.y)/L});
+  });
+  if (us.length) {
+    if (us.some(u => Math.abs(u.x*us[0].y - u.y*us[0].x) > 0.05)) { dx = 0; dy = 0; }
+    else { const dp = dx*us[0].x + dy*us[0].y; dx -= us[0].x*dp; dy -= us[0].y*dp; }
+  }
+  const prev = keepMove([[i, dx, dy]]), bad = okBroken(_okDrag || okRecs());
+  if (bad) { keepBack(prev); text = okMsg(bad, true); }
+  else if (us.length && Math.hypot(x-P.x, y-P.y) > 0.005) text = 'quota convalidata: il punto si sposta senza cambiarla';
+  x = P.x; y = P.y;
   if (text) { si.textContent=text; si.style.display='block'; } else si.style.display='none';
   const t=w2s(x,y); setAssist(sx,sy,{corner,guides,marks,tx:t.x,ty:t.y});
 }
@@ -4625,9 +4710,12 @@ function wpLenFromQuota(si, m) {
   try {
     const so = wpSideOf(si); if (!so || !so.whole) return false;
     saveHistory();
-    const txt = wpDo({R:so.R, k:so.k, sd:so.R.S[so.k], e:null}, 'e1', m);
-    if (txt===null) { state.history.pop(); return false; }
-    const g = state.segments[si]; if (g) { g.ok = true; g.okLen = m; }
+    const g = state.segments[si]; if (g) _okFree.add(g);   // 2.49: la quota che si imposta puo' cambiare; se il lato accanto (fine del lato) non si puo' muovere si prova quello all'inizio
+    let txt = wpDo({R:so.R, k:so.k, sd:so.R.S[so.k], e:null, skip:g}, 'e1', m), er = _wpLocoErr;
+    if (txt===null) { txt = wpDo({R:so.R, k:so.k, sd:so.R.S[so.k], e:null, skip:g}, 'e0', m); if (txt===null) er = er || _wpLocoErr; }
+    _wpLocoErr = null;
+    if (txt===null) { state.history.pop(); _okBase = null; _okFree.clear(); if (er && er.err) { setTip(er.err, 'warn'); draw(); return true; } return false; }
+    if (g) { g.ok = true; g.okLen = m; }
     wpApply([so.R.rid], txt+', validato.');
     return true;
   } catch (err) { console.error('muri parametrici', err); return false; }
@@ -4682,7 +4770,14 @@ function wpDo(W, h, v) {
       const R1 = wpRing(W.R.a); return W.R.a.name+': misura netta '+num(v)+' m (si sposta la parete '+wpDirName(R1.S[r.mv])+')';
     }
     const m0 = wpNet(W.R, W.k); if (m0===null) return null;
-    if (wpLkHas(W.R.a, W.k, wpOpp(W.R, W.k))) { _wpLocoErr = {err:'Misura validata (lucchetto): per cambiarla togli prima il lucchetto dalla scheda della stanza (Rilievo in loco).'}; return null; }
+    const jo = wpOpp(W.R, W.k);
+    if (wpLkHas(W.R.a, W.k, jo)) { _wpLocoErr = {err:'Misura validata (lucchetto): per cambiarla togli prima il lucchetto dalla scheda della stanza (Rilievo in loco).'}; return null; }
+    const qg = wpQBlock(W.R, W.k);                         // 2.49: il lato cambierebbe una quota convalidata: si sposta il lato di fronte, se si puo'
+    if (qg) {
+      if (jo < 0 || wpQBlock(W.R, jo) || wpLkSide(W.R.a, jo)) { _wpLocoErr = {err:okMsg(qg)}; return null; }
+      if (!wpOffset(W.R, jo, v - m0)) return null;
+      wpStamp(W.R.a); return W.R.a.name+': misura netta '+num(v)+' m (si è spostato il lato di fronte: una quota convalidata non cambia)';
+    }
     if (!wpOffset(W.R, W.k, v - m0)) return null;
     wpStamp(W.R.a); return W.R.a.name+': misura netta '+num(v)+' m';
   }
@@ -4690,6 +4785,7 @@ function wpDo(W, h, v) {
   if (h==='mid') {
     if (!W.e) return null;
     if (wpLkSide(W.R.a, W.k) || wpLkSide(W.O.a, W.ko)) { _wpLocoErr = {err:'Una delle due stanze ha una misura validata su questa tramezza (lucchetto): per spostarla togli prima il lucchetto.'}; return null; }
+    const qm = wpQBlock(W.R, W.k) || wpQBlock(W.O, W.ko); if (qm) { _wpLocoErr = {err:okMsg(qm)}; return null; }      // 2.49
     if (!wpOffset(W.R, W.k, v)) return null;
     const O = wpRing(W.O.a); if (!O || !wpOffset(O, W.ko, -v)) { const R = wpRing(W.R.a); if (R) wpOffset(R, W.k, -v); return null; }
     const R1 = wpStamp(W.R.a), O1 = wpStamp(W.O.a), a = R1 && wpNet(R1, W.k), b = O1 && wpNet(O1, W.ko);
@@ -4697,6 +4793,7 @@ function wpDo(W, h, v) {
   }
   const m = W.R.m, adj = h==='e1' ? (W.k+1)%m : (W.k+m-1)%m, na = W.R.S[adj], dot = W.sd.ux*na.nx + W.sd.uy*na.ny;      // gialle: si allunga il lato muovendo il lato accanto
   if (Math.abs(dot) < 0.2) return null;
+  const qe = wpQBlock(W.R, adj, W.skip); if (qe) { _wpLocoErr = {err:okMsg(qe)}; return null; }      // 2.49: W.skip = la quota che si sta impostando
   const mv = (h==='e1' ? 1 : -1)*(v - W.sd.L);
   if (!wpOffset(W.R, adj, mv*dot)) return null;
   wpStamp(W.R.a); return W.R.a.name+': lato '+num(v)+' m';
@@ -4721,7 +4818,7 @@ function wpDragTo(sx, sy, ev) {
 function wpUp() {
   const d = state.wpDrag; state.wpDrag = null; hideTooltip(); if (!d) return;
   try {
-    if (state.moved) { dragEnd(true); commit('Muro modificato: le misure nette degli altri ambienti non sono cambiate.'+wpResText(), true); return; }
+    if (state.moved) { if (dragEnd(true)) commit('Muro modificato: le misure nette degli altri ambienti non sono cambiate.'+wpResText(), true); else { persist(); draw(); } return; }
     wpDragBack(d); dragEnd(false); wpAsk(d.h);              // tocco senza trascinare: il numero si scrive
   } catch (err) { console.error('muri parametrici', err); dragEnd(false); draw(); }
 }
@@ -4928,20 +5025,30 @@ function wpCls(R, k, per) {
 function wpLk(a, m) { return Array.isArray(a.lk) ? a.lk.filter(p => Array.isArray(p) && (m===undefined || (p[0] < m && p[1] < m))) : []; }
 function wpLkHas(a, k, j) { return wpLk(a).some(p => (p[0]===k && p[1]===j) || (p[0]===j && p[1]===k)); }
 function wpLkSide(a, s) { return wpLk(a).some(p => p[0]===s || p[1]===s); }
+// 2.49: spostare il lato k cambia la lunghezza delle due linee che lo toccano sui lati accanto: la prima con la quota convalidata, o null (skip = non conta)
+function wpQBlock(R, k, skip) {
+  if (!R || !(k >= 0) || k >= R.m) return null;
+  const ix = R.a.indices, n = ix.length, i0 = R.ci[k], i1 = R.ci[(k+1)%R.m];
+  for (const [u, v] of [[ix[(i0+n-1)%n], ix[i0]], [ix[i1], ix[(i1+1)%n]]]) {
+    const g = state.segments.find(h => (h.a===u && h.b===v) || (h.a===v && h.b===u)), A = g && state.points[g.a], B = g && state.points[g.b];
+    if (g && g!==skip && A && B && segOk(g, Math.hypot(B.x-A.x, B.y-A.y))) return g;
+  }
+  return null;
+}
 // quale lato si muove quando cambia la misura netta dal lato k (keep = lato da tenere fermo, scelto da chi misura)
 function wpLocoSide(R, k, per, keep) {
   const j = wpOpp(R, k), a = R.a;
   if (j < 0) return {err:'Su questo lato non trovo un lato di fronte da cui misurare.'};
   if (wpLkHas(a, k, j)) return {j, err:'Misura validata (lucchetto): per cambiarla togli prima il lucchetto.'};
-  const ck = wpCls(R, k, per), cj = wpCls(R, j, per); let mv;
+  const ck = wpCls(R, k, per), cj = wpCls(R, j, per), bq = s => wpQBlock(R, s), bl = s => wpLkSide(a, s) || !!bq(s); let mv;   // 2.49: anche le quote convalidate bloccano
   if (keep===k || keep===j) mv = keep===k ? j : k;
   else if (ck && !cj) mv = j;
   else if (cj && !ck) mv = k;
-  else if (ck && cj) { if (ck===2 && cj===1) mv = k; else if (cj===2 && ck===1) mv = j; else return {j, ask:[k, j]}; }
+  else if (ck && cj) { if (ck===2 && cj===1) mv = k; else if (cj===2 && ck===1) mv = j; else if (bl(k)!==bl(j)) mv = bl(k) ? j : k; else return {j, ask:[k, j]}; }
   else mv = j;
-  if (wpLkSide(a, mv)) {                                   // il lato di una misura validata non si muove: si sposta l'altro
+  if (bl(mv)) {                                            // il lato di una misura validata (o che cambierebbe una quota convalidata) non si muove: si sposta l'altro
     const o = mv===j ? k : j;
-    if (wpLkSide(a, o) || keep===o) return {j, err:'Tutti e due i lati appartengono a misure validate: togli prima un lucchetto.'};
+    if (bl(o) || keep===o) { const g = bq(mv) || bq(o); return {j, err: g ? okMsg(g) : 'Tutti e due i lati appartengono a misure validate: togli prima un lucchetto.'}; }
     mv = o;
   }
   return {j, mv};
@@ -5150,7 +5257,7 @@ function locoRender() {
   if (el.dataset.mode!==mode) { el.dataset.mode = mode; el.innerHTML = mode==='r' ? LOCO_R : LOCO_C; locoBind(el); }
   if (R) {
     const F = locoFields(R), f = state.locoF; if (f.i >= F.length) f.i = F.length - 1;
-    const fd = F[f.i], lk = fd.t==='net' && wpLkHas(R.a, fd.k, fd.j), inp = $id('lb-in'), unit = fd.t==='ext' ? 'cm' : 'm';
+    const fd = F[f.i], lk = fd.t==='net' && locoLocked(R, fd), inp = $id('lb-in'), unit = fd.t==='ext' ? 'cm' : 'm';
     setTxt($id('lb-name'), R.a.name); setTxt($id('lb-pos'), (f.i+1)+' di '+F.length);
     setTxt($id('lb-lab'), fd.lab+' ('+unit+')'+(fd.t==='net' ? (lk ? ' 🔒' : '') : ''));
     const ph = locoVal(R, fd); if (inp.placeholder!==ph) inp.placeholder = ph;
@@ -5216,10 +5323,16 @@ function locoLockTap() {
   const R = locoRoom(); if (!R) return;
   const fd = locoFields(R)[state.locoF.i]; if (!fd || fd.t!=='net') return;
   const a = R.a; saveHistory();
-  if (wpLkHas(a, fd.k, fd.j)) { a.lk = wpLk(a).filter(p => !((p[0]===fd.k && p[1]===fd.j) || (p[0]===fd.j && p[1]===fd.k))); if (!a.lk.length) delete a.lk; commit(a.name+': lucchetto tolto, la misura si può cambiare.', true); }
+  if (locoLocked(R, fd)) {                                 // 2.49: il lucchetto tolto toglie anche la convalida delle quote che bloccano la misura
+    a.lk = wpLk(a).filter(p => !((p[0]===fd.k && p[1]===fd.j) || (p[0]===fd.j && p[1]===fd.k))); if (!a.lk.length) delete a.lk;
+    let g, n = 0; while (n++ < 8 && (g = wpQBlock(R, fd.k) || wpQBlock(R, fd.j))) { g.ok = false; _okFree.add(g); }
+    commit(a.name+': lucchetto tolto (anche dalle quote della misura), la misura si può cambiare.', true);
+  }
   else { const v = wpNet(R, fd.k); a.lk = wpLk(a).concat([[fd.k, fd.j, wpR4(v)]]); locoValQuotes(a, fd.k, fd.j, v); commit(a.name+': '+fd.lab.toLowerCase()+' '+num(v)+' m validata (lucchetto).', true); }
   locoRender(); locoFocus();
 }
+// 2.49: la misura della scheda e' bloccata dal lucchetto o dalle quote convalidate (nessuno dei due lati si puo' spostare)
+function locoLocked(R, fd) { return wpLkHas(R.a, fd.k, fd.j) || !!(wpQBlock(R, fd.k) && wpQBlock(R, fd.j)); }
 // la misura validata valida anche le quote delle linee che la misurano (lati accanto lunghi quanto la misura)
 function locoValQuotes(a, k, j, v) {
   const R = wpRing(a); if (!R) return; const m = R.m;
@@ -5982,12 +6095,12 @@ function quotaMenuAction(action) {
   const g = state.segments[sl.idx]; if (!g) return;
   const A = state.points[g.a], B = state.points[g.b], len = Math.hypot(B.x-A.x, B.y-A.y);
   if (action==='validate')   { saveHistory(); g.ok = true; g.okLen = len; commit('Misura validata.'); return; }
-  if (action==='unvalidate') { saveHistory(); g.ok = false; commit('Convalida tolta.'); return; }
+  if (action==='unvalidate') { saveHistory(); g.ok = false; _okFree.add(g); commit('Convalida tolta: la misura si può cambiare.'); return; }
   if (action==='reset')      { saveHistory(); delete g.qo; commit('Quota riportata al suo posto.'); return; }
   if (action==='set') {
     askDialog('Misura del muro '+A.label+' - '+B.label, [
       {label:'Misura rilevata (m)', id:'m', value:len.toFixed(2), type:'number'},
-    ], 'Gli estremi si spostano in modo uguale lungo il muro e i muri collegati seguono.', v => {
+    ], 'Gli estremi si spostano in modo uguale lungo il muro e i muri collegati seguono (gli angoli a 90 gradi restano a 90). Le quote convalidate non cambiano.', v => {
       const m = parseFloat(v.m); if (!isFinite(m) || m<=0) return;
       if (wpLenFromQuota(sl.idx, m)) return;         // lato intero di un ambiente parametrico: si sposta il lato accanto, l'ambiente resta parametrico
       setWallLength(sl.idx, m);
@@ -6000,27 +6113,30 @@ function setWallLength(si, m) {
   const g = state.segments[si], A = state.points[g.a], B = state.points[g.b];
   const len = Math.hypot(B.x-A.x, B.y-A.y); if (len < 1e-6) return;
   if (locked(A) && locked(B)) { lockTip(); return; }
-  saveHistory();
-  const touched = [];
-  state.segments.forEach((h,k) => {
-    if (h.a===g.a || h.b===g.a || h.a===g.b || h.b===g.b) { const l0 = segLength(k); touched.push({k, l0, ok0:segOk(h,l0)}); }
-  });
-  // di norma meta' per parte; nel Progetto un estremo del rilievo resta fermo e si muove solo quello nuovo
-  const ux = (B.x-A.x)/len, uy = (B.y-A.y)/len, dA = (m-len)*(locked(B) ? 1 : locked(A) ? 0 : 0.5), dB = (m-len) - dA;
-  A.x -= ux*dA; A.y -= uy*dA; B.x += ux*dB; B.y += uy*dB;
-  let lost = 0;
-  touched.forEach(t => {
-    const h = state.segments[t.k], l1 = segLength(t.k);
+  saveHistory(); _okFree.add(g);                     // 2.49: la quota che si imposta e' l'unica che puo' cambiare
+  const rec = _okBase ? _okBase.r : okRecs(), sl = k => { const h = state.segments[k], P = state.points[h.a], Q = state.points[h.b]; return P && Q ? Math.hypot(Q.x-P.x, Q.y-P.y) : 0; };
+  const l0 = state.segments.map((h, k) => sl(k));
+  // di norma meta' per parte; nel Progetto un estremo del rilievo resta fermo e si muove solo quello nuovo.
+  // 2.49: i muri collegati ad angolo retto traslano (la stanza resta ortogonale, keepMove); se cosi' cambierebbe una quota convalidata
+  // si prova a muovere un estremo solo, poi l'altro; se non basta la misura non si imposta e si dice quale quota blocca
+  const ux = (B.x-A.x)/len, uy = (B.y-A.y)/len, fr = locked(B) ? [1] : locked(A) ? [0] : [0.5, 1, 0];
+  let bad = null;
+  for (const f of fr) {
+    const dA = (m-len)*f, dB = (m-len) - dA, prev = keepMove([[g.a, -ux*dA, -uy*dA], [g.b, ux*dB, uy*dB]]);
+    bad = okBroken(rec); if (!bad) break;
+    keepBack(prev);
+  }
+  if (bad) { state.history.pop(); _okBase = null; _okFree.clear(); setTip(okMsg(bad)+' La misura di '+A.label+' - '+B.label+' non si può impostare così.', 'warn'); draw(); return; }
+  state.segments.forEach((h, k) => {                  // i serramenti restano alla stessa distanza dall'inizio delle linee che cambiano lunghezza
+    const l1 = sl(k); if (l1 < 1e-6 || Math.abs(l1 - l0[k]) < 1e-9) return;
     state.openings.forEach(op => {
-      if (op.segIdx!==t.k || l1<1e-6) return;
+      if (op.segIdx!==k) return;
       const hw = Math.min(op.width/l1/2, 0.49);
-      op.t = Math.min(Math.max(op.t*t.l0/l1, hw), 1-hw);
+      op.t = Math.min(Math.max(op.t*l0[k]/l1, hw), 1-hw);
     });
-    if (t.k!==si && t.ok0 && !segOk(h,l1)) lost++;
   });
   g.ok = true; g.okLen = m;
-  commit('Muro '+A.label+' - '+B.label+' = '+m.toFixed(2)+' m, validato.'+
-         (lost ? ' Attenzione: '+lost+(lost===1?' muro già validato è cambiato':' muri già validati sono cambiati')+' di oltre 1 cm e tornano da validare (fucsia).' : ''));
+  commit('Muro '+A.label+' - '+B.label+' = '+m.toFixed(2)+' m, validato.');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -6051,6 +6167,9 @@ function showMenu(id, x, y, above, avoid) {
     document.getElementById('am-novolta').style.display = has && !lk ? '' : 'none';
     document.getElementById('am-wpon').style.display = a && a.wpx && !lk ? '' : 'none';
     document.getElementById('am-move').style.display = a && a.wt && !a.wpx && !lk ? '' : 'none';
+    const n9 = document.getElementById('am-no90'), geo = !!a && !roomOrtho(a);          // 2.49: interruttore; l'ambiente con angoli non a 90 e' gia' non ortogonale da solo
+    n9.firstChild.textContent = (a && a.no90 ? '✔ ' : '')+'∠ Ambiente non ortogonale';
+    n9.lastChild.textContent = a && a.no90 ? 'Segnato: gli angoli non si mantengono. Tocca per tornare ortogonale' : geo ? 'Rilevato: ha angoli non a 90 gradi, l\'app non li mantiene' : 'Gli angoli a 90 gradi non si mantengono quando cambi le misure';
     document.getElementById('am-volta').firstChild.textContent = has ? '⌒ Modifica volta (finestra)' : '⌒ Volta (finestra)';
     document.getElementById('am-vgraf').firstChild.textContent = has ? '⌒ Rifai i punti sul disegno' : '⌒ Volta sul disegno';
   }
@@ -7109,11 +7228,13 @@ canvas.addEventListener('pointermove', e => {
     const d = state.drag;
     if (d.kind!=='base') dragSnap();                           // la base non entra nell'annulla
     if (d.kind==='point')    dragPointTo(d.idx, w, sx, sy);
-    if (d.kind==='multi')    { const m = alignMulti(d, w.x-d.x0, w.y-d.y0, sx, sy), dx=m.dx, dy=m.dy;
-      d.pts.forEach(p => { state.points[p.i].x=p.x; state.points[p.i].y=p.y; });                       // gli attacchi scorrono sul loro muro: lo si legge dalla posizione di partenza
+    if (d.kind==='multi')    { const m = alignMulti(d, w.x-d.x0, w.y-d.y0, sx, sy), dx=m.dx, dy=m.dy, pv = d.pts.map(p => [state.points[p.i], state.points[p.i].x, state.points[p.i].y]);
+      d.pts.forEach(p => { state.points[p.i].x=p.x; state.points[p.i].y=p.y; });                      // gli attacchi scorrono sul loro muro: lo si legge dalla posizione di partenza
       if (!d.mv) { const ps = new Set(d.pts.map(p => p.i)), sg = new Set(); state.segments.forEach((g, k) => { if (ps.has(g.a) && ps.has(g.b)) sg.add(k); }); d.mv = {segs:sg, pts:ps}; }
       const to = d.pts.map(p => jointSlide(p.i, p.x+dx, p.y+dy, d.mv) || {x:p.x+dx, y:p.y+dy});
       d.pts.forEach((p, k) => { state.points[p.i].x=to[k].x; state.points[p.i].y=to[k].y; });
+      const okb = okBroken(_okDrag || okRecs());                  // 2.49: una quota convalidata non cambia, la selezione resta dove era
+      if (okb) { keepBack(pv); showTooltip(okMsg(okb, true), e.clientX, e.clientY); draw(); return; }
       const rooms = state.ambienti.filter(am => live(am) && am.indices.some(x => d.mv.pts.has(x)));
       if (rooms.length) showTooltip(rooms.map(am => am.name+': '+Math.abs(shoelace(am.indices.map(x => state.points[x]))).toFixed(2)+' m²').join('  |  '), e.clientX, e.clientY);
       d.pen.forEach(q => { state.pencilLines[q.i].pts = q.o.map(p => ({x:p.x+dx, y:p.y+dy})); }); }
@@ -7202,7 +7323,7 @@ function endPointer(e) {
     if (!state.moved) handleClick(sx, sy, e.clientX, e.clientY);
     draw(); return;
   }
-  if (state.drag && state.drag.kind==='room') { const d = state.drag, mv = state.moved; state.drag = null; hideTooltip(); dragEnd(mv); if (mv) moveRoomEnd(d.rid); else draw(); return; }
+  if (state.drag && state.drag.kind==='room') { const d = state.drag, mv = state.moved; state.drag = null; hideTooltip(); const ok = dragEnd(mv); if (mv && ok) moveRoomEnd(d.rid); else draw(); return; }
   if (state.drag && (state.drag.kind==='multi' || state.drag.kind==='base')) { hideTooltip(); state.drag=null; dragEnd(true); persist(); draw(); return; }
   if (state.drag) {
     const wasMoved = state.moved, dk = state.drag.kind, di = state.drag.idx;
@@ -7218,10 +7339,17 @@ function endPointer(e) {
 
 // annulla dei trascinamenti: la foto dello stato si prende al primo movimento, PRIMA di spostare,
 // e va nella storia solo se il trascinamento e' stato vero (non un clic)
-function dragSnap() { if (!state.dragSnap) state.dragSnap = snapshot(); }
+function dragSnap() { if (!state.dragSnap) { state.dragSnap = snapshot(); _okDrag = okRecs(); } }
+// 2.49: false = il trascinamento cambiava una quota convalidata ed e' stato annullato (messaggio gia' dato)
 function dragEnd(keep) {
-  if (keep && state.dragSnap) { state.redo = []; state.history.push(state.dragSnap); if (state.history.length>60) state.history.shift(); }
+  const rec = _okDrag; _okDrag = null;
+  if (keep && state.dragSnap) {
+    const bad = okBroken(rec);
+    if (bad) { const t = okMsg(bad); restore(state.dragSnap); state.dragSnap = null; setTip(t+' Spostamento annullato.', 'warn'); return false; }
+    state.redo = []; state.history.push(state.dragSnap); if (state.history.length>60) state.history.shift();
+  }
   state.dragSnap = null;
+  return true;
 }
 
 canvas.addEventListener('dblclick', e => { const p=evtPos(e); handleDoubleClick(p.x,p.y); });
@@ -7478,14 +7606,14 @@ function restore(o) {
   state.multi=false; state.moveSel=false;
 }
 function saveHistory() {
-  state.history.push(snapshot()); state.redo = [];
+  const snp = snapshot(); state.history.push(snp); state.redo = []; _okBase = {r:okRecs(), s:snp};          // 2.49: le quote convalidate di adesso, che commit controlla
   if (state.history.length>60) state.history.shift();
 }
 function undo() {
   hideAllMenus();
   if (!state.history.length) { setTip('Niente da annullare.'); return; }
   const s = state.history.pop(); state.redo.push(snapshot()); if (state.redo.length>60) state.redo.shift();
-  restore(s);
+  restore(s); _okBase = null; _okFree.clear();
   if (state.tool!=='wall') { commit('Annullato.'); return; }
   // dentro un muro, come nei CAD: sparisce l'ultimo tratto e si riparte dal vertice da cui partiva; lo strumento resta Muro
   if (s.wo!==undefined) state.wallOrigin = s.wo;
@@ -7494,10 +7622,14 @@ function undo() {
 }
 // commit = aggiorna barra di stato, ridisegna e salva
 function commit(msg, keepTool){
+  // 2.49: l'operazione appena fatta (dall'ultimo saveHistory) ha cambiato una quota convalidata: si annulla e si dice quale
+  const rec = _okBase; _okBase = null; let okw = null;
+  const top = state.history[state.history.length-1], bad = rec && rec.s===top ? okBroken(rec.r) : null; _okFree.clear();
+  if (bad) { okw = okMsg(bad)+' Operazione annullata.'; restore(state.history.pop()); msg = null; }
   assignFase(); roomRenum(); autoWallThick();
   if (state.wallOrigin!==null && !state.points[state.wallOrigin]) state.wallOrigin = null;    // vertice sparito (annulla, cancella tutto): niente muro appeso
   if (!keepTool && state.tool!=='select' && state.tool!=='point' && !(state.tool==='wall' && state.wallOrigin!==null)) setTool('select');
-  updateStatus(); draw(); persist(); if (msg) setTip(msg, 'ok'); DIRTY = true; fileFlag();
+  updateStatus(); draw(); persist(); if (msg) setTip(msg, 'ok'); if (okw) setTip(okw, 'warn'); DIRTY = true; fileFlag();
 }
 
 let _persistTimer=null;
@@ -12165,7 +12297,7 @@ function redo() {
   hideAllMenus();
   if (!state.redo.length) { setTip('Niente da ripetere.'); return; }
   const r = state.redo.pop(), keep = state.redo;
-  state.history.push(snapshot()); restore(r); state.redo = keep; commit('Ripetuto.');
+  state.history.push(snapshot()); restore(r); state.redo = keep; _okBase = null; _okFree.clear(); commit('Ripetuto.');
 }
 // F1: dati del rilievo (nel .json come campo facoltativo "meta")
 var META_FIELDS = [['oggetto','Oggetto (titolo della tavola)'], ['indirizzo','Indirizzo e Comune'], ['catasto','Dati catastali (foglio, particella, sub)'], ['piano','Piano'],
@@ -12490,8 +12622,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.48';
-const APP_NOTE = ["Rilievo in loco: nuovo tasto \"In loco\" accanto a SdF. Mentre batti le misure le stanze vicine restano ferme e le tramezze mostrano lo scostamento (esempio \"10-3\": tramezza voluta 10 cm, ne mancano 3). Vale per gli ambienti parametrici (Stanza, stanza al tocco, ambiente da punti con punti suoi); su un progetto che non ne ha, l'app lo dice e non tocca nulla", "Scheda della stanza: tocchi la stanza e scrivi le misure nette un campo alla volta (larghezza, lunghezza, altezza, spessore del muro esterno), con Avanti e Indietro, pensata per il telefono con la tastiera aperta. Il lato misurato è evidenziato in giallo", "Lucchetto: la misura scritta nella scheda è validata e non cambia più (né con le maniglie né con Riassembla); valida anche le quote delle linee che la misurano. Un tocco sul lucchetto lo toglie", "Perimetro: l'app propone le pareti esterne (bollino E) e le tieni ferme; un tocco sul bollino le fa diventare vano scala (S) e viceversa. Cambiando una misura si sposta la parete interna; tra parete esterna e vano scala si sposta quella sul vano scala; con due pareti esterne l'app chiede quale tenere ferma", "Riassembla: rimette insieme le stanze con le pareti esterne allineate su un filo unico, senza cambiare le misure nette; la differenza va sulle tramezze, e oltre 5 cm la tramezza è segnalata da verificare", "Stanza al tocco: con Stanza tocchi il disegno (o la foto) dove sta la stanza e scrivi le misure. Entro 1 m da un'altra stanza si aggancia da sola, con la tramezza standard e i lati a filo; \"Togli aggancio\" la lascia dove l'hai messa. L'aggancio vale anche per la stanza trascinata e per Sposta ambiente", "Sposta ambiente (menu dell'ambiente): trascini l'ambiente con i suoi muri e i serramenti, anche più volte di seguito; al rilascio si aggancia alla stanza vicina", "La selezione non si perde più dopo uno spostamento", "Quando sotto il dito ci sono più oggetti (punto, muro, finestra, quota...) compare un elenco con voci grandi per scegliere quale", "Ricalco sul telefono: le proposte incerte si controllano una alla volta, centrate e ingrandite, con Tieni e Scarta; l'elenco completo resta", "Corretto: con lo schema delle specchiature acceso, nascondendo il menu il pulsante per riaprirlo finiva sotto lo schema e l'app restava bloccata anche dopo la riapertura"];
+const APP_VERSION = '2.49';
+const APP_NOTE = ["Quota convalidata blindata: una quota convalidata (Valida così com'è, Imposta misura, Valida tutte, lucchetto della scheda In loco) non cambia più lunghezza con nessuna operazione: punti e linee trascinati, maniglie dei muri (anche le blu), Imposta misura su un altro muro, Sposta ambiente, Riassembla, Spezza. Spostare un ambiente o un muro intero senza cambiarne la lunghezza resta possibile", "Quando un'operazione cambierebbe una quota convalidata l'app usa l'altra possibilità, se c'è (si sposta l'altro estremo o il lato di fronte, il punto scorre senza cambiarla); altrimenti l'operazione non si fa e il messaggio dice quale quota blocca. Si sblocca dal menu della quota con \"Togli convalida\"", "Lucchetto della scheda In loco e quote convalidate vanno insieme: il lucchetto valida le quote della misura, toglierlo toglie anche la loro convalida, e una quota convalidata blocca la misura anche nella scheda", "Angoli a 90 gradi: cambiando la lunghezza di un muro (Imposta misura) o spostando un punto che fa angolo retto, i muri perpendicolari restano perpendicolari e la stanza si riadatta invece di deformarsi (tolleranza 2 gradi). Gli ambienti parametrici restano ortogonali come prima, anche a L", "Ambiente non ortogonale: un ambiente che ha già angoli diversi da 90 gradi è riconosciuto da solo e i suoi angoli non si mantengono; in più, nel menu dell'ambiente, la voce \"Ambiente non ortogonale\" lo segna a mano (si salva nel progetto, un altro tocco lo toglie). I progetti già fatti si aprono come prima"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
