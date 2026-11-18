@@ -626,9 +626,9 @@
 
 <input type="file" id="file-photo" accept="image/*" capture="environment" style="display:none">
 <input type="file" id="file-plan" accept=".pdf,application/pdf,image/*" style="display:none">
-<input type="file" id="file-dxf" accept=".dxf" style="display:none">
+<input type="file" id="file-dxf" accept=".dxf,.txt,text/plain" style="display:none">
 <input type="file" id="file-plan-cam" accept="image/*" capture="environment" style="display:none">
-<input type="file" id="file-json"  accept=".json,application/json"        style="display:none">
+<input type="file" id="file-json"  accept=".json,.txt,application/json,text/plain" style="display:none">
 
 <script>
 // ═══════════════════════════════════════════════════════════
@@ -7938,18 +7938,23 @@ let startNotes = [];          // note di aggiornamento del rilievo ritrovato nel
 // Tutte le esportazioni passano da download(). Se il browser sa condividere file (telefono/tablet) compare una
 // finestra con Condividi / Salva / Annulla; altrimenti (desktop) salvataggio diretto come prima della 2.53.
 // Piu' file generati nello stesso momento (es. tabelle JPG a piu' pagine) = una sola finestra e una sola condivisione.
-let _shareQ = null;
-function download(name, content, mime) {
+// 2.54: Chrome su Android condivide solo alcuni tipi (pdf, immagini, txt...). JSON/DXF/CSV rifiutati = stesso contenuto come
+// text/plain con nome "<nome>.txt" (Salva resta .json/.dxf). done() = file davvero condiviso o salvato (Annulla non lo chiama).
+const TXT_OK = /\.(json|dxf|csv)$/i;
+let _shareQ = null, _shareTxt = false;          // _shareTxt: il telefono ha gia' rifiutato un formato di testo in questa sessione
+function download(name, content, mime, done) {
   const blob = new Blob([content], {type: mime});
   const file = shareFile(name, blob, mime);
-  if (!file) { saveBlob(name, blob); return; }
+  if (!file) { saveBlob(name, blob); if (done) done(); return; }
   if (!_shareQ) { _shareQ = []; setTimeout(() => { const q = _shareQ; _shareQ = null; shareDialog(q); }, 0); }
-  _shareQ.push({name, blob, file});
+  _shareQ.push({name, blob, file, done});
 }
-function shareFile(name, blob, mime) {          // File condivisibile (nome invariato) o null; tipo non accettato = riprova come file generico
+function shareFile(name, blob, mime) {          // File condivisibile o null: tipo originale, file generico, poi (solo testo) text/plain .txt
   if (!navigator.canShare || !navigator.share || typeof File !== 'function') return null;
-  for (const t of [mime, 'application/octet-stream']) {
-    try { const f = new File([blob], name, {type: t}); if (navigator.canShare({files: [f]})) return f; } catch (e) {}
+  const tries = _shareTxt && TXT_OK.test(name) ? [] : [[name, mime], [name, 'application/octet-stream']];
+  if (TXT_OK.test(name)) tries.push([name+'.txt', 'text/plain']);
+  for (const [n, t] of tries) {
+    try { const f = new File([blob], n, {type: t}); if (navigator.canShare({files: [f]})) return f; } catch (e) {}
   }
   return null;
 }
@@ -7963,17 +7968,27 @@ function shareDialog(q) {
   names.textContent = q.map(x => x.name).join('\n');
   names.style.cssText = 'font-size:13px;line-height:1.5;white-space:pre-line;word-break:break-all;margin-bottom:6px';
   msg.style.cssText = 'font-size:13px;color:#ffe066';
-  const close = () => ov.remove();
+  const info = document.createElement('div');
+  info.style.cssText = 'font-size:13px;color:#9fd0ff;margin-bottom:4px';
+  const showTxt = () => { info.textContent = q.some(x => x.file.name !== x.name) ? 'Si invia come .txt: chi lo riceve puo\' aprirlo con Apri progetto (o Importa DXF) senza rinominarlo.' : ''; };
+  showTxt();
+  const close = () => ov.remove(), done = () => { q.forEach(x => { if (x.done) x.done(); }); close(); };
   const btn = (txt, bg, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.onclick = fn;
     b.style.cssText = 'display:block;width:100%;min-height:52px;margin-top:10px;border:none;border-radius:8px;font-size:16px;cursor:pointer;color:#fff;background:'+bg; return b; };
-  box.append(h, names, msg,
+  box.append(h, names, info, msg,
     btn('Condividi', '#2f7fe0', () => {      // parte dal tocco: iPhone vuole il gesto dell'utente
       msg.textContent = '';
       let p;
       try { p = navigator.share({files: q.map(x => x.file), title: q.length > 1 ? q.length+' file - '+q[0].name : q[0].name}); } catch (e) { p = Promise.reject(e); }
-      Promise.resolve(p).then(close, e => { if (!e || e.name !== 'AbortError') msg.textContent = 'Condivisione non riuscita: usa Salva per tenere il file.'; });
+      Promise.resolve(p).then(done, e => {
+        if (e && e.name === 'AbortError') return;
+        // canShare ha detto si' ma share rifiuta (Chrome Android con json/dxf): i formati di testo passano a .txt, si ritocca Condividi (nuovo gesto)
+        const alt = q.map(x => TXT_OK.test(x.name) && x.file.name === x.name ? new File([x.blob], x.name+'.txt', {type: 'text/plain'}) : null);
+        if (alt.some(Boolean)) { q.forEach((x, i) => { if (alt[i]) x.file = alt[i]; }); _shareTxt = true; showTxt(); msg.textContent = 'Il telefono non accetta questo formato: tocca di nuovo Condividi per inviarlo come .txt.'; }
+        else msg.textContent = q.some(x => /\.docx$/i.test(x.name)) ? 'Il telefono non condivide il Word da qui: tocca Salva e poi invialo dall\'app di posta o da Telegram.' : 'Condivisione non riuscita: usa Salva per tenere il file.';
+      });
     }),
-    btn('Salva', '#1d6b3a', () => { q.forEach(x => saveBlob(x.name, x.blob)); close(); }),
+    btn('Salva', '#1d6b3a', () => { q.forEach(x => saveBlob(x.name, x.blob)); done(); }),
     btn('Annulla', '#0f3460', close));
   ov.appendChild(box); document.body.appendChild(ov);
 }
@@ -7992,9 +8007,10 @@ function stamp() {
 function saveProject() {
   hideAllMenus();
   const snap = snapshot(true); snap.underlay = underlayToJSON(); snap.app = APP_VERSION;
-  download(fileBase()+'.json', JSON.stringify(snap, null, 1), 'application/json');
-  DIRTY = false; FILE_AT = new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}); fileFlag();
-  setTip('Progetto salvato. Riaprilo con "Apri progetto" per riprendere il rilievo.');
+  download(fileBase()+'.json', JSON.stringify(snap, null, 1), 'application/json', () => {   // solo a file condiviso o salvato, non con Annulla
+    DIRTY = false; FILE_AT = new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}); fileFlag();
+    setTip('Progetto salvato. Riaprilo con "Apri progetto" per riprendere il rilievo.');
+  });
 }
 function loadProject() {
   hideAllMenus();
@@ -8012,7 +8028,7 @@ document.getElementById('file-json').addEventListener('change', e => {
       saveHistory(); restore(o); state.underlay = null; state.wallsPrev = null; state.moveBase = false; refreshBasePanel();
       if (o.underlay) underlayFromJSON(o.underlay); centerView(); commit('Progetto caricato.'); DIRTY = false; FILE_AT = null; fileFlag();
       if (notes.length) listDialog('Progetto aggiornato', notes);
-    } catch (err) { alert('File non valido: '+err.message); }
+    } catch (err) { alert(/\.txt$/i.test(f.name) ? 'Questo file .txt non contiene un progetto dell\'app ('+err.message+'). Si aprono solo i progetti .json, anche se arrivati come .txt.' : 'File non valido: '+err.message); }
   };
   rd.readAsText(f);
 });
@@ -11810,6 +11826,7 @@ $id('file-dxf').addEventListener('change', async e => {
   try {
     const txt = await f.text();
     if (/^AutoCAD Binary DXF/.test(txt)) { alert('DXF binario: salvalo da AutoCAD come DXF testo (ASCII) e riprova.'); return; }
+    if (/\.txt$/i.test(f.name) && !/^\s*SECTION\s*$/m.test(txt)) { alert('Questo file .txt non contiene un DXF (mancano le sezioni). Si aprono solo i DXF, anche se arrivati come .txt.'); return; }
     const d = dxfParse(txt);
     const ents = d.ents.filter(en => !DXF_SKIP.test(en.layer));
     if (!ents.length) { alert('Nel DXF non ho trovato linee o polilinee (LINE, LWPOLYLINE, POLYLINE).'); return; }
@@ -12933,8 +12950,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.53';
-const APP_NOTE = ["Condivisione degli elaborati da telefono e tablet: dopo ogni esportazione (progetto JSON, PDF, JPG, DXF, CSV, Word, tabelle) compare una finestra con Condividi, Salva e Annulla. Condividi apre il foglio di condivisione del telefono (email, Telegram, WhatsApp, Drive e le altre app); Salva salva il file come prima", "Se la condivisione non riesce o il foglio viene chiuso, la finestra resta aperta e si può sempre scegliere Salva: il file non si perde", "Esportazioni con più file (tabelle in JPG a più pagine): una sola finestra e una sola condivisione con tutti i file", "Su computer, o con browser che non sanno condividere file, nulla cambia: il file si salva subito come prima"];
+const APP_VERSION = '2.54';
+const APP_NOTE = ["Condividi su Android con progetto JSON e DXF: se il telefono non accetta il formato, il file parte come .txt con lo stesso contenuto (esempio 261118_rilievo.json.txt); se serve, l'app chiede di toccare di nuovo Condividi. Salva continua a salvare il file .json o .dxf come prima", "Apri progetto e Importa DXF aprono anche i file arrivati come .txt, senza rinominarli; se il .txt non contiene un progetto o un DXF l'app lo dice", "Word che il telefono non condivide: messaggio chiaro, si usa Salva e poi lo si manda dall'app di posta o da Telegram", "Salva progetto segna il progetto come salvato solo se il file è stato davvero condiviso o salvato, non se si sceglie Annulla"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
