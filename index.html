@@ -331,6 +331,7 @@
   <div class="menu-item tool-item" id="ti-wall" onclick="pickTool('wall')"><span class="ti">▭</span><span class="tt"><b>Muro</b><small>Traccia i muri, un vertice dopo l'altro</small></span></div>
   <div class="menu-item tool-item" id="ti-room" onclick="pickTool('room')"><span class="ti">⬚</span><span class="tt"><b>Stanza rettangolare</b><small>Trascina un rettangolo: 4 muri e l'ambiente in un colpo</small></span></div>
   <div class="menu-item tool-item" id="ti-wstd" onclick="wpStdDialog()"><span class="ti">▥</span><span class="tt"><b>Spessori standard</b><small>Muri esterni e tramezze, una volta per tutto il rilievo</small></span></div>
+  <div class="menu-item tool-item" id="ti-wpall" onclick="wpMakeAll()"><span class="ti">⟲</span><span class="tt"><b>Rendi parametrici tutti</b><small>Dopo il rilievo a linee: muri esterni e tramezze in un tocco, quote convalidate = lucchetti</small></span></div>
   <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Ambiente</div><div class="grp-b">
     <div class="menu-item tool-item" id="ti-roompts" onclick="pickTool('roompts')"><span class="ti">⬠</span><span class="tt"><b>Ambiente da punti</b><small>Tocca i vertici in ordine: nel Progetto, per le stanze unite</small></span></div>
     <div class="menu-item tool-item" id="ti-boundary" onclick="pickTool('boundary')"><span class="ti">⬚</span><span class="tt"><b>Ambiente da area</b><small>Tocca dentro un'area chiusa da muri: il contorno lo trova l'app</small></span></div>
@@ -478,7 +479,7 @@
   <div class="menu-item" data-demo onclick="ambMenuAction('demo')"></div>
   <div class="menu-item" data-lock onclick="ambMenuAction('edit')">✎ Modifica ambiente<small class="md">Nome, altezza e categoria; mostra superficie e pareti</small></div>
   <div class="menu-item" data-lock id="am-move" onclick="ambMenuAction('move')">✥ Sposta ambiente<small class="md">Trascina l'ambiente con i suoi muri; al rilascio si aggancia alla stanza vicina</small></div>
-  <div class="menu-item" id="am-wpon" onclick="ambMenuAction('wpon')">⟲ Torna parametrico<small class="md">Le misure di adesso valgono come misure nette; tornano maniglie e legami con i vicini</small></div>
+  <div class="menu-item" id="am-wpon" onclick="ambMenuAction('wpon')">⟲ Rendi parametrico<small class="md">A modifiche finite: misure di adesso = nette, quote convalidate = lucchetti, muri esterni e tramezze generati</small></div>
   <div class="menu-item" data-lock id="am-no90" onclick="ambMenuAction('no90')">∠ Ambiente non ortogonale<small class="md">Gli angoli a 90 gradi non si mantengono quando cambi le misure</small></div>
   <div class="menu-item" data-lock id="am-vgraf" onclick="ambMenuAction('vgraf')">⌒ Volta sul disegno<small class="md">Tocchi i quattro punti d'imposta sul disegno, poi le quote</small></div>
   <div class="menu-item" data-lock id="am-volta" onclick="ambMenuAction('volta')">⌒ Volta<small class="md">A botte o a crociera: quote d'imposta e in chiave, tratteggio in pianta, H min e H max</small></div>
@@ -2791,7 +2792,7 @@ function ambMenuAction(action) {
   const s = state.sel; if (!s || s.kind!=='ambiente') return;
   const amb = state.ambienti[s.idx]; if (!amb) return;
   if (action==='demo') { setDemo([], [], [s.idx], amb.fase!=='demo'); return; }
-  if (action==='wpon') { wpRestore(s.idx); return; }
+  if (action==='wpon') { wpMakeOne(s.idx); return; }
   if (action==='move') { moveRoomStart(s.idx); return; }
   if (action==='no90') {                                   // 2.49: campo facoltativo `no90`, salvato nel progetto
     saveHistory(); if (amb.no90) delete amb.no90; else amb.no90 = 1;
@@ -3687,7 +3688,7 @@ function splitParamCore(sc, nm, a, t, R0, wt0, Y) {
     });
   };
   const nb = {indices:small, name:nm, h:a.h, color:AMB_COLORS[state.ambienti.length % AMB_COLORS.length], category:a.category, fase, rid};
-  a.indices = big; delete a.lo;
+  a.indices = big; delete a.lo; delete a.lk; delete a.ext;           // 2.50: lati cambiati, lucchetti e tipi dei lati non valgono piu' (le quote convalidate restano)
   a.wt = wtFor(big) || a.wt; nb.wt = wtFor(small) || small.map(() => wpStd().ext);
   state.ambienti.push(nb);
   if (oIdx!==null && state.points[oIdx] && !state.segments.some(g => g.a===oIdx || g.b===oIdx) && !state.ambienti.some(x => x.indices.includes(oIdx)) && !state.points[oIdx].note && !state.points[oIdx].photo) ptsDel.add(oIdx);   // il punto da cui partiva la linea, rimasto da solo
@@ -4228,7 +4229,9 @@ const WP_COL = 0.003;                                     // vertice allineato e
 const wpR2 = v => Math.round(v*100)/100, wpR4 = v => Math.round(v*1e4)/1e4;
 var WPL = [];                                             // legami dell'ultima lettura, con la geometria (vedi wpSync)
 var _wpGen = null, _wpAfter = null;                                        // firma di cio' da cui sono nate le linee generate
-function wpStd() { if (!state.wstd || !(state.wstd.ext > 0) || !(state.wstd.int > 0)) state.wstd = {ext:0.30, int:0.10}; return state.wstd; }
+// 2.50: standard proposti 40 cm verso l'esterno, 25 cm tramezze e verso altri ambienti, 25 cm verso il vano scala (`sc`, facoltativo); i progetti che li hanno gia' salvati li tengono
+function wpStd() { if (!state.wstd || !(state.wstd.ext > 0) || !(state.wstd.int > 0)) state.wstd = {ext:0.40, int:0.25, sc:0.25}; if (!(state.wstd.sc > 0)) state.wstd.sc = 0.25; return state.wstd; }
+function wpStdOf(c) { const st = wpStd(); return c===1 ? st.ext : c===2 ? st.sc : st.int; }      // per classe del lato (wpCls): 1 esterno, 2 vano scala, 0/3 verso un ambiente
 function wpFase() { return prog() ? 'nuovo' : 'es'; }
 // lati veri dell'ambiente: i vertici allineati (attacchi delle tramezze, punti in piu') non contano. C = spigoli in giro, ci = loro posto nell'anello,
 // S = lati (p -> q, lunghezza L, direzione u, normale n verso FUORI)
@@ -4486,6 +4489,16 @@ function rebuildWalls(fase) {
     G.iv.forEach(v => { if (cur && v[0] <= cur[1] + 0.002) cur[1] = Math.max(cur[1], v[1]); else { flush(); cur = [v[0], v[1]]; } });
     flush();
   });
+  // 2.50: niente linee doppie: la faccia generata che sta tutta sopra linee gia' disegnate (non generate, anche in piu' pezzi) non si aggiunge
+  const drawn = state.segments.filter(g => !g.mo && (g.fase || 'es')===fase && state.points[g.a] && state.points[g.b]);
+  want.forEach((e, k) => {
+    const L = Math.hypot(e.B.x-e.A.x, e.B.y-e.A.y); if (L < 0.005) return;
+    const ux = (e.B.x-e.A.x)/L, uy = (e.B.y-e.A.y)/L, d = V => Math.abs((V.x-e.A.x)*uy - (V.y-e.A.y)*ux), s = V => (V.x-e.A.x)*ux + (V.y-e.A.y)*uy, iv = [];
+    drawn.forEach(g => { const P = state.points[g.a], Q = state.points[g.b]; if (d(P) < 0.002 && d(Q) < 0.002) iv.push([Math.min(s(P), s(Q)), Math.max(s(P), s(Q))]); });
+    iv.sort((p, q) => p[0]-q[0]); let reach = 0.002;
+    for (const v of iv) { if (v[0] > reach) break; reach = Math.max(reach, v[1] + 0.002); }
+    if (reach >= L) want.delete(k);
+  });
   // linee generate di prima: le uguali restano, le altre lasciano il posto
   const have = new Map(), segDel = new Set();
   state.segments.forEach((g, i) => {
@@ -4573,8 +4586,9 @@ function wpWatch() {
     });
     state.ambienti.forEach(a => {                          // ambiente non piu' parametrico con gli spigoli cambiati: spessori riallineati ai lati di adesso
       if (!Array.isArray(a.wt) || !a.wpx) return;
+      if (a.lk) delete a.lk;                               // 2.50: i lucchetti valgono solo da parametrico (le quote convalidate restano e li rifanno con "Rendi parametrico")
       const R = wpRing(a); if (!R) return;
-      if (a.wt.length!==R.m) { const v = a.wt.find(t => t > 0) || wpStd().ext; a.wt = R.S.map(() => v); }
+      if (a.wt.length!==R.m) { const v = a.wt.find(t => t > 0) || wpStd().ext; a.wt = R.S.map(() => v); delete a.ext; }
       a.wsg = wpSig(R);
     });
     // le facce esterne si rifanno se gli ambienti sono cambiati; non mentre si sta scegliendo una serie di punti (gli indici cambierebbero sotto le mani)
@@ -4583,21 +4597,158 @@ function wpWatch() {
     else if (wpGenSig()!==_wpGen && !busy) { rebuildWalls(wpFase()); autoWallThick(); draw(); }
     wpSync(); wpAnchor();
     if (state.wpSel && !wpWall()) state.wpSel = null;
-    if (lost.length) setTimeout(() => setTip((lost.length===1 ? lost[0]+' non è più parametrico' : lost.join(', ')+' non sono più parametrici')+': la forma è stata cambiata a mano. I muri restano disegnati, ma l\'app non lo sposta più e non ne garantisce le misure (segno ⚠ sull\'ambiente; dal suo menu "Torna parametrico").', 'warn'), 0);
+    if (lost.length) setTimeout(() => setTip((lost.length===1 ? lost[0]+' non è più parametrico' : lost.join(', ')+' non sono più parametrici')+': la forma è stata cambiata a mano. I muri restano disegnati, ma l\'app non lo sposta più e non ne garantisce le misure (segno ⚠ sull\'ambiente; a modifiche finite, dal suo menu "Rendi parametrico").', 'warn'), 0);
   } catch (err) { console.error('muri parametrici', err); }
 }
-// l'ambiente torna parametrico con la forma che ha adesso
-function wpRestore(idx) {
-  const a = state.ambienti[idx]; if (!a || !a.wpx) return;
-  if (locked(a)) { lockTip(); return; }
-  if (!wpOwn(a)) { setTip(a.name+' ha punti in comune con un altro ambiente: non può muoversi da solo, quindi resta non parametrico.', 'warn'); return; }
-  const R = wpRing(a); if (!R) { setTip('Forma non valida.', 'warn'); return; }
-  saveHistory();
-  delete a.wpx; if (!Array.isArray(a.wt) || a.wt.length!==R.m) a.wt = R.S.map(() => wpStd().ext);
-  a.wsg = wpSig(R); state.sel = null;
-  wpApply(wpRooms(false).map(r => r.rid), a.name+' è di nuovo parametrico: le misure di adesso valgono come misure nette.');
+// ── 2.50 RENDI PARAMETRICO (dopo il rilievo, SOLO dal pulsante: menu dell'ambiente, oppure "Rendi parametrici tutti" in Disegna e nella barra In loco).
+// Vale per l'ambiente disegnato a linee e per quello non piu' parametrico (modificato a mano). Le misure di adesso valgono come nette; le quote
+// convalidate (g.ok) che misurano una misura netta diventano lucchetti (a.lk); spessori dei lati: dalla linea gia' disegnata fuori dal lato se coerente
+// (5-80 cm), altrimenti lo standard del tipo di lato (wpStdOf). Nessun ambiente si sposta, salvo le stanze che si toccano (linea in comune, separata
+// da wpSplitShared, o lati sovrapposti entro 2 cm): tra loro nasce la tramezza standard e il risolutore le separa, il piu' grande del gruppo resta fermo.
+// Ambienti non ortogonali: angoli come disegnati (nessun vincolo a 90); lati e diagonali convalidati restano bloccati dalle quote (2.49).
+function wpShareNames(a) { const set = new Set(a.indices); return state.ambienti.filter(b => b!==a && b.indices.some(i => set.has(i))).map(b => b.name).join(', '); }
+function wpSideRun(a, R, k, fn) {                          // le linee del lato vero k, una per una (il lato puo' avere punti in piu')
+  const n = a.indices.length, end = R.ci[(k+1)%R.m];
+  for (let i = R.ci[k], c = 0; c < n; i = (i+1)%n, c++) { const j = (i+1)%n; if (fn(a.indices[i], a.indices[j])===false) return false; if (j===end) break; }
+  return true;
 }
-// un ambiente appena registrato da punti o da area nasce parametrico se sta da solo: punti suoi e nessun muro gia' disegnato attorno
+const wpSegOf = (u, v) => state.segments.findIndex(g => (g.a===u && g.b===v) || (g.a===v && g.b===u));
+function wpSideSeg(a, R, k) {                              // la linea piu' lunga del lato
+  let best = -1, bl = 0;
+  wpSideRun(a, R, k, (u, v) => { const si = wpSegOf(u, v), A = state.points[u], B = state.points[v]; if (si >= 0 && A && B) { const l = Math.hypot(B.x-A.x, B.y-A.y); if (l > bl) { bl = l; best = si; } } });
+  return best;
+}
+function wpSideOk(a, R, k) {                               // lunghezza del lato se tutte le sue linee hanno la quota convalidata, altrimenti null
+  let tot = 0;
+  const ok = wpSideRun(a, R, k, (u, v) => { const g = state.segments[wpSegOf(u, v)], A = state.points[u], B = state.points[v]; if (!g || !A || !B) return false; const l = Math.hypot(B.x-A.x, B.y-A.y); if (!segOk(g, l)) return false; tot += l; });
+  return ok ? tot : null;
+}
+// quote convalidate -> lucchetti: la misura netta tra il lato k e quello di fronte e' bloccata se un lato che li unisce e' convalidato e lungo quanto lei
+function wpLkFromLines(a) {
+  const R = wpRing(a); if (!R) return 0; const m = R.m; let n = 0;
+  R.S.forEach((s, k) => {
+    const j = wpOpp(R, k); if (j < 0 || wpLkHas(a, k, j) || Math.abs(s.ux*R.S[j].uy - s.uy*R.S[j].ux) > 0.087) return;     // come la scheda: solo lati paralleli
+    const v = wpNet(R, k); if (v===null) return;
+    if ([(k+1)%m, (k+m-1)%m, (j+1)%m, (j+m-1)%m].some(q => { const L = wpSideOk(a, R, q); return L!==null && Math.abs(L - v) < 0.005; })) { a.lk = wpLk(a).concat([[k, j, wpR4(v)]]); n++; }
+  });
+  return n;
+}
+// spessori di un ambiente reso parametrico adesso: la linea disegnata fuori dal lato (non generata, non di un altro ambiente) se a 5-80 cm, altrimenti lo standard
+function wpMakeThick(R, per) {
+  const a = R.a, other = new Set(); state.ambienti.forEach(b => { if (b!==a) b.indices.forEach(i => other.add(i)); });
+  a.wt = R.S.map((s, k) => {
+    const c = wpCls(R, k, per), std = wpStdOf(c); if (!c) return std;
+    const si = wpSideSeg(a, R, k); if (si < 0) return std;
+    const g = state.segments[si], A = state.points[g.a], B = state.points[g.b], M = {x:(A.x+B.x)/2, y:(A.y+B.y)/2};
+    const r = oppositeFace(si, M, M), h = r && state.segments[r.k];
+    return h && !h.mo && !other.has(h.a) && !other.has(h.b) && r.d >= 0.05 && r.d <= 0.80 ? wpR4(r.d) : std;
+  });
+}
+function wpMakePrep(a) {
+  const R = wpRing(a); if (!R) return {err:'forma non valida'};
+  if (!wpOwn(a)) return {err:'punti in comune con '+wpShareNames(a)};
+  const n = a.indices.length;
+  for (let k = 0; k < n; k++) { const i = a.indices[k], j = a.indices[(k+1)%n]; if (!segExists(i, j)) state.segments.push({a:i, b:j, fase:a.fase}); }
+  const neu = !(a.wpx && Array.isArray(a.wt) && a.wt.length===R.m);     // di nuovo parametrico con gli stessi lati: spessori e tipi dei lati come prima
+  delete a.wpx; delete a.lk; if (neu) { a.wt = R.S.map(() => wpStd().ext); delete a.ext; }
+  a.wsg = wpSig(R);
+  return {neu};
+}
+// list = ambienti da rendere parametrici (saveHistory gia' fatto da chi chiama), skip = saltati con il motivo
+function wpMakeGo(list, skip) {
+  const old = wpRooms(false).map(R => R.rid), made = [];
+  list.forEach(a => { const r = wpMakePrep(a); if (r.err) skip.push(a.name+': '+r.err); else made.push({a, neu:r.neu}); });
+  if (!made.length) { restore(state.history.pop()); _okBase = null; draw(); setTip('Nessun ambiente reso parametrico. '+skip.join('; ')+'.', 'warn'); return; }
+  wpIds();
+  const st = wpStd(), rooms = wpRooms(false), per = wpPerim(rooms), mk = new Set(made.map(m => m.a));
+  rooms.forEach(R => { const m = made.find(x => x.a===R.a); if (m && m.neu) wpMakeThick(R, per); });
+  // stanze che si toccano (lati affacciati a meno di 2 cm): tramezza standard, poi il risolutore le separa
+  const seeds = []; if (!state.wlinks) state.wlinks = [];
+  rooms.forEach(A => rooms.forEach(B => {
+    if (!(A.rid < B.rid) || (!mk.has(A.a) && !mk.has(B.a)) || (A.a.fase || 'es')!==(B.a.fase || 'es')) return;
+    for (let ka = 0; ka < A.m; ka++) for (let kb = 0; kb < B.m; kb++) {
+      const f = wpFace(A, ka, B, kb, -0.6); if (!f || Math.abs(f.g) >= 0.02) continue;
+      if (!state.wlinks.some(o => o.a===A.rid && o.b===B.rid && o.ka===ka && o.kb===kb)) state.wlinks.push({a:A.rid, b:B.rid, ka, kb, t:st.int});
+      seeds.push([A, B]);
+    }
+  }));
+  let fixed = rooms.map(R => R.rid);                       // di norma nessuno si muove
+  if (seeds.length) {                                      // per ogni gruppo di stanze che si toccano resta fermo un ambiente gia' parametrico, altrimenti il piu' grande
+    const up = new Map(), root = r => { while (up.has(r)) r = up.get(r); return r; }, best = new Map();
+    seeds.forEach(([A, B]) => { const x = root(A.rid), y = root(B.rid); if (x!==y) up.set(x, y); });
+    seeds.forEach(([A, B]) => [A, B].forEach(R => { const g = root(R.rid), w = old.includes(R.rid) ? Infinity : Math.abs(wpArea(R.C)), b = best.get(g); if (!b || w > b.w) best.set(g, {w, rid:R.rid}); }));
+    fixed = old.concat([...best.values()].map(b => b.rid));
+  }
+  let nl = 0; const no90 = [];
+  made.forEach(m => { nl += wpLkFromLines(m.a); if (m.a.no90 || !roomOrtho(m.a)) no90.push(m.a.name); });
+  const P0 = new Map(made.map(m => { const p = state.points[m.a.indices[0]]; return [m.a, {x:p.x, y:p.y}]; }));
+  wpSolve(fixed, null, seeds.length ? [] : undefined);     // G0 vuoto = nessun filo, ma il risolutore separa le stanze anche nel Rilievo in loco
+  const bad = _okBase && okBroken(_okBase.r);              // controllo prima di rebuildWalls (che rifa' gli oggetti linea): una quota convalidata cambiata = si annulla tutto
+  if (bad) { restore(state.history.pop()); _okBase = null; _okFree.clear(); draw(); setTip(okMsg(bad)+' Rendi parametrico annullato: separando le stanze per la tramezza questa quota cambierebbe.', 'warn'); return; }
+  rebuildWalls(wpFase());
+  const mv = made.filter(m => { const p = state.points[m.a.indices[0]], q = P0.get(m.a); return p && Math.hypot(p.x-q.x, p.y-q.y) > 0.001; }).map(m => m.a.name);
+  let msg = (made.length===1 ? made[0].a.name+' è parametrico' : made.length+' ambienti parametrici')+': le misure di adesso valgono come nette, muri esterni e tramezze generati'
+    +(nl ? ', '+nl+(nl===1 ? ' quota convalidata diventata lucchetto' : ' quote convalidate diventate lucchetti') : '')+'. Spessori: dalle linee già disegnate se coerenti, altrimenti '+Math.round(st.ext*100)+' cm verso l\'esterno, '+Math.round(st.int*100)+' cm verso altri ambienti (bollini E/S/A nel Rilievo in loco).';
+  if (seeds.length) msg += ' Tramezza di '+Math.round(st.int*100)+' cm tra le stanze che si toccavano'+(mv.length ? ': spostate per farle posto '+mv.join(', ')+' (misure nette invariate, controlla i muri disegnati a mano attorno)' : '')+'.';
+  if (no90.length) msg += ' Non ortogonali ('+no90.join(', ')+'): angoli come disegnati, nessun vincolo a 90 gradi; per aprirli sposta i punti, poi di nuovo Rendi parametrico.';
+  if (skip.length) msg += ' Saltati, lasciati come sono: '+skip.join('; ')+'.';
+  const h0 = state.history.length;
+  commit(msg + wpResText(), true);
+  if (skip.length && state.history.length===h0) setTimeout(() => setTip(msg, 'warn'), 0);
+}
+function wpMakeOne(idx) {
+  const a = state.ambienti[idx]; if (!a) return;
+  if (locked(a)) { lockTip(); return; }
+  if (a.wt && !a.wpx) { setTip(a.name+' è già parametrico.'); return; }
+  if (!wpRing(a)) { setTip('Forma non valida.', 'warn'); return; }
+  if (!wpOwn(a)) { setTip(a.name+' ha punti in comune con '+wpShareNames(a)+': usa "Rendi parametrici tutti" (Disegna, oppure "Parametrici" nella barra In loco), che separa le stanze con la tramezza.', 'warn'); return; }
+  state.sel = null; saveHistory(); wpMakeGo([a], []);
+}
+function wpMakeAll() {
+  hideAllMenus();
+  const cand = state.ambienti.filter(a => live(a) && !hid(a) && !locked(a) && (!a.wt || a.wpx));
+  if (!cand.length) { setTip(wpRooms(false).length ? 'Tutti gli ambienti visibili sono già parametrici.' : 'Non ci sono ambienti da rendere parametrici: disegnali a linee (Ambiente da area o da punti), poi Rendi parametrici tutti.', 'warn'); return; }
+  state.sel = null; saveHistory(); const skip = [];
+  wpMakeGo(wpSplitShared(cand, skip), skip);
+}
+// punti in comune tra ambienti (una linea sola tra due stanze = tramezza): ogni ambiente prende punti suoi. Si separano solo coppie i cui punti
+// in comune stanno su un lato solo di tutti e due, affacciati (o un punto solo, spigolo contro spigolo); gli altri si saltano con il motivo.
+// Il punto resta al piu' grande, gli altri ne prendono una copia; la linea in comune resta a chi ha i punti di prima, l'altro ne prende una uguale (anche convalidata).
+function wpSplitShared(cand, skip) {
+  const ok = new Set(); cand.forEach(a => { if (wpRing(a)) ok.add(a); else skip.push(a.name+': forma non valida'); });
+  const users = new Map(); state.ambienti.forEach(b => new Set(b.indices).forEach(i => { if (!users.has(i)) users.set(i, []); users.get(i).push(b); }));
+  const drop = (a, why) => { if (ok.delete(a)) { skip.push(a.name+': '+why); return true; } return false; };
+  const onSide = (a, S) => { const R = wpRing(a); return R && R.S.find(s => S.every(i => { const p = state.points[i], al = (p.x-s.p.x)*s.ux + (p.y-s.p.y)*s.uy; return Math.abs((p.x-s.p.x)*s.nx + (p.y-s.p.y)*s.ny) <= WP_COL && al >= -WP_COL && al <= s.L + WP_COL; })); };
+  for (let ch = true; ch; ) {
+    ch = false;
+    users.forEach(U => { if (U.length < 2) return; const bad = U.find(b => !ok.has(b)); if (bad) U.forEach(b => { if (b!==bad && drop(b, 'punti in comune con '+bad.name+', che resta com\'è')) ch = true; }); });
+    const L = [...ok];
+    for (let x = 0; x < L.length; x++) for (let y = x+1; y < L.length; y++) {
+      const A = L[x], B = L[y]; if (!ok.has(A) || !ok.has(B)) continue;
+      const sB = new Set(B.indices), S = [...new Set(A.indices.filter(i => sB.has(i)))]; if (S.length < 2) continue;
+      const s = onSide(A, S), t = onSide(B, S);
+      if (s && t && s.nx*t.nx + s.ny*t.ny < -0.99) continue;
+      drop(A, 'punti in comune con '+B.name+' non su una linea sola'); drop(B, 'punti in comune con '+A.name+' non su una linea sola'); ch = true;
+    }
+  }
+  const orig = new Map(), changed = new Set(), area = b => Math.abs(wpArea(b.indices.map(i => state.points[i])));
+  users.forEach((U, i) => {
+    const V = U.filter(b => ok.has(b)); if (V.length < 2) return;
+    V.sort((p, q) => area(q) - area(p));
+    V.slice(1).forEach(b => { const P = state.points[i], c = newPoint(P.x, P.y); if (P.fase) state.points[c].fase = P.fase; orig.set(c, i); b.indices = b.indices.map(j => j===i ? c : j); changed.add(b); });
+  });
+  const O = i => orig.has(i) ? orig.get(i) : i;
+  const edge = (b, u, v) => b.indices.some((x, k) => { const y = b.indices[(k+1)%b.indices.length]; return (x===u && y===v) || (x===v && y===u); });
+  changed.forEach(b => b.indices.forEach((x, k) => {
+    const y = b.indices[(k+1)%b.indices.length]; if ((!orig.has(x) && !orig.has(y)) || segExists(x, y)) return;
+    const g = state.segments[wpSegOf(O(x), O(y))]; if (!g) return;
+    if (!state.ambienti.some(c => edge(c, g.a, g.b))) { const f = g.a===O(x); g.a = f ? x : y; g.b = f ? y : x; }      // la linea non serve piu' a nessun altro: passa a questo ambiente, con i suoi serramenti
+    else { const h = {a:x, b:y}; if (g.fase) h.fase = g.fase; if (g.ok) { h.ok = g.ok; h.okLen = g.okLen; } state.segments.push(h); }
+  }));
+  return [...ok];
+}
+// 2.50: non piu' chiamata in automatico alla registrazione dell'ambiente (si passa dal pulsante Rendi parametrico); resta per riferimento.
+// Un ambiente nasceva parametrico se stava da solo: punti suoi e nessun muro gia' disegnato attorno
 // (una linea parallela entro 1 m oltre un suo lato che non sia di un ambiente parametrico). Sui disegni a linee e sui ricalchi resta com'e'.
 function wpTryParam(a) {
   try {
@@ -4930,12 +5081,16 @@ function wpStdDialog() {
   hideAllMenus(); const st = wpStd();
   askDialog('Spessori standard dei muri', [
     {label:'Muri esterni (cm)', id:'e', value:String(Math.round(st.ext*100)), type:'number'},
-    {label:'Tramezze tra due ambienti (cm)', id:'i', value:String(Math.round(st.int*100)), type:'number'},
+    {label:'Tramezze e muri verso altri ambienti (cm)', id:'i', value:String(Math.round(st.int*100)), type:'number'},
+    {label:'Muri verso il vano scala (cm)', id:'s', value:String(Math.round(st.sc*100)), type:'number'},
   ], 'Valgono per gli ambienti nuovi e, in quelli già disegnati, per i muri che hanno ancora lo spessore standard (quelli misurati non cambiano). Cambiando le tramezze gli ambienti si spostano; le misure nette restano.', v => {
-    const e = parseFloat(v.e)/100, i = parseFloat(v.i)/100; if (!(e > 0) || !(i > 0) || e > 1 || i > 1) { draw(); return; }
-    saveHistory(); const old = {ext:st.ext, int:st.int}; st.ext = e; st.int = i;
-    const rooms = wpRooms(false).filter(R => !locked(R.a));
-    rooms.forEach(R => { R.a.wt = R.a.wt.map(t => Math.abs(t - old.ext) < 0.0005 ? e : t); });
+    const e = parseFloat(v.e)/100, i = parseFloat(v.i)/100, s = parseFloat(v.s)/100; if (!(e > 0) || !(i > 0) || !(s > 0) || e > 1 || i > 1 || s > 1) { draw(); return; }
+    saveHistory(); const old = {ext:st.ext, int:st.int, sc:st.sc}; st.ext = e; st.int = i; st.sc = s;
+    const rooms = wpRooms(false).filter(R => !locked(R.a)), per = wpPerim();
+    rooms.forEach(R => { R.a.wt = R.a.wt.map((t, k) => {             // 2.50: per tipo di lato; resta il caso di prima (spessore esterno standard su qualunque lato)
+      const c = wpCls(R, k, per), o = c===1 ? old.ext : c===2 ? old.sc : old.int, nw = c===1 ? e : c===2 ? s : i;
+      return Math.abs(t - o) < 0.0005 ? nw : Math.abs(t - old.ext) < 0.0005 ? e : t;
+    }); });
     wpSync(); (state.wlinks || []).forEach(l => { if (!l.lk && Math.abs(l.t - old.int) < 0.0005) l.t = i; });
     wpApply(rooms.length ? [rooms[0].rid] : [], 'Spessori standard: esterni '+Math.round(e*100)+' cm, tramezze '+Math.round(i*100)+' cm.');
   }, () => draw());
@@ -5016,11 +5171,12 @@ function wpPerim(rooms) {
   })));
   return out;
 }
-// classe del lato: 0 = interno (di fronte c'e' un ambiente), 1 = esterno, 2 = vano scala
+// classe del lato: 0 = interno (di fronte c'e' un ambiente), 1 = esterno, 2 = vano scala, 3 = verso un altro ambiente non disegnato (2.50: bollino A,
+// si comporta come un lato interno: non e' perimetro fermo ne' filo)
 function wpCls(R, k, per) {
   const p = per && per.get(R.rid); if (!p || !p[k]) return 0;
   const e = R.a.ext, v = Array.isArray(e) && e.length===R.m ? e[k] : null;
-  return v===2 ? 2 : 1;
+  return v===2 || v===3 ? v : 1;
 }
 function wpLk(a, m) { return Array.isArray(a.lk) ? a.lk.filter(p => Array.isArray(p) && (m===undefined || (p[0] < m && p[1] < m))) : []; }
 function wpLkHas(a, k, j) { return wpLk(a).some(p => (p[0]===k && p[1]===j) || (p[0]===j && p[1]===k)); }
@@ -5040,7 +5196,8 @@ function wpLocoSide(R, k, per, keep) {
   const j = wpOpp(R, k), a = R.a;
   if (j < 0) return {err:'Su questo lato non trovo un lato di fronte da cui misurare.'};
   if (wpLkHas(a, k, j)) return {j, err:'Misura validata (lucchetto): per cambiarla togli prima il lucchetto.'};
-  const ck = wpCls(R, k, per), cj = wpCls(R, j, per), bq = s => wpQBlock(R, s), bl = s => wpLkSide(a, s) || !!bq(s); let mv;   // 2.49: anche le quote convalidate bloccano
+  const cl = s => { const c = wpCls(R, s, per); return c===3 ? 0 : c; };                  // 2.50: verso altro ambiente = lato interno
+  const ck = cl(k), cj = cl(j), bq = s => wpQBlock(R, s), bl = s => wpLkSide(a, s) || !!bq(s); let mv;   // 2.49: anche le quote convalidate bloccano
   if (keep===k || keep===j) mv = keep===k ? j : k;
   else if (ck && !cj) mv = j;
   else if (cj && !ck) mv = k;
@@ -5203,7 +5360,7 @@ function toggleLoco() {
   setTool('select'); state.loco = true; state.locoF = null; state.wpSel = null;
   updateLocoUI(); draw();
   const n = wpRooms(false).length, old = state.ambienti.filter(a => live(a) && !hid(a) && (!a.wt || a.wpx)).length;
-  if (!n && old) { listDialog('Rilievo in loco', ['Questo progetto non ha ambienti parametrici: il rilievo in loco non agisce sugli ambienti che ci sono (non li sposta e non li cambia).', 'Vale per i progetti nuovi e per gli ambienti creati con Disegna > Stanza (trascinando o con un tocco), o da punti con punti suoi. Gli ambienti vecchi si adeguano a mano.']); return; }
+  if (!n && old) { listDialog('Rilievo in loco', ['Questo progetto non ha ambienti parametrici: il rilievo in loco non agisce sugli ambienti che ci sono (non li sposta e non li cambia).', 'Per renderli parametrici: "Parametrici" in questa barra (tutti insieme) oppure "Rendi parametrico" dal menu dell\'ambiente. Le misure di adesso valgono come nette, le quote convalidate diventano lucchetti, muri esterni e tramezze si generano da soli.']); return; }
   setTip(n ? 'Rilievo in loco: tocca una stanza e scrivi le misure nette, un campo alla volta. Le stanze vicine restano ferme e le tramezze mostrano lo scostamento (es. 10-3); alla fine "Riassembla". Bollini sul perimetro: E esterno, S vano scala (un tocco li cambia).'
     : 'Rilievo in loco da zero: Disegna > Stanza, poi tocca il disegno (o la foto) dove sta la stanza e scrivi le misure nette. Le stanze si agganciano da sole.', 'ok');
 }
@@ -5216,13 +5373,18 @@ function updateLocoUI() {
 function locoRoom() { const f = state.locoF; return f ? wpRooms(false).find(R => R.rid===f.rid) || null : null; }
 function locoFields(R) {
   const F = [], seen = new Set();
-  R.S.forEach((s, k) => { const j = wpOpp(R, k); if (j < 0) return; const key = Math.min(k, j)+'-'+Math.max(k, j); if (seen.has(key)) return; seen.add(key); F.push({t:'net', k, j}); });
-  if (R.m===4 && F.length===2 && F.every(f => Math.abs(R.S[f.k].nx) > 0.9 || Math.abs(R.S[f.k].ny) > 0.9)) {
+  R.S.forEach((s, k) => {
+    const j = wpOpp(R, k); if (j < 0) return; const key = Math.min(k, j)+'-'+Math.max(k, j); if (seen.has(key)) return;
+    const t = R.S[j]; if (Math.abs(s.ux*t.uy - s.uy*t.ux) > 0.087) return;                // 2.50: solo tra lati paralleli (entro 5 gradi), la misura del laser; i lati inclinati si misurano dalla quota
+    seen.add(key); F.push({t:'net', k, j});
+  });
+  if (R.m===4 && F.length===2 && F.every(f => Math.abs(R.S[f.k].nx) > ORTHO_COL || Math.abs(R.S[f.k].ny) > ORTHO_COL)) {      // 2.50: Larghezza/Lunghezza solo se i lati sono dritti entro 2 gradi (prima circa 25)
     F.forEach(f => { f.hz = Math.abs(R.S[f.k].nx) > Math.abs(R.S[f.k].ny); f.lab = f.hz ? 'Larghezza' : 'Lunghezza'; });
     F.sort((p, q) => (q.hz ? 1 : 0) - (p.hz ? 1 : 0));
   } else F.forEach((f, i) => { f.lab = 'Misura '+(i+1)+' di '+F.length; });
   F.push({t:'h', lab:'Altezza'});
-  const per = wpPerim(); if (R.S.some((s, k) => wpCls(R, k, per)===1)) F.push({t:'ext', lab:'Spessore muro esterno'});
+  const per = wpPerim();                                   // 2.50: un campo spessore per tipo di lato presente (esterno, vano scala, altro ambiente)
+  [[1, 'Spessore muro esterno'], [2, 'Spessore muro vano scala'], [3, 'Spessore muro verso altro ambiente']].forEach(([c, lab]) => { if (R.S.some((s, k) => wpCls(R, k, per)===c)) F.push({t:'ext', c, lab}); });
   return F;
 }
 function locoOpen(rid, i) {
@@ -5233,15 +5395,15 @@ function locoFocus() { const el = $id('lb-in'); if (el && el.offsetParent) try {
 function locoVal(R, f) {
   if (f.t==='net') { const v = wpNet(R, f.k); return v===null ? '' : num(v); }
   if (f.t==='h') return num(+R.a.h || 0);
-  const per = wpPerim(), k = R.S.findIndex((s, k) => wpCls(R, k, per)===1); return k < 0 ? '' : num((+R.a.wt[k] || 0)*100, 0);
+  const per = wpPerim(), k = R.S.findIndex((s, k) => wpCls(R, k, per)===(f.c || 1)); return k < 0 ? '' : num((+R.a.wt[k] || 0)*100, 0);
 }
-const LOCO_C = '<div class="lb-r"><span class="lb-g" id="lb-hint">Rilievo in loco: tocca una stanza per le misure</span><button id="lb-ria">Riassembla</button><button id="lb-out" title="Esci dal rilievo in loco">Esci</button></div>';
+const LOCO_C = '<div class="lb-r"><span class="lb-g" id="lb-hint">Rilievo in loco: tocca una stanza per le misure</span><button id="lb-all" title="Rendi parametrici tutti gli ambienti disegnati a linee: muri esterni e tramezze generati, quote convalidate = lucchetti">Parametrici</button><button id="lb-ria">Riassembla</button><button id="lb-out" title="Esci dal rilievo in loco">Esci</button></div>';
 const LOCO_R = '<div class="lb-r"><b class="lb-g" id="lb-name"></b><span id="lb-pos"></span><button id="lb-menu" title="Menu dell\'ambiente">⋯</button><button id="lb-ria">Riassembla</button><button id="lb-x" title="Chiudi la scheda">✖</button></div>'
   + '<div class="lb-r"><span class="lb-g" id="lb-lab"></span><input id="lb-in" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false"><button id="lb-lock"></button></div>'
   + '<div class="lb-r"><button class="lb-g" id="lb-prev">‹ Indietro</button><button class="lb-g ok" id="lb-next">Avanti ›</button></div>';
 function locoBind(el) {
   const on = (id, fn) => { const b = el.querySelector('#'+id); if (!b) return; b.addEventListener('pointerdown', e => e.preventDefault()); b.addEventListener('mousedown', e => e.preventDefault()); b.addEventListener('click', e => { e.preventDefault(); fn(); }); };
-  on('lb-ria', locoRiassembla); on('lb-out', toggleLoco);
+  on('lb-ria', locoRiassembla); on('lb-out', toggleLoco); on('lb-all', wpMakeAll);
   on('lb-x', () => { state.locoF = null; locoRender(); draw(); });
   on('lb-menu', () => { const R = locoRoom(); if (!R) return; state.sel = {kind:'ambiente', idx:R.k}; const r = el.getBoundingClientRect(); showMenu('amb-context', r.right - 10, r.top - 6, true); draw(); });
   on('lb-prev', () => locoStep(-1)); on('lb-next', () => locoStep(1)); on('lb-lock', locoLockTap);
@@ -5315,8 +5477,8 @@ function locoSet(rid, fd, txt, done) {
   }
   if (!(v >= 0 && v <= 100)) { setTip('Spessore non valido: scrivi i centimetri, ad esempio 35.', 'warn'); return; }
   saveHistory(); const per = wpPerim();
-  R.S.forEach((s, k) => { if (wpCls(R, k, per)===1) a.wt[k] = wpR4(v/100); });
-  rebuildWalls(wpFase()); commit(a.name+': muro esterno '+num(v, 0)+' cm su tutte le sue pareti esterne.', true); done();
+  const c = fd.c || 1; R.S.forEach((s, k) => { if (wpCls(R, k, per)===c) a.wt[k] = wpR4(v/100); });
+  rebuildWalls(wpFase()); commit(a.name+': '+fd.lab.toLowerCase()+' '+num(v, 0)+' cm su tutte le sue pareti di questo tipo.', true); done();
 }
 // lucchetto: valida la misura com'e', oppure lo toglie
 function locoLockTap() {
@@ -5363,8 +5525,11 @@ function locoTagTap(t) {
   const R = wpRooms(false).find(r => r.rid===t.rid); if (!R) return;
   saveHistory();
   const a = R.a; if (!Array.isArray(a.ext) || a.ext.length!==R.m) a.ext = R.S.map(() => null);
-  a.ext[t.k] = t.c===1 ? 2 : 1;
-  commit(a.name+', parete '+wpDirName(R.S[t.k])+': '+(t.c===1 ? 'vano scala (perimetro fermo, non è filo di facciata)' : 'esterno (perimetro fermo, filo di facciata)')+'.', true);
+  const nc = t.c===1 ? 2 : t.c===2 ? 3 : 1; a.ext[t.k] = nc;                 // 2.50: E -> S -> A (altro ambiente) -> E
+  const std = Math.abs((+a.wt[t.k] || 0) - wpStdOf(t.c)) < 0.0005; if (std) a.wt[t.k] = wpStdOf(nc);      // lo spessore segue il tipo; quello scritto a mano resta
+  rebuildWalls(wpFase());
+  commit(a.name+', parete '+wpDirName(R.S[t.k])+': '+['', 'esterno (perimetro fermo, filo di facciata)', 'vano scala (perimetro fermo, non è filo di facciata)', 'verso altro ambiente (come una tramezza: la parete si può spostare)'][nc]
+    +', spessore '+num((+a.wt[t.k] || 0)*100, 0)+' cm'+(std ? '' : ' (scritto a mano, non cambia)')+'.', true);
 }
 function locoDraw() {
   if (!locoOn()) return;
@@ -5373,7 +5538,7 @@ function locoDraw() {
   rooms.forEach(R => R.S.forEach((s, k) => {                // perimetro: azzurro esterno, viola tratteggiato vano scala
     const c = wpCls(R, k, per); if (!c) return;
     const a = w2s(s.p.x, s.p.y), b = w2s(s.q.x, s.q.y);
-    ctx.strokeStyle = c===1 ? 'rgba(74,163,255,.85)' : 'rgba(196,140,255,.9)'; ctx.lineWidth = 4; ctx.setLineDash(c===1 ? [] : [8, 6]);
+    ctx.strokeStyle = c===1 ? 'rgba(74,163,255,.85)' : c===2 ? 'rgba(196,140,255,.9)' : 'rgba(170,180,195,.85)'; ctx.lineWidth = 4; ctx.setLineDash(c===1 ? [] : c===2 ? [8, 6] : [3, 6]);
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   }));
   ctx.setLineDash([]);
@@ -5382,7 +5547,7 @@ function locoDraw() {
     ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 6;
     const line = (s, dash) => { const a = w2s(s.p.x, s.p.y), b = w2s(s.q.x, s.q.y); ctx.setLineDash(dash || []); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
     if (fd.t==='net') { line(R.S[fd.k]); line(R.S[fd.j], [10, 6]); }
-    else if (fd.t==='ext') R.S.forEach((s, k) => { if (wpCls(R, k, per)===1) line(s); });
+    else if (fd.t==='ext') R.S.forEach((s, k) => { if (wpCls(R, k, per)===(fd.c || 1)) line(s); });
     else R.S.forEach(s => line(s));
     ctx.setLineDash([]);
   }
@@ -5397,9 +5562,9 @@ function locoDraw() {
   }));
   locoTags(rooms, per).forEach(t => {                       // bollini da toccare
     const r = COARSE ? 13 : 11;
-    ctx.fillStyle = t.c===1 ? '#4aa3ff' : '#c48cff'; ctx.strokeStyle = '#10182c'; ctx.lineWidth = 2;
+    ctx.fillStyle = t.c===1 ? '#4aa3ff' : t.c===2 ? '#c48cff' : '#aab4c3'; ctx.strokeStyle = '#10182c'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(t.x, t.y, r, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#10182c'; ctx.font = 'bold 13px '+FONT; ctx.fillText(t.c===1 ? 'E' : 'S', t.x, t.y+1);
+    ctx.fillStyle = '#10182c'; ctx.font = 'bold 13px '+FONT; ctx.fillText(t.c===1 ? 'E' : t.c===2 ? 'S' : 'A', t.x, t.y+1);
   });
   ctx.restore();
 }
@@ -6077,11 +6242,8 @@ function askRoom(cycle) {
     });
     const am = state.ambienti[state.ambienti.length-1], msg = 'Ambiente registrato: '+area.toFixed(2)+' m², '+(area*h).toFixed(2)+' m³.';
     assignFase();
-    if (wpTryParam(am)) {                            // punti suoi e nessun muro gia' disegnato attorno: parametrico, con i muri standard
-      try { wpSolve(wpSync().rooms.filter(R => R.rid!==am.rid).map(R => R.rid), am.rid); rebuildWalls(wpFase()); } catch (err) { console.error('muri parametrici', err); }
-      commit(msg+' È parametrico: muri esterni di '+Math.round(wpStd().ext*100)+' cm; entro 50 cm da un altro ambiente parametrico si attacca con la tramezza standard.'+wpResText()); return;
-    }
-    commit(msg);
+    // 2.50: niente piu' parametrico automatico; i muri si generano con "Rendi parametrico" (menu dell'ambiente) a misure convalidate
+    commit(msg+' Per muri e tramezze, a misure convalidate: "Rendi parametrico" dal menu dell\'ambiente, o "Rendi parametrici tutti".');
   });
   roomNameUI();
 }
@@ -6165,7 +6327,7 @@ function showMenu(id, x, y, above, avoid) {
   if (id==='amb-context') {
     const a = state.sel && state.sel.kind==='ambiente' && state.ambienti[state.sel.idx], has = !!(a && a.volta);
     document.getElementById('am-novolta').style.display = has && !lk ? '' : 'none';
-    document.getElementById('am-wpon').style.display = a && a.wpx && !lk ? '' : 'none';
+    document.getElementById('am-wpon').style.display = a && (!a.wt || a.wpx) && !lk ? '' : 'none';
     document.getElementById('am-move').style.display = a && a.wt && !a.wpx && !lk ? '' : 'none';
     const n9 = document.getElementById('am-no90'), geo = !!a && !roomOrtho(a);          // 2.49: interruttore; l'ambiente con angoli non a 90 e' gia' non ortogonale da solo
     n9.firstChild.textContent = (a && a.no90 ? '✔ ' : '')+'∠ Ambiente non ortogonale';
@@ -12622,8 +12784,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.49';
-const APP_NOTE = ["Quota convalidata blindata: una quota convalidata (Valida così com'è, Imposta misura, Valida tutte, lucchetto della scheda In loco) non cambia più lunghezza con nessuna operazione: punti e linee trascinati, maniglie dei muri (anche le blu), Imposta misura su un altro muro, Sposta ambiente, Riassembla, Spezza. Spostare un ambiente o un muro intero senza cambiarne la lunghezza resta possibile", "Quando un'operazione cambierebbe una quota convalidata l'app usa l'altra possibilità, se c'è (si sposta l'altro estremo o il lato di fronte, il punto scorre senza cambiarla); altrimenti l'operazione non si fa e il messaggio dice quale quota blocca. Si sblocca dal menu della quota con \"Togli convalida\"", "Lucchetto della scheda In loco e quote convalidate vanno insieme: il lucchetto valida le quote della misura, toglierlo toglie anche la loro convalida, e una quota convalidata blocca la misura anche nella scheda", "Angoli a 90 gradi: cambiando la lunghezza di un muro (Imposta misura) o spostando un punto che fa angolo retto, i muri perpendicolari restano perpendicolari e la stanza si riadatta invece di deformarsi (tolleranza 2 gradi). Gli ambienti parametrici restano ortogonali come prima, anche a L", "Ambiente non ortogonale: un ambiente che ha già angoli diversi da 90 gradi è riconosciuto da solo e i suoi angoli non si mantengono; in più, nel menu dell'ambiente, la voce \"Ambiente non ortogonale\" lo segna a mano (si salva nel progetto, un altro tocco lo toglie). I progetti già fatti si aprono come prima"];
+const APP_VERSION = '2.50';
+const APP_NOTE = ["Rendi parametrico: disegni gli ambienti a linee, inserisci e convalidi le misure, poi con un tocco l'ambiente diventa parametrico e l'app genera muri esterni e tramezze. Dal menu dell'ambiente \"Rendi parametrico\" (anche per rifarlo parametrico dopo averlo modificato a mano, a modifiche finite); per tutti insieme \"Rendi parametrici tutti\" in Disegna e \"Parametrici\" nella barra In loco", "Niente più parametrico automatico: registrando un ambiente da punti o da area resta disegnato a linee finché non tocchi il pulsante. Le stanze create con lo strumento Stanza restano parametriche come prima", "Le quote convalidate diventano lucchetti al momento del pulsante, così le misure restano ferme; i lucchetti si tolgono da soli quando l'ambiente non è più parametrico o cambia lati (le quote convalidate restano e li rifanno al tocco successivo)", "Spessori proposti: 40 cm verso l'esterno, 25 cm verso il vano scala e verso altri ambienti (Disegna > Spessori standard, ora con il vano scala). Se fuori dal lato c'è già una linea disegnata tra 5 e 80 cm, vale quello spessore e non nascono linee doppie. Nel Rilievo in loco il bollino passa da E (esterno) a S (vano scala) ad A (altro ambiente) e lo spessore segue il tipo, salvo quello scritto a mano; nella scheda della stanza un campo spessore per ogni tipo di parete", "Stanze con una linea in comune (una sola linea tra due stanze): \"Rendi parametrici tutti\" dà a ognuna punti suoi, mette la tramezza standard e sposta la stanza più piccola per farle posto, senza cambiare le misure nette. Gli ambienti che non si possono separare in modo sicuro restano come sono e il messaggio dice quali e perché", "Ambienti non ortogonali: diventano parametrici con gli angoli come disegnati, senza vincolo a 90 gradi; lati e diagonali convalidati restano bloccati, e se un'operazione li cambierebbe l'app lo dice e non la fa", "Scheda In loco: \"Larghezza/Lunghezza\" solo per i rettangoli dritti (prima anche con un lato inclinato fino a circa 25 gradi); le misure tra lati non paralleli non compaiono più, perché non sono misure da laser"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
