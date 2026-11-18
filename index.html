@@ -1190,6 +1190,29 @@ function keepMove(seeds) {
   return prev;
 }
 function keepBack(prev) { prev.forEach(([p, x, y]) => { p.x = x; p.y = y; }); }
+// 2.52: gli angoli a 90 gradi degli ambienti ortogonali (non `no90`) fotografati prima di un'operazione: [o, p, q, cos] = angolo in o tra o-p e o-q.
+// orthoBroken dice il primo che non e' piu' a 90 (skip = punto mosso a mano: gli angoli dei muri che lo toccano possono cambiare, come prima)
+function orthoRecs() {
+  const r = [];
+  state.ambienti.forEach(a => {
+    if (a.no90 || !roomOrtho(a)) return;
+    const I = a.indices, n = I.length;
+    for (let k = 0; k < n; k++) { const o = I[k], p = I[(k+n-1)%n], q = I[(k+1)%n], c = orthoAng(state.points[o], state.points[p], state.points[q]); if (c <= ORTHO_COS) r.push([o, p, q, c]); }
+  });
+  return r;
+}
+function orthoBroken(recs, skip) {
+  for (const [o, p, q, c0] of recs) {
+    if (skip!==undefined && (p===skip || q===skip)) continue;
+    const c = orthoAng(state.points[o], state.points[p], state.points[q]);
+    if (c > ORTHO_COS || (c0 < 1e-4 && c > 5e-4)) return o;
+  }
+  return null;
+}
+function orthoMsg(o, short) {
+  const P = state.points[o], nm = P ? P.label : '';
+  return short ? 'Bloccato: l\'angolo in '+nm+' non resterebbe a 90 gradi' : 'L\'angolo in '+nm+' non resterebbe a 90 gradi (se l\'ambiente non è ortogonale: menu dell\'ambiente, "Ambiente non ortogonale").';
+}
 function quotaInfo(i) {
   const g = state.segments[i]; if (!xqOn('qint', QINT) || !g || hid(g) || g.layer==='MURI_EST') return null;     // i muri esterni non hanno quota; spente da Vista (o non scelte all'esportazione) = nessuna quota
   const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return null;
@@ -3407,8 +3430,21 @@ function dragPointTo(i, w, sx, sy) {
     if (us.some(u => Math.abs(u.x*us[0].y - u.y*us[0].x) > 0.05)) { dx = 0; dy = 0; }
     else { const dp = dx*us[0].x + dy*us[0].y; dx -= us[0].x*dp; dy -= us[0].y*dp; }
   }
-  const prev = keepMove([[i, dx, dy]]), bad = okBroken(_okDrag || okRecs());
-  if (bad) { keepBack(prev); text = okMsg(bad, true); }
+  // 2.52: anche gli angoli a 90 degli ambienti restano a 90; se lo spostamento li aprirebbe si prova a muovere il punto lungo uno dei suoi muri, altrimenti si ferma
+  const orec = orthoRecs(), okr = _okDrag || okRecs(), cand = [[dx, dy]];
+  state.segments.forEach(g => {
+    const j = g.a===i ? g.b : g.b===i ? g.a : null, Q = j!==null && j!==i ? state.points[j] : null; if (!Q) return;
+    const L = Math.hypot(Q.x-P.x, Q.y-P.y); if (L < 1e-6) return; const ux = (Q.x-P.x)/L, uy = (Q.y-P.y)/L, dp = dx*ux + dy*uy;
+    if (Math.abs(dp) > 1e-6) cand.push([ux*dp, uy*dp]);
+  });
+  let bad = null, ob = null, done = false;
+  for (const [cx, cy] of cand) {
+    const prev = keepMove([[i, cx, cy]]), b = okBroken(okr), o = b ? null : orthoBroken(orec, i);
+    if (!b && o===null) { done = true; break; }
+    if (b && !bad) bad = b; if (o!==null && ob===null) ob = o;
+    keepBack(prev);
+  }
+  if (!done) text = bad ? okMsg(bad, true) : orthoMsg(ob, true);
   else if (us.length && Math.hypot(x-P.x, y-P.y) > 0.005) text = 'quota convalidata: il punto si sposta senza cambiarla';
   x = P.x; y = P.y;
   if (text) { si.textContent=text; si.style.display='block'; } else si.style.display='none';
@@ -4642,15 +4678,36 @@ function wpLkFromLines(a) {
   return n;
 }
 // spessori di un ambiente reso parametrico adesso: la linea disegnata fuori dal lato (non generata, non di un altro ambiente) se a 5-80 cm, altrimenti lo standard
-function wpMakeThick(R, per) {
+function wpMakeThick(R, per, fc) {                         // fc (2.52): qui si annotano le linee disegnate da cui si e' letto lo spessore {a, k, si, nx, ny}
   const a = R.a, other = new Set(); state.ambienti.forEach(b => { if (b!==a) b.indices.forEach(i => other.add(i)); });
   a.wt = R.S.map((s, k) => {
     const c = wpCls(R, k, per), std = wpStdOf(c); if (!c) return std;
     const si = wpSideSeg(a, R, k); if (si < 0) return std;
     const g = state.segments[si], A = state.points[g.a], B = state.points[g.b], M = {x:(A.x+B.x)/2, y:(A.y+B.y)/2};
     const r = oppositeFace(si, M, M), h = r && state.segments[r.k];
-    return h && !h.mo && !other.has(h.a) && !other.has(h.b) && r.d >= 0.05 && r.d <= 0.80 ? wpR4(r.d) : std;
+    const ok = h && !h.mo && !other.has(h.a) && !other.has(h.b) && r.d >= 0.05 && r.d <= 0.80;
+    if (ok && fc) fc.push({a, k, si:r.k, nx:s.nx, ny:s.ny});
+    return ok ? wpR4(r.d) : std;
   });
+}
+// 2.52: le stanze spostate per far posto alla tramezza portano con se' le linee esterne disegnate da cui si e' letto il loro spessore (solo di traverso
+// alla linea, cosi' le linee attaccate si allungano e restano dritte): lo spessore letto resta quello e la faccia generata coincide con la linea
+// disegnata (nessun doppione). Le linee usate anche da una stanza ferma non si muovono; se cosi' cambierebbe una quota convalidata non si muove nulla.
+function wpMakeFollow(fc, fixA, P0) {
+  const fixSeg = new Set(fc.filter(f => fixA.has(f.a)).map(f => f.si)), mv = new Map();
+  fc.forEach(f => {
+    if (fixA.has(f.a) || fixSeg.has(f.si)) return;
+    const q = P0.get(f.a), p = state.points[f.a.indices[0]], g = state.segments[f.si]; if (!q || !p || !g) return;
+    const dn = (p.x-q.x)*f.nx + (p.y-q.y)*f.ny; if (Math.abs(dn) < 1e-6) return;
+    [g.a, g.b].forEach(i => {
+      const P = state.points[i]; if (!P || locked(P) || hid(P)) return;
+      const L = mv.get(i) || []; if (L.some(e => Math.abs(e.nx*f.nx + e.ny*f.ny) > 0.99)) return;     // stessa direzione gia' contata
+      L.push({nx:f.nx, ny:f.ny, dn}); mv.set(i, L);
+    });
+  });
+  const prev = [];
+  mv.forEach((L, i) => { const P = state.points[i]; prev.push([P, P.x, P.y]); L.forEach(e => { P.x = wpR4(P.x + e.nx*e.dn); P.y = wpR4(P.y + e.ny*e.dn); }); });
+  if (prev.length && _okBase && okBroken(_okBase.r)) keepBack(prev);
 }
 function wpMakePrep(a) {
   const R = wpRing(a); if (!R) return {err:'forma non valida'};
@@ -4669,7 +4726,8 @@ function wpMakeGo(list, skip) {
   if (!made.length) { restore(state.history.pop()); _okBase = null; draw(); setTip('Nessun ambiente reso parametrico. '+skip.join('; ')+'.', 'warn'); return; }
   wpIds();
   const st = wpStd(), rooms = wpRooms(false), per = wpPerim(rooms), mk = new Set(made.map(m => m.a));
-  rooms.forEach(R => { const m = made.find(x => x.a===R.a); if (m && m.neu) wpMakeThick(R, per); });
+  const fc = [];                                           // 2.52: linee disegnate da cui si legge lo spessore (seguono la stanza se si sposta)
+  rooms.forEach(R => { const m = made.find(x => x.a===R.a); if (m && m.neu) wpMakeThick(R, per, fc); });
   // stanze che si toccano (lati affacciati a meno di 2 cm): tramezza standard, poi il risolutore le separa
   const seeds = []; if (!state.wlinks) state.wlinks = [];
   rooms.forEach(A => rooms.forEach(B => {
@@ -4691,7 +4749,8 @@ function wpMakeGo(list, skip) {
   made.forEach(m => { nl += wpLkFromLines(m.a); if (m.a.no90 || !roomOrtho(m.a)) no90.push(m.a.name); });
   const P0 = new Map(made.map(m => { const p = state.points[m.a.indices[0]]; return [m.a, {x:p.x, y:p.y}]; }));
   wpSolve(fixed, null, seeds.length ? [] : undefined);     // G0 vuoto = nessun filo, ma il risolutore separa le stanze anche nel Rilievo in loco
-  const bad = _okBase && okBroken(_okBase.r);              // controllo prima di rebuildWalls (che rifa' gli oggetti linea): una quota convalidata cambiata = si annulla tutto
+  if (seeds.length && fc.length) { const fx = new Set(fixed); wpMakeFollow(fc, new Set(rooms.filter(R => fx.has(R.rid)).map(R => R.a)), P0); }
+  const bad = _okBase && okBroken(_okBase.r);             // controllo prima di rebuildWalls (che rifa' gli oggetti linea): una quota convalidata cambiata = si annulla tutto
   if (bad) { restore(state.history.pop()); _okBase = null; _okFree.clear(); draw(); setTip(okMsg(bad)+' Rendi parametrico annullato: separando le stanze per la tramezza questa quota cambierebbe.', 'warn'); return; }
   rebuildWalls(wpFase());
   const mv = made.filter(m => { const p = state.points[m.a.indices[0]], q = P0.get(m.a); return p && Math.hypot(p.x-q.x, p.y-q.y) > 0.001; }).map(m => m.a.name);
@@ -4969,7 +5028,8 @@ function wpDragTo(sx, sy, ev) {
     else if (d.h==='out') txt = wpDo(W, 'out', d.t0 + dn);
     else if (d.h==='mid') txt = wpDo(W, 'mid', wpR2(dn));
     else txt = wpDo(W, d.h, Math.max(0.1, wpR2(d.len0 + (d.h==='e1' ? du : -du))));
-    if (txt===null) { wpDragBack(d); const er = _wpLocoErr; _wpLocoErr = null; txt = er && er.ask ? 'Due pareti esterne: tocca la maniglia e scrivi la misura, l\'app chiede quale tenere ferma' : er && er.err ? er.err : 'Fin qui non si può'; }
+    d.err = null;                                          // 2.52: ultimo passo non riuscito = niente cambiato, al rilascio si dice perche'
+    if (txt===null) { wpDragBack(d); const er = _wpLocoErr; _wpLocoErr = null; txt = er && er.ask ? 'Due pareti esterne: tocca la maniglia e scrivi la misura, l\'app chiede quale tenere ferma' : er && er.err ? er.err : 'Fin qui non si può'; d.err = txt; }
     wpSolve([W.R.rid]); rebuildWalls(wpFase());
     showTooltip(txt, ev.clientX, ev.clientY); draw();
   } catch (err) { console.error('muri parametrici', err); }
@@ -4977,6 +5037,12 @@ function wpDragTo(sx, sy, ev) {
 function wpUp() {
   const d = state.wpDrag; state.wpDrag = null; hideTooltip(); if (!d) return;
   try {
+    if (state.moved) {
+      // 2.52: niente "Muro modificato" se nulla e' cambiato (maniglia su una misura bloccata da lucchetto o quota convalidata): si dice perche'
+      const W0 = wpWall(), same = d.snap.every(([p, x, y]) => Math.abs(p.x-x) < 1e-6 && Math.abs(p.y-y) < 1e-6)
+        && (!W0 || ((W0.R.a.wt || []).every((t, k) => t===d.wt0[k]) && (!W0.e || (W0.e.l.t===d.lt0 && !!W0.e.l.lk===d.lk0))));
+      if (same) { const er = d.err; dragEnd(false); persist(); draw(); if (er) setTip(er, 'warn'); return; }
+    }
     if (state.moved) { if (dragEnd(true)) commit('Muro modificato: le misure nette degli altri ambienti non sono cambiate.'+wpResText(), true); else { persist(); draw(); } return; }
     wpDragBack(d); dragEnd(false); wpAsk(d.h);              // tocco senza trascinare: il numero si scrive
   } catch (err) { console.error('muri parametrici', err); dragEnd(false); draw(); }
@@ -5192,8 +5258,12 @@ function wpLkSide(a, s) { return wpLk(a).some(p => p[0]===s || p[1]===s); }
 // 2.49: spostare il lato k cambia la lunghezza delle due linee che lo toccano sui lati accanto: la prima con la quota convalidata, o null (skip = non conta)
 function wpQBlock(R, k, skip) {
   if (!R || !(k >= 0) || k >= R.m) return null;
-  const ix = R.a.indices, n = ix.length, i0 = R.ci[k], i1 = R.ci[(k+1)%R.m];
-  for (const [u, v] of [[ix[(i0+n-1)%n], ix[i0]], [ix[i1], ix[(i1+1)%n]]]) {
+  const ix = R.a.indices, n = ix.length, i0 = R.ci[k], i1 = R.ci[(k+1)%R.m], L = [[ix[(i0+n-1)%n], ix[i0]], [ix[i1], ix[(i1+1)%n]]];
+  // 2.52: con un lato accanto non a 90 gradi (trapezio) spostando il lato k cambia anche la lunghezza del lato stesso (le sue linee agli estremi)
+  const s = R.S[k], pv = R.S[(k+R.m-1)%R.m], nx = R.S[(k+1)%R.m];
+  if (s && pv && Math.abs(s.ux*pv.ux + s.uy*pv.uy) > ORTHO_COS) L.push([ix[i0], ix[(i0+1)%n]]);
+  if (s && nx && Math.abs(s.ux*nx.ux + s.uy*nx.uy) > ORTHO_COS) L.push([ix[(i1+n-1)%n], ix[i1]]);
+  for (const [u, v] of L) {
     const g = state.segments.find(h => (h.a===u && h.b===v) || (h.a===v && h.b===u)), A = g && state.points[g.a], B = g && state.points[g.b];
     if (g && g!==skip && A && B && segOk(g, Math.hypot(B.x-A.x, B.y-A.y))) return g;
   }
@@ -5206,6 +5276,7 @@ function wpLocoSide(R, k, per, keep) {
   if (wpLkHas(a, k, j)) return {j, err:'Misura validata (lucchetto): per cambiarla togli prima il lucchetto.'};
   const cl = s => { const c = wpCls(R, s, per); return c===3 ? 0 : c; };                  // 2.50: verso altro ambiente = lato interno
   const ck = cl(k), cj = cl(j), bq = s => wpQBlock(R, s), bl = s => wpLkSide(a, s) || !!bq(s); let mv;   // 2.49: anche le quote convalidate bloccano
+  if (bl(k) && bl(j)) { const g = bq(k) || bq(j); return {j, err: g ? okMsg(g) : 'Tutti e due i lati appartengono a misure validate: togli prima un lucchetto.'}; }   // 2.52: nessuno dei due si muove, senza chiedere quale
   if (keep===k || keep===j) mv = keep===k ? j : k;
   else if (ck && !cj) mv = j;
   else if (cj && !ck) mv = k;
@@ -5471,6 +5542,8 @@ function locoSet(rid, fd, txt, done) {
       const r = wpLocoNet(R1, fd.k, v, keep);
       if (r.ask) { state.history.pop(); wpAskKeep(R1, r.ask, kp => apply(kp)); return; }
       if (r.err) { state.history.pop(); setTip(r.err, 'warn'); draw(); return; }
+      const qb = _okBase && okBroken(_okBase.r);           // 2.52: una quota convalidata cambierebbe (anche il lato spostato stesso): si rifiuta e si dice quale, mai in silenzio
+      if (qb) { restore(state.history.pop()); _okBase = null; _okFree.clear(); setTip(okMsg(qb)+' Misura non impostata.', 'warn'); locoRender(); draw(); return; }
       a.lk = wpLk(a).filter(p => !((p[0]===fd.k && p[1]===r.j) || (p[0]===r.j && p[1]===fd.k))).concat([[fd.k, r.j, wpR4(v)]]);
       locoValQuotes(a, fd.k, r.j, v);
       rebuildWalls(wpFase());
@@ -5500,13 +5573,28 @@ function locoLockTap() {
   const R = locoRoom(); if (!R) return;
   const fd = locoFields(R)[state.locoF.i]; if (!fd || fd.t!=='net') return;
   const a = R.a; saveHistory();
-  if (locoLocked(R, fd)) {                                 // 2.49: il lucchetto tolto toglie anche la convalida delle quote che bloccano la misura
+  if (locoLocked(R, fd)) {                                 // 2.49: il lucchetto tolto toglie anche la convalida delle quote della misura
     a.lk = wpLk(a).filter(p => !((p[0]===fd.k && p[1]===fd.j) || (p[0]===fd.j && p[1]===fd.k))); if (!a.lk.length) delete a.lk;
-    let g, n = 0; while (n++ < 8 && (g = wpQBlock(R, fd.k) || wpQBlock(R, fd.j))) { g.ok = false; _okFree.add(g); }
+    locoMeasLines(R, fd).forEach(g => { g.ok = false; _okFree.add(g); });     // 2.52: solo le linee che misurano questa misura (a 90 gradi dai due lati), non il lato inclinato
+    const g = locoLocked(R, fd) ? (wpQBlock(R, fd.k) || wpQBlock(R, fd.j)) : null;
     commit(a.name+': lucchetto tolto (anche dalle quote della misura), la misura si può cambiare.', true);
+    if (g) setTip(a.name+': lucchetto tolto, ma la misura resta bloccata da un\'altra quota convalidata. '+okMsg(g), 'warn');
   }
   else { const v = wpNet(R, fd.k); a.lk = wpLk(a).concat([[fd.k, fd.j, wpR4(v)]]); locoValQuotes(a, fd.k, fd.j, v); commit(a.name+': '+fd.lab.toLowerCase()+' '+num(v)+' m validata (lucchetto).', true); }
   locoRender(); locoFocus();
+}
+// 2.52: le linee convalidate che misurano la misura tra i lati k e j: sui lati accanto, agli estremi di k e di j, a 90 gradi da k
+function locoMeasLines(R, fd) {
+  const ix = R.a.indices, n = ix.length, s = R.S[fd.k], out = []; if (!s) return out;
+  [fd.k, fd.j].forEach(k => {
+    if (!(k >= 0) || k >= R.m) return; const i0 = R.ci[k], i1 = R.ci[(k+1)%R.m];
+    [[ix[(i0+n-1)%n], ix[i0]], [ix[i1], ix[(i1+1)%n]]].forEach(([u, v]) => {
+      const g = state.segments.find(h => (h.a===u && h.b===v) || (h.a===v && h.b===u)), A = g && state.points[g.a], B = g && state.points[g.b]; if (!A || !B) return;
+      const L = Math.hypot(B.x-A.x, B.y-A.y); if (L < 1e-6 || !segOk(g, L) || out.includes(g)) return;
+      if (Math.abs(((B.x-A.x)*s.ux + (B.y-A.y)*s.uy)/L) <= ORTHO_COS) out.push(g);
+    });
+  });
+  return out;
 }
 // 2.49: la misura della scheda e' bloccata dal lucchetto o dalle quote convalidate (nessuno dei due lati si puo' spostare)
 function locoLocked(R, fd) { return wpLkHas(R.a, fd.k, fd.j) || !!(wpQBlock(R, fd.k) && wpQBlock(R, fd.j)); }
@@ -6297,13 +6385,18 @@ function setWallLength(si, m) {
   // 2.49: i muri collegati ad angolo retto traslano (la stanza resta ortogonale, keepMove); se cosi' cambierebbe una quota convalidata
   // si prova a muovere un estremo solo, poi l'altro; se non basta la misura non si imposta e si dice quale quota blocca
   const ux = (B.x-A.x)/len, uy = (B.y-A.y)/len, fr = locked(B) ? [1] : locked(A) ? [0] : [0.5, 1, 0];
-  let bad = null;
+  // 2.52: un tentativo vale solo se nessuna quota convalidata cambia E gli angoli a 90 degli ambienti restano a 90 (prima il tentativo con un estremo
+  // solo passava anche se il muro accanto si inclinava: stanza a trapezio). Se nessun tentativo va bene si rifiuta dicendo la quota (o l'angolo) che blocca
+  const orec = orthoRecs();
+  let bad = null, ob = null, done = false;
   for (const f of fr) {
     const dA = (m-len)*f, dB = (m-len) - dA, prev = keepMove([[g.a, -ux*dA, -uy*dA], [g.b, ux*dB, uy*dB]]);
-    bad = okBroken(rec); if (!bad) break;
+    const b = okBroken(rec), o = b ? null : orthoBroken(orec);
+    if (!b && o===null) { done = true; break; }
+    if (b && !bad) bad = b; if (o!==null && ob===null) ob = o;
     keepBack(prev);
   }
-  if (bad) { state.history.pop(); _okBase = null; _okFree.clear(); setTip(okMsg(bad)+' La misura di '+A.label+' - '+B.label+' non si può impostare così.', 'warn'); draw(); return; }
+  if (!done) { state.history.pop(); _okBase = null; _okFree.clear(); setTip((bad ? okMsg(bad)+' ' : '')+'La misura di '+A.label+' - '+B.label+' non si può impostare così'+(bad ? (ob!==null ? ' (e muovendo un estremo solo un angolo non resterebbe a 90 gradi)' : '') : ': '+orthoMsg(ob).replace(/^L/, 'l'))+(bad ? '.' : ''), 'warn'); draw(); return; }
   state.segments.forEach((h, k) => {                  // i serramenti restano alla stessa distanza dall'inizio delle linee che cambiano lunghezza
     const l1 = sl(k); if (l1 < 1e-6 || Math.abs(l1 - l0[k]) < 1e-9) return;
     state.openings.forEach(op => {
@@ -12799,8 +12892,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.51';
-const APP_NOTE = ["Spessori dei muri corretti: le tramezze tra ambienti tornano a 10 cm (la 2.50 le metteva a 25), anche per Stanza al tocco, Spezza e crea ambiente, Rendi parametrico e Rendi parametrici tutti; le stanze che si toccano vengono separate da una tramezza di 10 cm. Si cambiano solo parete per parete con le misure in loco; lo spessore scritto a mano resta", "Verso vano scala o locali non riscaldati: 25 cm stimati. Verso l'esterno: 40 cm di base, un solo valore per tutti i muri esterni: cambiandolo nella scheda In loco (campo \"Spessore muri esterni (tutti)\") o in Disegna > Spessori standard si aggiornano i muri esterni standard di tutte le stanze, quelli scritti a mano restano", "Bollino nel Rilievo in loco: E (esterno, 40) - S (vano scala o non riscaldato, 25) - A (altro ambiente, tramezza 10) - E. Se fuori dal lato c'è una linea già disegnata, vale ancora la distanza letta dalle linee", "I progetti salvati con la 2.50 tengono i loro spessori standard (tramezze 25): per riportarle a 10 cm basta Disegna > Spessori standard"];
+const APP_VERSION = '2.52';
+const APP_NOTE = ["Imposta misura su un muro di una stanza a linee: gli angoli a 90 gradi restano a 90 anche quando un'altra quota è convalidata. Se la misura nuova non è compatibile con le quote convalidate (esempio: lato basso convalidato a 4,00 e lato alto portato a 4,20) l'app non la imposta e dice quale quota blocca, invece di inclinare un lato e fare un trapezio", "Trascinando un punto, se lo spostamento aprirebbe un angolo a 90 gradi della stanza il punto scorre lungo uno dei suoi muri o si ferma con il motivo nell'indicatore", "Rendi parametrici tutti con due stanze attaccate e muri esterni già disegnati: la stanza spostata per far posto alla tramezza si porta dietro le linee esterne disegnate dalla sua parte, quindi lo spessore letto resta quello disegnato (esempio 40 cm) e non nascono linee doppie o sovrapposte", "Rilievo in loco, ambienti con un lato inclinato: una misura che cambierebbe la lunghezza di un lato convalidato (anche il lato che si sposta) non si imposta e il messaggio dice quale quota blocca, invece di cambiarla in silenzio. Togliere il lucchetto toglie la convalida solo alle quote di quella misura, non al lato inclinato; se la misura resta bloccata da un'altra quota convalidata l'app lo dice", "Maniglie dei muri (gialle e blu) su una misura bloccata da lucchetto o da quota convalidata: al rilascio l'app dice perché non è cambiato nulla, invece di \"Muro modificato\""];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
