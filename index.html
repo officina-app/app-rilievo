@@ -7935,8 +7935,49 @@ let startNotes = [];          // note di aggiornamento del rilievo ritrovato nel
 // ═══════════════════════════════════════════════════════════
 //  SALVA / APRI PROGETTO
 // ═══════════════════════════════════════════════════════════
+// Tutte le esportazioni passano da download(). Se il browser sa condividere file (telefono/tablet) compare una
+// finestra con Condividi / Salva / Annulla; altrimenti (desktop) salvataggio diretto come prima della 2.53.
+// Piu' file generati nello stesso momento (es. tabelle JPG a piu' pagine) = una sola finestra e una sola condivisione.
+let _shareQ = null;
 function download(name, content, mime) {
   const blob = new Blob([content], {type: mime});
+  const file = shareFile(name, blob, mime);
+  if (!file) { saveBlob(name, blob); return; }
+  if (!_shareQ) { _shareQ = []; setTimeout(() => { const q = _shareQ; _shareQ = null; shareDialog(q); }, 0); }
+  _shareQ.push({name, blob, file});
+}
+function shareFile(name, blob, mime) {          // File condivisibile (nome invariato) o null; tipo non accettato = riprova come file generico
+  if (!navigator.canShare || !navigator.share || typeof File !== 'function') return null;
+  for (const t of [mime, 'application/octet-stream']) {
+    try { const f = new File([blob], name, {type: t}); if (navigator.canShare({files: [f]})) return f; } catch (e) {}
+  }
+  return null;
+}
+function shareDialog(q) {
+  const ov = document.createElement('div'), box = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:400;display:flex;align-items:center;justify-content:center;padding:16px';
+  box.style.cssText = 'background:#16213e;border:1px solid #0f3460;border-radius:12px;padding:20px;width:min(360px,94vw);max-height:80vh;overflow-y:auto;color:#eee';
+  const h = document.createElement('h3'), names = document.createElement('div'), msg = document.createElement('div');
+  h.textContent = q.length > 1 ? q.length+' file pronti' : 'File pronto';
+  h.style.cssText = 'margin:0 0 10px;font-size:16px;color:#9fd0ff';
+  names.textContent = q.map(x => x.name).join('\n');
+  names.style.cssText = 'font-size:13px;line-height:1.5;white-space:pre-line;word-break:break-all;margin-bottom:6px';
+  msg.style.cssText = 'font-size:13px;color:#ffe066';
+  const close = () => ov.remove();
+  const btn = (txt, bg, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = txt; b.onclick = fn;
+    b.style.cssText = 'display:block;width:100%;min-height:52px;margin-top:10px;border:none;border-radius:8px;font-size:16px;cursor:pointer;color:#fff;background:'+bg; return b; };
+  box.append(h, names, msg,
+    btn('Condividi', '#2f7fe0', () => {      // parte dal tocco: iPhone vuole il gesto dell'utente
+      msg.textContent = '';
+      let p;
+      try { p = navigator.share({files: q.map(x => x.file), title: q.length > 1 ? q.length+' file - '+q[0].name : q[0].name}); } catch (e) { p = Promise.reject(e); }
+      Promise.resolve(p).then(close, e => { if (!e || e.name !== 'AbortError') msg.textContent = 'Condivisione non riuscita: usa Salva per tenere il file.'; });
+    }),
+    btn('Salva', '#1d6b3a', () => { q.forEach(x => saveBlob(x.name, x.blob)); close(); }),
+    btn('Annulla', '#0f3460', close));
+  ov.appendChild(box); document.body.appendChild(ov);
+}
+function saveBlob(name, blob) {                 // salvataggio diretto (come sempre)
   const url  = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = name;
@@ -12892,8 +12933,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.52';
-const APP_NOTE = ["Imposta misura su un muro di una stanza a linee: gli angoli a 90 gradi restano a 90 anche quando un'altra quota è convalidata. Se la misura nuova non è compatibile con le quote convalidate (esempio: lato basso convalidato a 4,00 e lato alto portato a 4,20) l'app non la imposta e dice quale quota blocca, invece di inclinare un lato e fare un trapezio", "Trascinando un punto, se lo spostamento aprirebbe un angolo a 90 gradi della stanza il punto scorre lungo uno dei suoi muri o si ferma con il motivo nell'indicatore", "Rendi parametrici tutti con due stanze attaccate e muri esterni già disegnati: la stanza spostata per far posto alla tramezza si porta dietro le linee esterne disegnate dalla sua parte, quindi lo spessore letto resta quello disegnato (esempio 40 cm) e non nascono linee doppie o sovrapposte", "Rilievo in loco, ambienti con un lato inclinato: una misura che cambierebbe la lunghezza di un lato convalidato (anche il lato che si sposta) non si imposta e il messaggio dice quale quota blocca, invece di cambiarla in silenzio. Togliere il lucchetto toglie la convalida solo alle quote di quella misura, non al lato inclinato; se la misura resta bloccata da un'altra quota convalidata l'app lo dice", "Maniglie dei muri (gialle e blu) su una misura bloccata da lucchetto o da quota convalidata: al rilascio l'app dice perché non è cambiato nulla, invece di \"Muro modificato\""];
+const APP_VERSION = '2.53';
+const APP_NOTE = ["Condivisione degli elaborati da telefono e tablet: dopo ogni esportazione (progetto JSON, PDF, JPG, DXF, CSV, Word, tabelle) compare una finestra con Condividi, Salva e Annulla. Condividi apre il foglio di condivisione del telefono (email, Telegram, WhatsApp, Drive e le altre app); Salva salva il file come prima", "Se la condivisione non riesce o il foglio viene chiuso, la finestra resta aperta e si può sempre scegliere Salva: il file non si perde", "Esportazioni con più file (tabelle in JPG a più pagine): una sola finestra e una sola condivisione con tutti i file", "Su computer, o con browser che non sanno condividere file, nulla cambia: il file si salva subito come prima"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
