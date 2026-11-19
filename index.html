@@ -151,6 +151,18 @@
     .pick-list div.back { color:#9fb3d1; font-size:12px; border-bottom:1px solid #0f3460; }
     #guide-card { position:fixed; top:10px; right:66px; width:min(420px, calc(100vw - 76px - var(--tb-w,0px))); z-index:158; display:none; background:#16213e; border:1px solid #ffe066; border-radius:10px; padding:12px 14px; color:#eee; font-size:14px; line-height:1.4; box-shadow:0 4px 18px rgba(0,0,0,.6); max-height:calc(var(--vh,100vh) - 60px); overflow-y:auto; }
     #guide-card h4 { color:#ffe066; font-size:14px; margin-bottom:6px; }
+    /* 2.55 percorso guidato: barra compatta in alto, accanto ai pulsanti tondi; spenta = nessuno spazio */
+    #path-bar { position:fixed; top:6px; left:calc(var(--tb-w,0px) + 6px); right:62px; max-width:560px; z-index:157; display:none; flex-direction:column; gap:4px; background:rgba(22,33,62,.96); border:1px solid #ffe066; border-radius:10px; padding:5px 7px; font-size:13px; color:#ddd; box-sizing:border-box; }
+    body:has(#toolbar.hidden):not(.bm) #path-bar { left:52px; }
+    #path-bar .pb-r { display:flex; gap:4px; align-items:center; min-width:0; }
+    #path-bar button { min-height:34px; padding:0 10px; font-size:13px; border-radius:7px; background:#0f3460; color:#eee; border:1px solid #1a5a9a; cursor:pointer; white-space:nowrap; }
+    #path-bar button.pb-n { min-width:30px; padding:0; flex:none; }
+    #path-bar button.pb-n.cur { background:#ffe066; color:#16213e; border-color:#ffe066; font-weight:bold; }
+    #path-bar button.ok { background:#1a6a3a; border-color:#2a9a5a; color:#fff; flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; }
+    #path-bar button:disabled { opacity:.4; }
+    #path-bar .pb-tt { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#ffe066; margin-left:4px; }
+    #path-bar .pb-x { flex:none; }
+    #path-bar .pb-t { line-height:1.35; }
     #guide-card .gb { display:block; width:100%; text-align:left; margin:5px 0; padding:8px 12px; background:#0f3460; border:1px solid #1a5a9a; color:#eee; border-radius:6px; font-size:14px; cursor:pointer; }
     #guide-card .gb small { display:block; color:#9fb3d1; font-size:11px; }
     #guide-card .row { display:flex; justify-content:space-between; align-items:center; margin-top:8px; gap:8px; }
@@ -321,9 +333,10 @@
   <button class="tool-btn green" title="Annulla" onclick="undo()"><span class="ic">↩</span><span class="cap">Annulla</span></button>
   <button class="tool-btn green" id="btn-file" title="File" onclick="toggleMenu('file-submenu',this)"><span class="ic">💾</span><span class="cap">File</span></button>
   <button class="tool-btn" id="btn-view" title="Stato di fatto / Progetto: tocca per cambiare" onclick="toggleView()"><span class="ic">SdF</span><span class="cap">Di fatto</span></button>
-  <button class="tool-btn" id="btn-loco" title="Rilievo in loco: misure stanza per stanza, le stanze vicine restano ferme; poi Riassembla" onclick="toggleLoco()"><span class="ic">LOCO</span><span class="cap">In loco</span></button>
+  <button class="tool-btn" id="btn-loco" title="Rilievo in loco da zero: misure stanza per stanza, poi Riassembla (con il disegno già preparato usa Imposta misura sui muri)" onclick="toggleLoco()"><span class="ic">LOCO</span><span class="cap">In loco</span></button>
 </div>
 <button id="menu-tab" title="Mostra il menu" onclick="toggleMenuBar(true)">☰</button>
+<div id="path-bar"></div>
 
 <canvas id="canvas"></canvas>
 
@@ -331,7 +344,6 @@
   <div class="menu-item tool-item" id="ti-wall" onclick="pickTool('wall')"><span class="ti">▭</span><span class="tt"><b>Muro</b><small>Traccia i muri, un vertice dopo l'altro</small></span></div>
   <div class="menu-item tool-item" id="ti-room" onclick="pickTool('room')"><span class="ti">⬚</span><span class="tt"><b>Stanza rettangolare</b><small>Trascina un rettangolo: 4 muri e l'ambiente in un colpo</small></span></div>
   <div class="menu-item tool-item" id="ti-wstd" onclick="wpStdDialog()"><span class="ti">▥</span><span class="tt"><b>Spessori standard</b><small>Muri esterni e tramezze, una volta per tutto il rilievo</small></span></div>
-  <div class="menu-item tool-item" id="ti-wpall" onclick="wpMakeAll()"><span class="ti">⟲</span><span class="tt"><b>Rendi parametrici tutti</b><small>Dopo il rilievo a linee: muri esterni e tramezze in un tocco, quote convalidate = lucchetti</small></span></div>
   <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Ambiente</div><div class="grp-b">
     <div class="menu-item tool-item" id="ti-roompts" onclick="pickTool('roompts')"><span class="ti">⬠</span><span class="tt"><b>Ambiente da punti</b><small>Tocca i vertici in ordine: nel Progetto, per le stanze unite</small></span></div>
     <div class="menu-item tool-item" id="ti-boundary" onclick="pickTool('boundary')"><span class="ti">⬚</span><span class="tt"><b>Ambiente da area</b><small>Tocca dentro un'area chiusa da muri: il contorno lo trova l'app</small></span></div>
@@ -348,6 +360,9 @@
   <div class="menu-item tool-item" id="ti-ccircle" onclick="pickTool('ccircle')"><span class="ti">○</span><span class="tt"><b>Cerchio di costruzione</b><small>Tocca il centro, poi un punto sul bordo o scrivi il raggio</small></span></div>
   <div class="menu-item tool-item" id="ti-csquare" onclick="pickTool('csquare')"><span class="ti">□</span><span class="tt"><b>Quadrato di costruzione</b><small>Tocca un angolo e quello opposto, oppure scrivi il lato (o LxH): angoli, centro e incroci diventano punti di aggancio</small></span></div>
   <div class="menu-item tool-item" id="ti-pencil" onclick="pickTool('pencil')"><span class="ti">✏</span><span class="tt"><b>Matita</b><small>Disegno a mano libera</small></span></div>
+  <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Avanzate</div><div class="grp-b">
+    <div class="menu-item tool-item" id="ti-wpall" onclick="wpMakeAll()"><span class="ti">⟲</span><span class="tt"><b>Rendi parametrici tutti</b><small>Facoltativo: genera muri esterni e tramezze per tutti gli ambienti a linee e può spostare quelli disegnati. Di solito non serve</small></span></div>
+  </div></div>
 </div>
 <div id="group-ins" class="floating-menu">
   <div class="menu-item tool-item" id="ti-opening-F" onclick="selectOpeningType('F')"><span class="ti">🪟</span><span class="tt"><b>Finestra (F)</b><small>Poi tocca il muro dove va</small></span></div>
@@ -402,6 +417,7 @@
     <div class="menu-item" onclick="exportDrawing('jpg')">🖼 Esporta disegno (JPG)<small class="md">Solo la tavola, su A4 in scala, come immagine</small></div>
     <div class="menu-item" id="fm-dxf" onclick="exportDXF()">📤 Esporta DXF<small class="md">Per AutoCAD e gli altri CAD, in metri</small></div>
   </div></div>
+  <div class="menu-item" id="fm-path" onclick="pathToggle()"><span class="ck">☐</span> Percorso guidato<small class="md">Barra con i passi del rilievo, dalla base alla restituzione: facoltativa, si spegne quando vuoi</small></div>
   <div class="menu-item" id="fm-meta" onclick="metaDialog()">🏷 Dati del rilievo<small class="md">Indirizzo, catasto, committente e tecnico: vanno nel cartiglio e nel nome dei file</small></div>
   <div class="menu-item" id="fm-verify" onclick="verifyOpen()">✅ Verifica rilievo<small class="md">Cosa manca prima di esportare</small></div>
   <div class="menu-item" id="fm-save" onclick="saveProject()">💾 Salva progetto (.json)<small class="md">Archivia il rilievo o passalo a un collega</small></div>
@@ -480,7 +496,7 @@
   <div class="menu-item" data-lock onclick="ambMenuAction('edit')">✎ Modifica ambiente<small class="md">Nome, altezza e categoria; mostra superficie e pareti</small></div>
   <div class="menu-item" data-lock id="am-move" onclick="ambMenuAction('move')">✥ Sposta ambiente<small class="md">Trascina l'ambiente con i suoi muri; al rilascio si aggancia alla stanza vicina</small></div>
   <div class="menu-item" id="am-wpon" onclick="ambMenuAction('wpon')">⟲ Rendi parametrico<small class="md">A modifiche finite: misure di adesso = nette, quote convalidate = lucchetti, muri esterni e tramezze generati</small></div>
-  <div class="menu-item" data-lock id="am-no90" onclick="ambMenuAction('no90')">∠ Ambiente non ortogonale<small class="md">Gli angoli a 90 gradi non si mantengono quando cambi le misure</small></div>
+  <div class="menu-item" data-lock id="am-or90" onclick="ambMenuAction('or90')">∠ Mantieni angoli a 90<small class="md">Con Imposta misura gli angoli retti dell'ambiente restano a 90</small></div>
   <div class="menu-item" data-lock id="am-vgraf" onclick="ambMenuAction('vgraf')">⌒ Volta sul disegno<small class="md">Tocchi i quattro punti d'imposta sul disegno, poi le quote</small></div>
   <div class="menu-item" data-lock id="am-volta" onclick="ambMenuAction('volta')">⌒ Volta<small class="md">A botte o a crociera: quote d'imposta e in chiave, tratteggio in pianta, H min e H max</small></div>
   <div class="menu-item" data-lock id="am-novolta" onclick="ambMenuAction('novolta')">⌓ Togli volta<small class="md">Torna al soffitto piano, con l'altezza dell'ambiente</small></div>
@@ -646,6 +662,7 @@ try { if (localStorage.getItem('app_rilievo_magnete')==='0') magnetOn = false; }
 const SNAP_PT_PX   = COARSE ? 24 : 16;     // raggio in px per l'aggancio ai punti esistenti
 const HIT_HANDLE_PX = COARSE ? 24 : 14;    // maniglie di scale e serramenti, scelta delle intersezioni
 const HIT_PT_PX    = COARSE ? 24 : 15;
+const HIT_PT_GRAB  = 30;                  // 2.55: col dito, per prendere e trascinare un punto basta toccare entro 30 px (il tocco semplice seleziona come prima)
 const HIT_SEG_PX   = COARSE ? 20 : 12;
 const CLICK_SLOP   = COARSE ? 12 : 6;      // px sotto i quali un drag conta come click
 const AMB_COLORS   = ['#3a6a4a','#3a4a7a','#6a3a4a','#5a5a2a','#4a3a6a','#2a5a5a','#6a4a2a','#2a3a6a'];
@@ -1159,28 +1176,32 @@ function roomOrtho(a) {                                        // tutti gli ango
   for (let k = 0; k < n; k++) { const c = orthoAng(P[k], P[(k+n-1)%n], P[(k+1)%n]); if (c > ORTHO_COS && c < ORTHO_COL) return false; }
   return true;
 }
-function orthoOff() { const s = new Set(); state.ambienti.forEach(a => { if (a.no90 || !roomOrtho(a)) a.indices.forEach(i => s.add(i)); }); return s; }
+// 2.55: gli angoli a 90 si mantengono SOLO negli ambienti con `or90` (campo facoltativo, "Mantieni angoli a 90" nel menu dell'ambiente) e SOLO nelle
+// misure (Imposta misura), mai nel trascinamento dei punti. `no90` dei progetti 2.49-2.54 = or90 spento; progetti senza campo = liberi
+function or90(a) { return !!a && !!a.or90 && !a.no90; }
+function or90Init(a) { if (a && !a.wt && roomOrtho(a)) a.or90 = true; }          // ambiente a linee appena registrato con tutti gli angoli a 90 (2 gradi)
+function orthoOn() { const s = new Set(); state.ambienti.forEach(a => { if (or90(a)) a.indices.forEach(i => s.add(i)); }); return s; }
 // sposta i punti seeds [[i, dx, dy]] e fa seguire i vicini: lungo una quota convalidata il vicino trasla con il punto (la quota non cambia);
 // su un angolo retto il vicino scorre sull'altro suo muro (il muro tra i due non ruota, gli angoli restano a 90). Si propaga finche' serve.
 // Il punto mosso a mano fa seguire i vicini solo se ha lui stesso un angolo retto (la punta libera di una linea non trascina l'angolo a cui e' attaccata).
 // Ritorna le posizioni di prima (keepBack le rimette)
 function keepMove(seeds) {
-  const off = orthoOff(), adj = new Map(), D = new Map(), Qu = [];
+  const on = orthoOn(), adj = new Map(), D = new Map(), Qu = [];
   const add = (i, j, g) => { if (!adj.has(i)) adj.set(i, []); adj.get(i).push([j, g]); };
   state.segments.forEach(g => { if (g.a!==g.b && state.points[g.a] && state.points[g.b]) { add(g.a, g.b, g); add(g.b, g.a, g); } });
   const right = (o, x) => (adj.get(o) || []).some(([y]) => y!==x && orthoAng(state.points[o], state.points[x], state.points[y]) <= ORTHO_COS);
-  const isSeed = new Set(seeds.map(s => s[0])), seedOk = new Set(seeds.filter(([i]) => !off.has(i) && (adj.get(i) || []).some(([x]) => right(i, x))).map(s => s[0]));
+  const isSeed = new Set(seeds.map(s => s[0])), seedOk = new Set(seeds.filter(([i]) => on.has(i) &&(adj.get(i) || []).some(([x]) => right(i, x))).map(s => s[0]));
   seeds.forEach(([i, dx, dy]) => { D.set(i, {x:dx, y:dy}); Qu.push(i); });
   for (let h = 0; h < Qu.length; h++) {
     const i = Qu[h], d = D.get(i), P = state.points[i]; if (!P || Math.hypot(d.x, d.y) < 1e-9) continue;
-    const orth = !off.has(i) && (!isSeed.has(i) || seedOk.has(i));
+    const orth = on.has(i) && (!isSeed.has(i) || seedOk.has(i));
     for (const [j, g] of adj.get(i) || []) {
       if (D.has(j)) continue;
       const Q = state.points[j]; if (locked(Q) || hid(Q)) continue;
       const L = Math.hypot(Q.x-P.x, Q.y-P.y); if (L < 1e-6) continue;
       let m = null;
       if (segOk(g, L) && !_okFree.has(g)) m = {x:d.x, y:d.y};
-      else if (orth && !off.has(j) && right(j, i)) { const ux = (Q.x-P.x)/L, uy = (Q.y-P.y)/L, dp = d.x*ux + d.y*uy; m = {x:d.x - ux*dp, y:d.y - uy*dp}; }
+      else if (orth && on.has(j) && right(j, i)) { const ux = (Q.x-P.x)/L, uy = (Q.y-P.y)/L, dp = d.x*ux + d.y*uy; m = {x:d.x - ux*dp, y:d.y - uy*dp}; }
       if (!m || Math.hypot(m.x, m.y) < 1e-9) continue;
       D.set(j, m); Qu.push(j);
     }
@@ -1190,12 +1211,62 @@ function keepMove(seeds) {
   return prev;
 }
 function keepBack(prev) { prev.forEach(([p, x, y]) => { p.x = x; p.y = y; }); }
+// 2.55: keepMove resta SOLO per Imposta misura (setWallLength); il trascinamento dei punti non la usa piu'.
+// Dopo Imposta misura nessuna linea si sovrappone o coincide con un'altra, ne' si annulla: prima coppia nuova [g, h] (h null = g si annulla), o null.
+// Le sovrapposizioni che c'erano gia' prima (es. linee in comune duplicate dal parametrico) non contano
+function lineOverlap(prev) {
+  if (!prev || !prev.length) return null;
+  const old = new Map(prev.map(([p, x, y]) => [p, {x, y}])), at = (p, o) => o && old.has(p) ? old.get(p) : p;
+  const len = (g, o) => { const A = at(state.points[g.a], o), B = at(state.points[g.b], o); return Math.hypot(B.x-A.x, B.y-A.y); };
+  const ov = (g, h, o) => {
+    const A = at(state.points[g.a], o), B = at(state.points[g.b], o), C = at(state.points[h.a], o), D = at(state.points[h.b], o);
+    const L = Math.hypot(B.x-A.x, B.y-A.y); if (L < 0.005) return false;
+    const ux = (B.x-A.x)/L, uy = (B.y-A.y)/L, off = Q => Math.abs((Q.x-A.x)*uy - (Q.y-A.y)*ux), t = Q => (Q.x-A.x)*ux + (Q.y-A.y)*uy;
+    if (off(C) > 0.003 || off(D) > 0.003) return false;
+    return Math.min(L, Math.max(t(C), t(D))) - Math.max(0, Math.min(t(C), t(D))) > 0.005;
+  };
+  const segs = state.segments.filter(g => g.a!==g.b && state.points[g.a] && state.points[g.b] && !hid(g));
+  for (const g of segs) {
+    if (!old.has(state.points[g.a]) && !old.has(state.points[g.b])) continue;
+    if (len(g, false) < 0.005 && len(g, true) >= 0.005) return [g, null];
+    for (const h of segs) {
+      if (h===g || (g.fase==='nuovo')!==(h.fase==='nuovo')) continue;
+      if (ov(g, h, false) && !ov(g, h, true)) return [g, h];
+    }
+  }
+  return null;
+}
+function lineOverlapMsg(v) {
+  const lb = g => { const A = state.points[g.a], B = state.points[g.b]; return (A ? A.label : '')+' - '+(B ? B.label : ''); };
+  return v[1] ? 'la linea '+lb(v[0])+' si sovrapporrebbe a '+lb(v[1]) : 'la linea '+lb(v[0])+' si annullerebbe';
+}
+// 2.55 Imposta misura su un muro esterno: resta fermo l'estremo esterno (spigolo dell'edificio) e si muove quello verso l'interno.
+// Muro esterno = da un lato, a 60 cm dal centro del muro, non c'e' nessun ambiente. Estremo esterno = prolungando il muro di 60 cm oltre
+// quell'estremo non si entra in nessun ambiente; l'altro invece entra nella stanza accanto. Ritorna 'a' o 'b' (l'estremo che resta fermo) o null = come prima
+function wallExtEnd(g) {
+  const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return null;
+  const L = Math.hypot(B.x-A.x, B.y-A.y); if (L < 1e-6) return null;
+  const ux = (B.x-A.x)/L, uy = (B.y-A.y)/L, d = 0.6, Mx = (A.x+B.x)/2, My = (A.y+B.y)/2;
+  const polys = state.ambienti.filter(a => live(a) && !hid(a) && a.indices.length >= 3).map(a => a.indices.map(i => state.points[i]).filter(Boolean)).filter(p => p.length >= 3);
+  const inAny = (x, y) => polys.some(p => inPoly(p, x, y));
+  if (inAny(Mx - uy*d, My + ux*d) && inAny(Mx + uy*d, My - ux*d)) return null;      // ambienti dai due lati: muro interno
+  const ea = !inAny(A.x - ux*d, A.y - uy*d), eb = !inAny(B.x + ux*d, B.y + uy*d);
+  return ea && !eb ? 'a' : eb && !ea ? 'b' : null;
+}
+// 2.55: punti nello stesso posto del punto trascinato (entro 1 mm) che si muovono con lui; mai quelli degli ambienti parametrici (restano come prima)
+function dragCo(i) {
+  const P = state.points[i], par = new Set(); if (!P) return [];
+  state.ambienti.forEach(a => { if (a.wt && !a.wpx) a.indices.forEach(k => par.add(k)); });
+  if (par.has(i)) return [];
+  const r = []; state.points.forEach((Q, k) => { if (k!==i && Q && !hid(Q) && !locked(Q) && !par.has(k) && Math.abs(Q.x-P.x) < 0.001 && Math.abs(Q.y-P.y) < 0.001) r.push(k); });
+  return r;
+}
 // 2.52: gli angoli a 90 gradi degli ambienti ortogonali (non `no90`) fotografati prima di un'operazione: [o, p, q, cos] = angolo in o tra o-p e o-q.
 // orthoBroken dice il primo che non e' piu' a 90 (skip = punto mosso a mano: gli angoli dei muri che lo toccano possono cambiare, come prima)
 function orthoRecs() {
   const r = [];
   state.ambienti.forEach(a => {
-    if (a.no90 || !roomOrtho(a)) return;
+    if (!or90(a)) return;                                       // 2.55: solo gli ambienti con "Mantieni angoli a 90"
     const I = a.indices, n = I.length;
     for (let k = 0; k < n; k++) { const o = I[k], p = I[(k+n-1)%n], q = I[(k+1)%n], c = orthoAng(state.points[o], state.points[p], state.points[q]); if (c <= ORTHO_COS) r.push([o, p, q, c]); }
   });
@@ -1211,7 +1282,7 @@ function orthoBroken(recs, skip) {
 }
 function orthoMsg(o, short) {
   const P = state.points[o], nm = P ? P.label : '';
-  return short ? 'Bloccato: l\'angolo in '+nm+' non resterebbe a 90 gradi' : 'L\'angolo in '+nm+' non resterebbe a 90 gradi (se l\'ambiente non è ortogonale: menu dell\'ambiente, "Ambiente non ortogonale").';
+  return short ? 'Bloccato: l\'angolo in '+nm+' non resterebbe a 90 gradi' : 'L\'angolo in '+nm+' non resterebbe a 90 gradi (se l\'ambiente non è ortogonale: menu dell\'ambiente, spegni "Mantieni angoli a 90").';
 }
 function quotaInfo(i) {
   const g = state.segments[i]; if (!xqOn('qint', QINT) || !g || hid(g) || g.layer==='MURI_EST') return null;     // i muri esterni non hanno quota; spente da Vista (o non scelte all'esportazione) = nessuna quota
@@ -1760,8 +1831,8 @@ function s2w(sx, sy) { return { x: (sx - state.panX)/state.zoom, y: -(sy - state
 //  HIT TEST   (in coordinate schermo, tranne i rettangoli
 //              che si testano in coordinate mondo)
 // ═══════════════════════════════════════════════════════════
-function hitPoint(sx, sy) {                // il punto piu' vicino al dito (le due facce di una tramezza sono a pochi pixel)
-  let best = null, bd = HIT_PT_PX;
+function hitPoint(sx, sy, r) {             // il punto piu' vicino al dito (le due facce di una tramezza sono a pochi pixel); r = raggio diverso (2.55: presa col dito)
+  let best = null, bd = r || HIT_PT_PX;
   for (let i = state.points.length-1; i >= 0; i--) {
     if (hid(state.points[i])) continue;
     const s = w2s(state.points[i].x, state.points[i].y), d = Math.hypot(sx-s.x, sy-s.y);
@@ -1887,6 +1958,7 @@ function drawNow() {
   drawPastePreview();
   drawSelBox();
   drawExport();
+  drawGrab();
   drawAssist();
   drawScreenScale();
   updateSelBar();
@@ -2817,10 +2889,10 @@ function ambMenuAction(action) {
   if (action==='demo') { setDemo([], [], [s.idx], amb.fase!=='demo'); return; }
   if (action==='wpon') { wpMakeOne(s.idx); return; }
   if (action==='move') { moveRoomStart(s.idx); return; }
-  if (action==='no90') {                                   // 2.49: campo facoltativo `no90`, salvato nel progetto
-    saveHistory(); if (amb.no90) delete amb.no90; else amb.no90 = 1;
-    commit(amb.no90 ? amb.name+': non ortogonale, gli angoli non si mantengono quando cambi le misure.'
-                    : amb.name+(roomOrtho(amb) ? ': ortogonale, gli angoli a 90 gradi si mantengono.' : ': tolto il segno, ma ha angoli non a 90 gradi e l\'app continua a non mantenerli.'));
+  if (action==='or90') {                                   // 2.55: interruttore, campo facoltativo `or90` (il vecchio `no90` si toglie)
+    saveHistory(); const on = !or90(amb); delete amb.no90; if (on) amb.or90 = true; else delete amb.or90;
+    commit(on ? amb.name+': angoli a 90 mantenuti quando imposti una misura (il trascinamento dei punti resta libero).'
+              : amb.name+': angoli liberi, non si mantengono a 90 quando cambi le misure.');
     return;
   }
   if (action==='volta') { voltaDialog(s.idx); return; }
@@ -3343,6 +3415,13 @@ function setAssist(sx, sy, o) {
   state.assist = {sx, sy, corner:o.corner||null, guides:o.guides||null, marks:o.marks||null, loupe, near:nearCorners(sx,sy)};
 }
 function clearAssist() { state.assist=null; const si=document.getElementById('snap-indicator'); if (si) si.style.display='none'; }
+// 2.55: col dito, anello grande sul punto agganciato finche' lo si tiene (si vede anche sotto la lente)
+function drawGrab() {
+  const d = state.drag; if (!d || d.kind!=='point' || !state.touchMode || PRINT) return;
+  const P = state.points[d.idx]; if (!P) return; const q = w2s(P.x, P.y);
+  ctx.save(); ctx.beginPath(); ctx.arc(q.x, q.y, 22, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(255,224,102,.18)'; ctx.fill(); ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 3; ctx.stroke(); ctx.restore();
+}
 function drawAssist() {
   const a = state.assist; if (!a) return;
   ctx.save();
@@ -3411,41 +3490,38 @@ function snapResolve(sx, sy, w, angCons, excl) {
 function dragPointTo(i, w, sx, sy) {
   const P = state.points[i], si = document.getElementById('snap-indicator');
   let x=w.x, y=w.y, guides=null, marks=null, corner=null, text=null;
+  const dr = state.drag; if (dr && dr.kind==='point' && dr.idx===i && !dr.co) dr.co = dragCo(i);          // 2.55: punti nello stesso posto, si muovono insieme
+  const co = dr && dr.idx===i && dr.co ? dr.co : [];
   const bs = baseSnap(sx,sy);
   if (bs) { x=bs.x; y=bs.y; corner=bs; text='\u25c8 angolo della base'; }
   else {
-    const angCons=[], excl=new Set([i]);
+    const angCons=[], excl=new Set([i].concat(co));
     neighborsOf(i).forEach(j => { excl.add(j); const N=state.points[j], sn=angleSnapAt(N, w.x, w.y, refAnglesAt(j,i)); if (sn) angCons.push({N, sn}); });
     const r = snapResolve(sx, sy, w, angCons, excl);
     if (r) { x=r.x; y=r.y; guides=r.guides; marks=r.marks; text=r.text; }
   }
   const js = jointSlide(i, x, y); if (js) { x = js.x; y = js.y; text = 'scorre lungo il muro esistente'; }
-  // 2.49: lungo una quota convalidata il punto scorre solo di traverso (il vicino trasla con lui); gli angoli retti si mantengono (keepMove)
-  let dx = x-P.x, dy = y-P.y; const us = [];
+  // 2.55 TRASCINAMENTO LIBERO: si muove solo il punto (con i punti nello stesso posto): i vicini restano dove sono e nessun angolo a 90 si mantiene.
+  // Unico vincolo: un muro convalidato che tocca DIRETTAMENTE il punto non cambia lunghezza (il punto gira attorno all'altro estremo, la spinta
+  // lungo il muro si ferma con "Bloccato"); con due o piu' muri convalidati sul punto resta fermo. Le quote convalidate non collegate non contano
+  const M = new Set([i].concat(co)), cons = [];
   state.segments.forEach(g => {
-    const j = g.a===i ? g.b : g.b===i ? g.a : null, Q = j!==null && j!==i ? state.points[j] : null; if (!Q) return;
-    const L = Math.hypot(Q.x-P.x, Q.y-P.y); if (L > 1e-6 && segOk(g, L)) us.push({x:(Q.x-P.x)/L, y:(Q.y-P.y)/L});
+    if (M.has(g.a)===M.has(g.b)) return;
+    const A = state.points[g.a], B = state.points[g.b], Q = M.has(g.a) ? B : A; if (!A || !B) return;
+    const L = Math.hypot(B.x-A.x, B.y-A.y); if (L > 1e-6 && segOk(g, L)) cons.push({g, Q, L});
   });
-  if (us.length) {
-    if (us.some(u => Math.abs(u.x*us[0].y - u.y*us[0].x) > 0.05)) { dx = 0; dy = 0; }
-    else { const dp = dx*us[0].x + dy*us[0].y; dx -= us[0].x*dp; dy -= us[0].y*dp; }
+  let nx = x, ny = y, blk = null;
+  if (cons.length===1) {
+    const c = cons[0], vx = x-c.Q.x, vy = y-c.Q.y, l = Math.hypot(vx, vy);
+    if (l > 1e-6) { nx = c.Q.x + vx/l*c.L; ny = c.Q.y + vy/l*c.L; } else { nx = P.x; ny = P.y; }
+    if (Math.hypot(x-nx, y-ny)*state.zoom > 8) blk = c.g;
+  } else if (cons.length > 1) {                                  // fermo; il messaggio dice il muro che la spinta allungherebbe o accorcerebbe di piu'
+    nx = P.x; ny = P.y;
+    if (Math.hypot(x-P.x, y-P.y)*state.zoom > 4) { const rad = c => Math.abs((x-P.x)*(P.x-c.Q.x) + (y-P.y)*(P.y-c.Q.y))/c.L; blk = cons.reduce((m, c) => rad(c) > rad(m) ? c : m).g; }
   }
-  // 2.52: anche gli angoli a 90 degli ambienti restano a 90; se lo spostamento li aprirebbe si prova a muovere il punto lungo uno dei suoi muri, altrimenti si ferma
-  const orec = orthoRecs(), okr = _okDrag || okRecs(), cand = [[dx, dy]];
-  state.segments.forEach(g => {
-    const j = g.a===i ? g.b : g.b===i ? g.a : null, Q = j!==null && j!==i ? state.points[j] : null; if (!Q) return;
-    const L = Math.hypot(Q.x-P.x, Q.y-P.y); if (L < 1e-6) return; const ux = (Q.x-P.x)/L, uy = (Q.y-P.y)/L, dp = dx*ux + dy*uy;
-    if (Math.abs(dp) > 1e-6) cand.push([ux*dp, uy*dp]);
-  });
-  let bad = null, ob = null, done = false;
-  for (const [cx, cy] of cand) {
-    const prev = keepMove([[i, cx, cy]]), b = okBroken(okr), o = b ? null : orthoBroken(orec, i);
-    if (!b && o===null) { done = true; break; }
-    if (b && !bad) bad = b; if (o!==null && ob===null) ob = o;
-    keepBack(prev);
-  }
-  if (!done) text = bad ? okMsg(bad, true) : orthoMsg(ob, true);
-  else if (us.length && Math.hypot(x-P.x, y-P.y) > 0.005) text = 'quota convalidata: il punto si sposta senza cambiarla';
+  const mx = nx-P.x, my = ny-P.y;
+  if (mx || my) M.forEach(k => { const p = state.points[k]; if (p) { p.x += mx; p.y += my; } });
+  if (blk) text = okMsg(blk, true);
   x = P.x; y = P.y;
   if (text) { si.textContent=text; si.style.display='block'; } else si.style.display='none';
   const t=w2s(x,y); setAssist(sx,sy,{corner,guides,marks,tx:t.x,ty:t.y});
@@ -4768,7 +4844,7 @@ function wpMakeOne(idx) {
   if (locked(a)) { lockTip(); return; }
   if (a.wt && !a.wpx) { setTip(a.name+' è già parametrico.'); return; }
   if (!wpRing(a)) { setTip('Forma non valida.', 'warn'); return; }
-  if (!wpOwn(a)) { setTip(a.name+' ha punti in comune con '+wpShareNames(a)+': usa "Rendi parametrici tutti" (Disegna, oppure "Parametrici" nella barra In loco), che separa le stanze con la tramezza.', 'warn'); return; }
+  if (!wpOwn(a)) { setTip(a.name+' ha punti in comune con '+wpShareNames(a)+': usa "Rendi parametrici tutti" (Disegna > Avanzate), che separa le stanze con la tramezza.', 'warn'); return; }
   state.sel = null; saveHistory(); wpMakeGo([a], []);
 }
 function wpMakeAll() {
@@ -5435,11 +5511,24 @@ function locoRiassembla() {
 function toggleLoco() {
   hideAllMenus();
   if (state.loco) { state.loco = false; state.locoF = null; state.moveRoom = null; updateLocoUI(); setTip('Rilievo in loco finito: le stanze tornano a spostarsi da sole quando cambi una misura.'); draw(); return; }
+  // 2.55: avviso prima di entrare (Continua / Annulla, "Non mostrare più" ricordato nel browser)
+  let skip = null; try { skip = localStorage.getItem('app_rilievo_loco_avviso'); } catch (e) {}
+  if (skip!=='0') {
+    const save = () => { const c = $id('dlg_nm'); if (c && c.checked) try { localStorage.setItem('app_rilievo_loco_avviso', '0'); } catch (e) {} };
+    askDialog('Rilievo in loco', [{label:'Non mostrare più', id:'nm', type:'check', value:''}],
+      'Rilievo in loco serve se parti da zero: rilevi ambiente per ambiente e poi li assembli con Riassembla. Se hai già il disegno preparato non serve: usa Imposta misura sui muri.',
+      () => { save(); locoEnter(); }, save);
+    dlgButtons('Continua', 'Annulla');
+    return;
+  }
+  locoEnter();
+}
+function locoEnter() {
   if (prog()) toggleView();                               // il rilievo si fa sullo stato di fatto
   setTool('select'); state.loco = true; state.locoF = null; state.wpSel = null;
   updateLocoUI(); draw();
   const n = wpRooms(false).length, old = state.ambienti.filter(a => live(a) && !hid(a) && (!a.wt || a.wpx)).length;
-  if (!n && old) { listDialog('Rilievo in loco', ['Questo progetto non ha ambienti parametrici: il rilievo in loco non agisce sugli ambienti che ci sono (non li sposta e non li cambia).', 'Per renderli parametrici: "Parametrici" in questa barra (tutti insieme) oppure "Rendi parametrico" dal menu dell\'ambiente. Le misure di adesso valgono come nette, le quote convalidate diventano lucchetti, muri esterni e tramezze si generano da soli.']); return; }
+  if (!n && old) { listDialog('Rilievo in loco', ['Questo progetto non ha ambienti parametrici: il rilievo in loco non agisce sugli ambienti che ci sono (non li sposta e non li cambia).', 'Con il disegno già preparato non serve: tocca la quota di un muro e scegli "Imposta misura". Se vuoi comunque gli ambienti parametrici: "Rendi parametrico" dal menu dell\'ambiente (o Disegna > Avanzate > Rendi parametrici tutti).']); return; }
   setTip(n ? 'Rilievo in loco: tocca una stanza e scrivi le misure nette, un campo alla volta. Le stanze vicine restano ferme e le tramezze mostrano lo scostamento (es. 10-3); alla fine "Riassembla". Bollini sul perimetro: E esterno, S vano scala (un tocco li cambia).'
     : 'Rilievo in loco da zero: Disegna > Stanza, poi tocca il disegno (o la foto) dove sta la stanza e scrivi le misure nette. Le stanze si agganciano da sole.', 'ok');
 }
@@ -5477,13 +5566,13 @@ function locoVal(R, f) {
   if ((f.c || 1)===1) return num(wpStd().ext*100, 0);         // 2.51: esterni = un solo valore per tutti
   const per = wpPerim(), k = R.S.findIndex((s, k) => wpCls(R, k, per)===f.c); return k < 0 ? '' : num((+R.a.wt[k] || 0)*100, 0);
 }
-const LOCO_C = '<div class="lb-r"><span class="lb-g" id="lb-hint">Rilievo in loco: tocca una stanza per le misure</span><button id="lb-all" title="Rendi parametrici tutti gli ambienti disegnati a linee: muri esterni e tramezze generati, quote convalidate = lucchetti">Parametrici</button><button id="lb-ria">Riassembla</button><button id="lb-out" title="Esci dal rilievo in loco">Esci</button></div>';
+const LOCO_C = '<div class="lb-r"><span class="lb-g" id="lb-hint">Rilievo in loco: tocca una stanza per le misure</span><button id="lb-ria">Riassembla</button><button id="lb-out" title="Esci dal rilievo in loco">Esci</button></div>';
 const LOCO_R = '<div class="lb-r"><b class="lb-g" id="lb-name"></b><span id="lb-pos"></span><button id="lb-menu" title="Menu dell\'ambiente">⋯</button><button id="lb-ria">Riassembla</button><button id="lb-x" title="Chiudi la scheda">✖</button></div>'
   + '<div class="lb-r"><span class="lb-g" id="lb-lab"></span><input id="lb-in" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false"><button id="lb-lock"></button></div>'
   + '<div class="lb-r"><button class="lb-g" id="lb-prev">‹ Indietro</button><button class="lb-g ok" id="lb-next">Avanti ›</button></div>';
 function locoBind(el) {
   const on = (id, fn) => { const b = el.querySelector('#'+id); if (!b) return; b.addEventListener('pointerdown', e => e.preventDefault()); b.addEventListener('mousedown', e => e.preventDefault()); b.addEventListener('click', e => { e.preventDefault(); fn(); }); };
-  on('lb-ria', locoRiassembla); on('lb-out', toggleLoco); on('lb-all', wpMakeAll);
+  on('lb-ria', locoRiassembla); on('lb-out', toggleLoco);          // 2.55: "Parametrici" tolto dalla barra (resta in Disegna > Avanzate)
   on('lb-x', () => { state.locoF = null; locoRender(); draw(); });
   on('lb-menu', () => { const R = locoRoom(); if (!R) return; state.sel = {kind:'ambiente', idx:R.k}; const r = el.getBoundingClientRect(); showMenu('amb-context', r.right - 10, r.top - 6, true); draw(); });
   on('lb-prev', () => locoStep(-1)); on('lb-next', () => locoStep(1)); on('lb-lock', locoLockTap);
@@ -6344,9 +6433,10 @@ function askRoom(cycle) {
       h, color: AMB_COLORS[state.ambienti.length%AMB_COLORS.length], category:'utile'    // nasce interno: si cambia solo balcone, cantina, box...
     });
     const am = state.ambienti[state.ambienti.length-1], msg = 'Ambiente registrato: '+area.toFixed(2)+' m², '+(area*h).toFixed(2)+' m³.';
+    or90Init(am);                                    // 2.55: tutti gli angoli a 90 = "Mantieni angoli a 90" acceso (si spegne dal menu dell'ambiente)
     assignFase();
-    // 2.50: niente piu' parametrico automatico; i muri si generano con "Rendi parametrico" (menu dell'ambiente) a misure convalidate
-    commit(msg+' Per muri e tramezze, a misure convalidate: "Rendi parametrico" dal menu dell\'ambiente, o "Rendi parametrici tutti".');
+    // 2.50: niente piu' parametrico automatico. 2.55: il parametrico resta solo come scelta ("Rendi parametrico" nel menu dell'ambiente)
+    commit(msg+(or90(am) ? ' Angoli a 90 mantenuti con Imposta misura (menu dell\'ambiente per lasciarli liberi).' : ''));
   });
   roomNameUI();
 }
@@ -6365,7 +6455,7 @@ function quotaMenuAction(action) {
   if (action==='set') {
     askDialog('Misura del muro '+A.label+' - '+B.label, [
       {label:'Misura rilevata (m)', id:'m', value:len.toFixed(2), type:'number'},
-    ], 'Gli estremi si spostano in modo uguale lungo il muro e i muri collegati seguono (gli angoli a 90 gradi restano a 90). Le quote convalidate non cambiano.', v => {
+    ], 'Il muro si adegua e si convalida: gli estremi si spostano in modo uguale (nei muri esterni resta fermo lo spigolo esterno). I punti collegati seguono lungo le quote convalidate e, negli ambienti con "Mantieni angoli a 90", ad angolo retto. Le quote convalidate non cambiano e le linee non si sovrappongono.', v => {
       const m = parseFloat(v.m); if (!isFinite(m) || m<=0) return;
       if (wpLenFromQuota(sl.idx, m)) return;         // lato intero di un ambiente parametrico: si sposta il lato accanto, l'ambiente resta parametrico
       setWallLength(sl.idx, m);
@@ -6384,19 +6474,28 @@ function setWallLength(si, m) {
   // di norma meta' per parte; nel Progetto un estremo del rilievo resta fermo e si muove solo quello nuovo.
   // 2.49: i muri collegati ad angolo retto traslano (la stanza resta ortogonale, keepMove); se cosi' cambierebbe una quota convalidata
   // si prova a muovere un estremo solo, poi l'altro; se non basta la misura non si imposta e si dice quale quota blocca
-  const ux = (B.x-A.x)/len, uy = (B.y-A.y)/len, fr = locked(B) ? [1] : locked(A) ? [0] : [0.5, 1, 0];
+  // 2.55: muro esterno = resta fermo l'estremo esterno (spigolo dell'edificio), si muove quello verso l'interno (wallExtEnd); altrimenti come prima
+  const ee = locked(A) || locked(B) ? null : wallExtEnd(g);
+  const ux = (B.x-A.x)/len, uy = (B.y-A.y)/len, fr = locked(B) ? [1] : locked(A) ? [0] : ee==='a' ? [0] : ee==='b' ? [1] : [0.5, 1, 0];
   // 2.52: un tentativo vale solo se nessuna quota convalidata cambia E gli angoli a 90 degli ambienti restano a 90 (prima il tentativo con un estremo
-  // solo passava anche se il muro accanto si inclinava: stanza a trapezio). Se nessun tentativo va bene si rifiuta dicendo la quota (o l'angolo) che blocca
+  // solo passava anche se il muro accanto si inclinava: stanza a trapezio). Se nessun tentativo va bene si rifiuta dicendo la quota (o l'angolo) che blocca.
+  // 2.55: gli angoli a 90 contano solo negli ambienti con "Mantieni angoli a 90"; e nessuna linea deve sovrapporsi o annullarsi (lineOverlap)
   const orec = orthoRecs();
-  let bad = null, ob = null, done = false;
+  let bad = null, ob = null, ovl = null, done = false;
   for (const f of fr) {
     const dA = (m-len)*f, dB = (m-len) - dA, prev = keepMove([[g.a, -ux*dA, -uy*dA], [g.b, ux*dB, uy*dB]]);
-    const b = okBroken(rec), o = b ? null : orthoBroken(orec);
-    if (!b && o===null) { done = true; break; }
-    if (b && !bad) bad = b; if (o!==null && ob===null) ob = o;
+    const b = okBroken(rec), o = b ? null : orthoBroken(orec), v = b || o!==null ? null : lineOverlap(prev);
+    if (!b && o===null && !v) { done = true; break; }
+    if (b && !bad) bad = b; if (o!==null && ob===null) ob = o; if (v && !ovl) ovl = v;
     keepBack(prev);
   }
-  if (!done) { state.history.pop(); _okBase = null; _okFree.clear(); setTip((bad ? okMsg(bad)+' ' : '')+'La misura di '+A.label+' - '+B.label+' non si può impostare così'+(bad ? (ob!==null ? ' (e muovendo un estremo solo un angolo non resterebbe a 90 gradi)' : '') : ': '+orthoMsg(ob).replace(/^L/, 'l'))+(bad ? '.' : ''), 'warn'); draw(); return; }
+  if (!done) {
+    state.history.pop(); _okBase = null; _okFree.clear();
+    const nm = 'La misura di '+A.label+' - '+B.label+' non si può impostare così';
+    setTip(bad ? okMsg(bad)+' '+nm+(ob!==null ? ' (e muovendo un estremo solo un angolo non resterebbe a 90 gradi)' : '')+'.'
+         : ob!==null ? nm+': '+orthoMsg(ob).replace(/^L/, 'l') : nm+': '+lineOverlapMsg(ovl)+'.', 'warn');
+    draw(); return;
+  }
   state.segments.forEach((h, k) => {                  // i serramenti restano alla stessa distanza dall'inizio delle linee che cambiano lunghezza
     const l1 = sl(k); if (l1 < 1e-6 || Math.abs(l1 - l0[k]) < 1e-9) return;
     state.openings.forEach(op => {
@@ -6437,9 +6536,9 @@ function showMenu(id, x, y, above, avoid) {
     document.getElementById('am-novolta').style.display = has && !lk ? '' : 'none';
     document.getElementById('am-wpon').style.display = a && (!a.wt || a.wpx) && !lk ? '' : 'none';
     document.getElementById('am-move').style.display = a && a.wt && !a.wpx && !lk ? '' : 'none';
-    const n9 = document.getElementById('am-no90'), geo = !!a && !roomOrtho(a);          // 2.49: interruttore; l'ambiente con angoli non a 90 e' gia' non ortogonale da solo
-    n9.firstChild.textContent = (a && a.no90 ? '✔ ' : '')+'∠ Ambiente non ortogonale';
-    n9.lastChild.textContent = a && a.no90 ? 'Segnato: gli angoli non si mantengono. Tocca per tornare ortogonale' : geo ? 'Rilevato: ha angoli non a 90 gradi, l\'app non li mantiene' : 'Gli angoli a 90 gradi non si mantengono quando cambi le misure';
+    const n9 = document.getElementById('am-or90'), o9 = or90(a);          // 2.55: interruttore "Mantieni angoli a 90" (campo `or90`)
+    n9.firstChild.textContent = (o9 ? '✔ ' : '')+'∠ Mantieni angoli a 90';
+    n9.lastChild.textContent = o9 ? 'Acceso: con Imposta misura gli angoli retti restano a 90. Tocca per lasciarli liberi' : 'Spento: angoli liberi. Tocca per mantenerli a 90 con Imposta misura';
     document.getElementById('am-volta').firstChild.textContent = has ? '⌒ Modifica volta (finestra)' : '⌒ Volta (finestra)';
     document.getElementById('am-vgraf').firstChild.textContent = has ? '⌒ Rifai i punti sul disegno' : '⌒ Volta sul disegno';
   }
@@ -7394,8 +7493,8 @@ canvas.addEventListener('pointerdown', e => {
       const sh = hitStairHandle(sx,sy);   if (sh && !locked(state.scale[sh.idx])) { state.stairResize=sh; return; }
       const oi = hitPoint(sx,sy)===null ? hitOpening(sx,sy) : null;
       if (oi!==null) { if (!locked(state.openings[oi])) state.openingDrag={idx:oi}; state.sel={kind:'opening',idx:oi}; return; }
-      const pi = hitPoint(sx,sy);
-      if (pi!==null) { if (!locked(state.points[pi])) state.drag={kind:'point', idx:pi}; return; }
+      const pi = hitPoint(sx,sy) ?? (state.touchMode ? hitPoint(sx, sy, HIT_PT_GRAB) : null);          // 2.55: col dito il punto si prende anche un po' piu' lontano
+      if (pi!==null) { if (!locked(state.points[pi])) { state.drag={kind:'point', idx:pi}; if (state.touchMode) draw(); } return; }
       const oq = hitOpeningQuota(sx,sy);
       if (oq!==null) { const c=openingQuotaPos(oq); state.drag={kind:'opq', idx:oq, c0:c, p0:{x:sx,y:sy}}; return; }
       const li = hitLabel(sx,sy);
@@ -7412,8 +7511,8 @@ canvas.addEventListener('pointerdown', e => {
       return;
     }
     case 'split': {                        // in Spezza i punti si trascinano subito
-      const pi = hitPoint(sx,sy);
-      if (pi!==null && !locked(state.points[pi])) { state.drag={kind:'point', idx:pi}; return; }
+      const pi = hitPoint(sx,sy) ?? (state.touchMode ? hitPoint(sx, sy, HIT_PT_GRAB) : null);
+      if (pi!==null && !locked(state.points[pi])) { state.drag={kind:'point', idx:pi}; if (state.touchMode) draw(); return; }
       startPan(e.clientX, e.clientY); return;
     }
     default:
@@ -12097,7 +12196,8 @@ function wallsApply() {
   (P.rooms||[]).filter(r => !r.off).forEach(r => {
     const idx = r.ring.map(np);
     const n = state.ambienti.length;
-    state.ambienti.push({ indices:idx, name:freeAmbName(), h, color:AMB_COLORS[n%AMB_COLORS.length], category:'utile' });   // il ricalco scarta gia' i balconi
+    const na = { indices:idx, name:freeAmbName(), h, color:AMB_COLORS[n%AMB_COLORS.length], category:'utile' }; or90Init(na);   // 2.55: angoli tutti a 90 = or90
+    state.ambienti.push(na);   // il ricalco scarta gia' i balconi
   });
   // muri esterni: spessore letto dal disegno muro per muro, tipo proposto (WALL_TYPES) da validare
   classifyExtWalls(state.segments.map((_,k) => k).filter(k => k >= s0), P.wallT);
@@ -12928,6 +13028,44 @@ function guideEnd() {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  2.55 PERCORSO GUIDATO facoltativo: una barra con i passi, si accende e si spegne da File (o con la x). Nessun passo obbligatorio,
+//  nessuno strumento bloccato; il pulsante del passo apre lo strumento o il menu che c'e' gia'. Il passo corrente resta nel browser
+// ═══════════════════════════════════════════════════════════
+function pathMenu(id, btn, grp) {
+  const b = $id(btn), m = $id(id); if (!b || !m) return;
+  if ($id('toolbar').classList.contains('hidden')) toggleMenuBar(true);
+  if (m.style.display!=='block') toggleMenu(id, b);
+  if (grp) m.querySelectorAll('.menu-grp').forEach(g => { const h = g.querySelector('.grp-h'); if (h && h.textContent.trim()===grp && !g.classList.contains('open')) toggleGrp(h); });
+}
+const PATH_STEPS = [
+  {n:'Base', t:'Importa la planimetria (PDF o JPG), fotografa il foglio o importa un DXF, poi mettila in scala su una misura nota.', b:'Importa', fn:() => pathMenu('file-submenu', 'btn-file', 'Importa')},
+  {n:'Ambienti', t:'Pannello Base, "Ricalca ambienti": controlla e conferma. Poi tocca ogni ambiente, "Modifica ambiente", per il nome.', b:'Ricalca o disegna', fn:() => { if (state.underlay) { if (!$id('base-panel').classList.contains('show')) toggleBasePanel(); } else pathMenu('group-draw', 'btn-g-draw', 'Ambiente'); }},
+  {n:'Muri', t:'Tipo dei muri: esterno, vano scala o non riscaldato, interno. Spessori standard 40 - 25 - 10 cm; i muri fucsia si confermano da Modifica, "Muri non assegnati".', b:'Spessori standard', fn:() => wpStdDialog()},
+  {n:'Serramenti', t:'Inserisci, Finestra, Porta-finestra o Porta, poi tocca il muro dove va. Vanno bene generici: le misure si correggono in loco.', b:'Inserisci', fn:() => pathMenu('group-ins', 'btn-g-ins')},
+  {n:'Misure in loco', t:'Con il metro, muro per muro e in qualsiasi ordine: tocca la quota e scegli "Imposta misura". I punti collegati seguono, le quote già convalidate non cambiano.', b:'Verifica', fn:() => verifyOpen()},
+  {n:'Verifica', t:'Le quote non verificate e quello che manca prima di esportare; se le misure del disegno sono giuste, "Valida tutte".', b:'Verifica rilievo', fn:() => verifyOpen()},
+  {n:'Restituzione', t:'Tabelle, superfici, DXF e Word da File, Esporta. Sul telefono, dopo ogni esportazione, Condividi.', b:'Esporta', fn:() => pathMenu('file-submenu', 'btn-file', 'Esporta')},
+];
+let PATH = {on:false, s:0};
+try { const v = JSON.parse(localStorage.getItem('app_rilievo_percorso') || 'null'); if (v && typeof v==='object') PATH = {on:!!v.on, s:Math.min(Math.max(Math.round(+v.s) || 0, 0), PATH_STEPS.length-1)}; } catch (e) {}
+function pathSave() { try { localStorage.setItem('app_rilievo_percorso', JSON.stringify(PATH)); } catch (e) {} }
+function pathToggle(on) { hideAllMenus(); PATH.on = on===undefined ? !PATH.on : !!on; pathSave(); pathRender(); if (!PATH.on) setTip('Percorso guidato spento: si riaccende da File, "Percorso guidato".'); }
+function pathStep(s) { PATH.s = Math.min(Math.max(s, 0), PATH_STEPS.length-1); pathSave(); pathRender(); }
+function pathGo() { const st = PATH_STEPS[PATH.s]; if (st && st.fn) st.fn(); }
+function pathRender() {
+  const el = $id('path-bar'), mi = $id('fm-path'), ck = mi && mi.querySelector('.ck');
+  if (ck) ck.textContent = PATH.on ? '☑' : '☐';
+  if (!el) return;
+  el.style.display = PATH.on ? 'flex' : 'none'; if (!PATH.on) { el.innerHTML = ''; return; }
+  const st = PATH_STEPS[PATH.s], last = PATH_STEPS.length-1;
+  el.innerHTML = '<div class="pb-r">'+PATH_STEPS.map((p, k) => '<button class="pb-n'+(k===PATH.s ? ' cur' : '')+'" title="'+(k+1)+' '+p.n+'" onclick="pathStep('+k+')">'+(k+1)+'</button>').join('')
+    +'<b class="pb-tt">'+st.n+'</b><button class="pb-x" title="Chiudi il percorso (si riaccende da File)" onclick="pathToggle(false)">✕</button></div>'
+    +'<div class="pb-t">'+st.t+'</div>'
+    +'<div class="pb-r"><button onclick="pathStep('+(PATH.s-1)+')"'+(PATH.s ? '' : ' disabled')+'>‹ Indietro</button><button class="ok" onclick="pathGo()">'+st.b+'</button>'
+    +'<button title="Avanti o salta il passo: nessun passo è obbligatorio" onclick="pathStep('+(PATH.s+1)+')"'+(PATH.s < last ? '' : ' disabled')+'>Salta ›</button></div>';
+}
+
+// ═══════════════════════════════════════════════════════════
 //  AVVIO
 // ═══════════════════════════════════════════════════════════
 try { if (localStorage.getItem('app_rilievo_menu')==='0') { document.getElementById('toolbar').classList.add('hidden'); document.getElementById('menu-tab').style.display='block'; } } catch (e) {}
@@ -12939,6 +13077,7 @@ setTool('select');
 updateStatus();
 updateZoomLabel();
 updateViewUI();
+pathRender();                                  // 2.55: percorso guidato, se era acceso
 if (recovered) { centerView(); setTip('Rilievo precedente ripristinato: '+state.points.length+' punti. Usa File → Salva progetto per archiviarlo.'); }
 else {
   flagSaved('nuovo rilievo'); draw();
@@ -12950,8 +13089,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.54';
-const APP_NOTE = ["Condividi su Android con progetto JSON e DXF: se il telefono non accetta il formato, il file parte come .txt con lo stesso contenuto (esempio 261118_rilievo.json.txt); se serve, l'app chiede di toccare di nuovo Condividi. Salva continua a salvare il file .json o .dxf come prima", "Apri progetto e Importa DXF aprono anche i file arrivati come .txt, senza rinominarli; se il .txt non contiene un progetto o un DXF l'app lo dice", "Word che il telefono non condivide: messaggio chiaro, si usa Salva e poi lo si manda dall'app di posta o da Telegram", "Salva progetto segna il progetto come salvato solo se il file è stato davvero condiviso o salvato, non se si sceglie Annulla"];
+const APP_VERSION = '2.55';
+const APP_NOTE = ["Trascinando un punto si muove solo quel punto (con gli eventuali punti nello stesso posto): i punti vicini restano fermi e nessun angolo viene tenuto a 90 gradi. Unico limite: un muro convalidato che tocca il punto non cambia lunghezza (il punto gira attorno all'altro estremo e la spinta lungo il muro si ferma con \"Bloccato\"); dopo \"Togli convalida\" quel muro torna libero. Le quote convalidate lontane dal punto non contano più", "Nuova voce nel menu dell'ambiente \"Mantieni angoli a 90\" (interruttore) al posto di \"Ambiente non ortogonale\": se è accesa, con Imposta misura gli angoli retti dell'ambiente restano a 90. Si accende da sola sugli ambienti nuovi a linee con tutti gli angoli a 90; negli ambienti dei progetti già salvati è spenta (angoli liberi) finché non la accendi", "Imposta misura sul muro: il muro si adegua e si convalida, i punti collegati seguono lungo le quote convalidate (e ad angolo retto negli ambienti con \"Mantieni angoli a 90\"), le quote convalidate non cambiano. Nei muri esterni resta fermo lo spigolo esterno e si sposta l'estremo verso l'interno. Se la misura farebbe sovrapporre due linee (o ne annullerebbe una) l'app non la imposta e dice quale linea", "\"Rendi parametrici tutti\" spostato in Disegna > Avanzate; tolto il pulsante \"Parametrici\" dalla barra In loco. Resta \"Rendi parametrico\" nel menu del singolo ambiente", "In loco: al primo tocco una finestra spiega che serve per il rilievo da zero (poi Riassembla) e che con il disegno già preparato si usa Imposta misura sui muri; pulsanti Continua e Annulla, casella \"Non mostrare più\"", "Sul telefono i punti si prendono col dito anche un po' più lontano (30 px) e, mentre li tieni, un anello giallo grande mostra quale punto hai agganciato. Il tocco semplice seleziona come prima; computer invariato", "Nuovo \"Percorso guidato\" nel menu File (interruttore): una barra in alto con i 7 passi (Base, Ambienti, Muri, Serramenti, Misure in loco, Verifica, Restituzione), 1-2 righe per passo e un pulsante che apre lo strumento giusto. Indietro, Salta e i numeri dei passi sono liberi, la x la chiude, ricorda il passo dove eri; spento non occupa spazio"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
