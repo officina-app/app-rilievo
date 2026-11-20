@@ -360,9 +360,6 @@
   <div class="menu-item tool-item" id="ti-ccircle" onclick="pickTool('ccircle')"><span class="ti">○</span><span class="tt"><b>Cerchio di costruzione</b><small>Tocca il centro, poi un punto sul bordo o scrivi il raggio</small></span></div>
   <div class="menu-item tool-item" id="ti-csquare" onclick="pickTool('csquare')"><span class="ti">□</span><span class="tt"><b>Quadrato di costruzione</b><small>Tocca un angolo e quello opposto, oppure scrivi il lato (o LxH): angoli, centro e incroci diventano punti di aggancio</small></span></div>
   <div class="menu-item tool-item" id="ti-pencil" onclick="pickTool('pencil')"><span class="ti">✏</span><span class="tt"><b>Matita</b><small>Disegno a mano libera</small></span></div>
-  <div class="menu-grp"><div class="menu-item grp-h" onclick="toggleGrp(this)">Avanzate</div><div class="grp-b">
-    <div class="menu-item tool-item" id="ti-wpall" onclick="wpMakeAll()"><span class="ti">⟲</span><span class="tt"><b>Rendi parametrici tutti</b><small>Facoltativo: genera muri esterni e tramezze per tutti gli ambienti a linee e può spostare quelli disegnati. Di solito non serve</small></span></div>
-  </div></div>
 </div>
 <div id="group-ins" class="floating-menu">
   <div class="menu-item tool-item" id="ti-opening-F" onclick="selectOpeningType('F')"><span class="ti">🪟</span><span class="tt"><b>Finestra (F)</b><small>Poi tocca il muro dove va</small></span></div>
@@ -494,9 +491,8 @@
 <div id="amb-context" class="floating-menu ctx smart"><div class="ctx-in">
   <div class="menu-item" data-demo onclick="ambMenuAction('demo')"></div>
   <div class="menu-item" data-lock onclick="ambMenuAction('edit')">✎ Modifica ambiente<small class="md">Nome, altezza e categoria; mostra superficie e pareti</small></div>
-  <div class="menu-item" data-lock id="am-move" onclick="ambMenuAction('move')">✥ Sposta ambiente<small class="md">Trascina l'ambiente con i suoi muri; al rilascio si aggancia alla stanza vicina</small></div>
-  <div class="menu-item" id="am-wpon" onclick="ambMenuAction('wpon')">⟲ Rendi parametrico<small class="md">A modifiche finite: misure di adesso = nette, quote convalidate = lucchetti, muri esterni e tramezze generati</small></div>
-  <div class="menu-item" data-lock id="am-or90" onclick="ambMenuAction('or90')">∠ Mantieni angoli a 90<small class="md">Con Imposta misura gli angoli retti dell'ambiente restano a 90</small></div>
+  <div class="menu-item" data-lock id="am-move" onclick="ambMenuAction('move')">✥ Sposta ambiente<small class="md">Trascina l'ambiente con i suoi muri, liberamente: nessun aggancio e nessun vincolo</small></div>
+  <div class="menu-item" data-lock id="am-or90" onclick="ambMenuAction('or90')">∠ Mantieni angoli a 90<small class="md">Cambiando la misura di un muro gli angoli retti dell'ambiente restano a 90</small></div>
   <div class="menu-item" data-lock id="am-vgraf" onclick="ambMenuAction('vgraf')">⌒ Volta sul disegno<small class="md">Tocchi i quattro punti d'imposta sul disegno, poi le quote</small></div>
   <div class="menu-item" data-lock id="am-volta" onclick="ambMenuAction('volta')">⌒ Volta<small class="md">A botte o a crociera: quote d'imposta e in chiave, tratteggio in pianta, H min e H max</small></div>
   <div class="menu-item" data-lock id="am-novolta" onclick="ambMenuAction('novolta')">⌓ Togli volta<small class="md">Torna al soffitto piano, con l'altezza dell'ambiente</small></div>
@@ -1142,28 +1138,60 @@ function hitAmbLabel(sx, sy) {
 
 // ---- quote dei muri: posizione, convalida (valida finche' la lunghezza resta quella validata)
 function segOk(g, len) { return !!g.ok && Math.abs(len - g.okLen) < 0.01; }
-// 2.49 QUOTA CONVALIDATA BLINDATA: una quota convalidata non cambia piu' lunghezza, con nessuna operazione. okRecs() fotografa le linee convalidate
-// prima (saveHistory, primo passo di un trascinamento), okBroken() guarda dopo: se una e' cambiata, o ha perso la convalida senza "Togli convalida",
-// commit / dragEnd annullano l'operazione con il messaggio. _okFree = linee che l'operazione in corso puo' cambiare (la quota che si sta impostando, quelle a cui si toglie la convalida)
-var _okBase = null, _okDrag = null; const _okFree = new Set();
-function okRecs() { const r = []; state.segments.forEach(g => { const A = state.points[g.a], B = state.points[g.b]; if (A && B && segOk(g, Math.hypot(B.x-A.x, B.y-A.y))) r.push(g); }); return r; }
-function okBroken(recs) {
-  if (!recs || !recs.length) return null;
-  const on = new Set(state.segments);
-  for (const g of recs) {
-    if (_okFree.has(g) || !on.has(g)) continue;                 // linea cancellata: la cancellazione resta permessa
-    const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) continue;
-    if (!segOk(g, Math.hypot(B.x-A.x, B.y-A.y))) return g;
+// 2.57: punti nello stesso posto del punto trascinato (entro 1 mm) che si muovono con lui. Mai i punti di un ALTRO ambiente (ogni ambiente ha i suoi punti)
+// ne' quelli degli ambienti parametrici: restano dove sono
+function dragCo(i) {
+  const P = state.points[i], par = new Set(), mine = state.ambienti.filter(a => a.indices.includes(i)); if (!P) return [];
+  state.ambienti.forEach(a => { if (a.wt && !a.wpx) a.indices.forEach(k => par.add(k)); });
+  if (par.has(i)) return [];
+  const r = []; state.points.forEach((Q, k) => {
+    if (k===i || !Q || hid(Q) || locked(Q) || par.has(k) || Math.abs(Q.x-P.x) >= 0.001 || Math.abs(Q.y-P.y) >= 0.001) return;
+    if (state.ambienti.some(a => a.indices.includes(k) && !mine.includes(a))) return;            // appartiene a un altro ambiente
+    r.push(k);
+  });
+  return r;
+}
+// 2.57 PUNTI PROPRI: due ambienti non condividono mai un punto. Nei progetti con punti in comune (ambienti a linee) l'ambiente che si muove o il punto
+// che si trascina prende una COPIA dei punti condivisi (e dei suoi muri su quei punti): l'altro ambiente resta fermo, com'era.
+function ambOthersUse(i, ai) { return state.ambienti.some((b, k) => k!==ai && b.indices.includes(i)); }
+function ambEdgeOthers(i, j, ai) {
+  return state.ambienti.some((b, k) => {
+    if (k===ai) return false; const n = b.indices.length;
+    return b.indices.some((x, m) => { const y = b.indices[(m+1)%n]; return (x===i && y===j) || (x===j && y===i); });
+  });
+}
+// all'ambiente ai si danno punti suoi al posto di quelli in comune con altri ambienti (solo quelli di `only`, se dato). Ritorna quanti punti ha separato
+function ambDetach(ai, only) {
+  const a = state.ambienti[ai]; if (!a) return 0;
+  const map = new Map();
+  a.indices.forEach(i => {
+    const P = state.points[i];
+    if (!P || map.has(i) || (only && !only.has(i)) || !ambOthersUse(i, ai)) return;
+    state.points.push(Object.assign({}, P, {label:nextLabel(), note:'', photo:null})); map.set(i, state.points.length-1);
+  });
+  if (!map.size) return 0;
+  const n = a.indices.length, mp = i => map.has(i) ? map.get(i) : i;
+  for (let m = 0; m < n; m++) {                                              // i muri dell'ambiente su quei punti
+    const i = a.indices[m], j = a.indices[(m+1)%n]; if (i===j || (!map.has(i) && !map.has(j))) continue;
+    const k = state.segments.findIndex(g => (g.a===i && g.b===j) || (g.a===j && g.b===i)); if (k < 0) continue;
+    const g = state.segments[k];
+    if (ambEdgeOthers(i, j, ai)) { const c = JSON.parse(JSON.stringify(g)); c.a = mp(g.a); c.b = mp(g.b); delete c.qo; state.segments.push(c); }      // muro in comune: ne nasce uno suo (i serramenti restano sull'originale)
+    else { g.a = mp(g.a); g.b = mp(g.b); }
   }
-  return null;
+  a.indices = a.indices.map(mp);
+  return map.size;
 }
-function okMsg(g, short) {
-  const A = state.points[g.a], B = state.points[g.b], nm = (A && B ? A.label+' - '+B.label+' ' : '')+'('+num(g.okLen)+' m)';
-  if (short) return 'Bloccato: la quota '+nm+' è convalidata ("Togli convalida" per cambiarla)';
-  return 'La quota '+nm+' è convalidata e non cambia lunghezza: per cambiarla tocca la quota e scegli "Togli convalida"'+(locoOn() ? ' (o togli il lucchetto dalla scheda della stanza)' : '')+'.';
+// il punto i e' dell'ambiente "keep" (o del primo che lo contiene): gli altri ambienti che lo hanno prendono una copia
+function ambDetachPoint(i, keep) {
+  const ids = []; state.ambienti.forEach((a, k) => { if (a.indices.includes(i)) ids.push(k); });
+  if (ids.length < 2) return 0;
+  const k0 = ids.includes(keep) ? keep : ids[0]; let n = 0;
+  ids.forEach(k => { if (k!==k0) n += ambDetach(k, new Set([i])); });
+  return n;
 }
-// 2.49 ORTOGONALITA': gli angoli a 90 gradi (tolleranza 2 gradi) si mantengono quando si sposta un punto o si cambia la lunghezza di un muro.
-// Non valgono negli ambienti segnati "non ortogonali" (`no90`, campo facoltativo) ne' in quelli che hanno gia' un angolo diverso da 90 (rilevati da soli)
+// 2.57 ANGOLI A 90: un ambiente a linee con tutti gli angoli retti (tolleranza 2 gradi) li mantiene quando cambia la lunghezza di un muro (setWallLength):
+// i punti vicini seguono e l'angolo resta retto. Si toglie per ambiente dal suo menu (campo `no90`). Il trascinamento dei punti resta libero.
+// Se un angolo non si puo' mantenere non blocca nulla: quel muro segue il movimento normalmente.
 const ORTHO_COS = Math.sin(2*Math.PI/180), ORTHO_COL = Math.cos(2*Math.PI/180);
 function orthoAng(O, P, Q) {                                   // |coseno| dell'angolo in O tra O->P e O->Q
   if (!O || !P || !Q) return 1;
@@ -1172,117 +1200,37 @@ function orthoAng(O, P, Q) {                                   // |coseno| dell'
 }
 function roomOrtho(a) {                                        // tutti gli angoli a 90 (o 270) gradi; i punti allineati non contano
   const P = a.indices.map(i => state.points[i]), n = P.length;
-  if (P.some(p => !p)) return false;
-  for (let k = 0; k < n; k++) { const c = orthoAng(P[k], P[(k+n-1)%n], P[(k+1)%n]); if (c > ORTHO_COS && c < ORTHO_COL) return false; }
-  return true;
+  if (n < 3 || P.some(p => !p)) return false;
+  let r = false;
+  for (let k = 0; k < n; k++) { const c = orthoAng(P[k], P[(k+n-1)%n], P[(k+1)%n]); if (c > ORTHO_COS && c < ORTHO_COL) return false; if (c <= ORTHO_COS) r = true; }
+  return r;
 }
-// 2.55: gli angoli a 90 si mantengono SOLO negli ambienti con `or90` (campo facoltativo, "Mantieni angoli a 90" nel menu dell'ambiente) e SOLO nelle
-// misure (Imposta misura), mai nel trascinamento dei punti. `no90` dei progetti 2.49-2.54 = or90 spento; progetti senza campo = liberi
-function or90(a) { return !!a && !!a.or90 && !a.no90; }
-function or90Init(a) { if (a && !a.wt && roomOrtho(a)) a.or90 = true; }          // ambiente a linee appena registrato con tutti gli angoli a 90 (2 gradi)
+function or90(a) { return !!a && !a.no90 && !a.wt && roomOrtho(a); }       // gli ambienti parametrici (wt) hanno il loro solver
 function orthoOn() { const s = new Set(); state.ambienti.forEach(a => { if (or90(a)) a.indices.forEach(i => s.add(i)); }); return s; }
-// sposta i punti seeds [[i, dx, dy]] e fa seguire i vicini: lungo una quota convalidata il vicino trasla con il punto (la quota non cambia);
-// su un angolo retto il vicino scorre sull'altro suo muro (il muro tra i due non ruota, gli angoli restano a 90). Si propaga finche' serve.
-// Il punto mosso a mano fa seguire i vicini solo se ha lui stesso un angolo retto (la punta libera di una linea non trascina l'angolo a cui e' attaccata).
-// Ritorna le posizioni di prima (keepBack le rimette)
+// sposta i punti seeds [[i, dx, dy]] e fa seguire i vicini ad angolo retto: il vicino scorre sull'altro suo muro (il muro tra i due non ruota, gli angoli restano
+// a 90). Si propaga finche' serve. Un punto mosso a mano fa seguire i vicini solo se ha lui un angolo retto. Ritorna le posizioni di prima (keepBack le rimette)
 function keepMove(seeds) {
   const on = orthoOn(), adj = new Map(), D = new Map(), Qu = [];
-  const add = (i, j, g) => { if (!adj.has(i)) adj.set(i, []); adj.get(i).push([j, g]); };
-  state.segments.forEach(g => { if (g.a!==g.b && state.points[g.a] && state.points[g.b]) { add(g.a, g.b, g); add(g.b, g.a, g); } });
-  const right = (o, x) => (adj.get(o) || []).some(([y]) => y!==x && orthoAng(state.points[o], state.points[x], state.points[y]) <= ORTHO_COS);
-  const isSeed = new Set(seeds.map(s => s[0])), seedOk = new Set(seeds.filter(([i]) => on.has(i) &&(adj.get(i) || []).some(([x]) => right(i, x))).map(s => s[0]));
+  const add = (i, j) => { if (!adj.has(i)) adj.set(i, []); adj.get(i).push(j); };
+  state.segments.forEach(g => { if (g.a!==g.b && state.points[g.a] && state.points[g.b]) { add(g.a, g.b); add(g.b, g.a); } });
+  const right = (o, x) => (adj.get(o) || []).some(y => y!==x && orthoAng(state.points[o], state.points[x], state.points[y]) <= ORTHO_COS);
   seeds.forEach(([i, dx, dy]) => { D.set(i, {x:dx, y:dy}); Qu.push(i); });
+  const isSeed = new Set(seeds.map(s => s[0])), seedOk = new Set(seeds.filter(([i]) => on.has(i) && (adj.get(i) || []).some(x => right(i, x))).map(s => s[0]));
   for (let h = 0; h < Qu.length; h++) {
     const i = Qu[h], d = D.get(i), P = state.points[i]; if (!P || Math.hypot(d.x, d.y) < 1e-9) continue;
-    const orth = on.has(i) && (!isSeed.has(i) || seedOk.has(i));
-    for (const [j, g] of adj.get(i) || []) {
-      if (D.has(j)) continue;
+    if (!on.has(i) || (isSeed.has(i) && !seedOk.has(i))) continue;
+    for (const j of adj.get(i) || []) {
+      if (D.has(j) || !on.has(j) || !right(j, i)) continue;
       const Q = state.points[j]; if (locked(Q) || hid(Q)) continue;
       const L = Math.hypot(Q.x-P.x, Q.y-P.y); if (L < 1e-6) continue;
-      let m = null;
-      if (segOk(g, L) && !_okFree.has(g)) m = {x:d.x, y:d.y};
-      else if (orth && on.has(j) && right(j, i)) { const ux = (Q.x-P.x)/L, uy = (Q.y-P.y)/L, dp = d.x*ux + d.y*uy; m = {x:d.x - ux*dp, y:d.y - uy*dp}; }
-      if (!m || Math.hypot(m.x, m.y) < 1e-9) continue;
+      const ux = (Q.x-P.x)/L, uy = (Q.y-P.y)/L, dp = d.x*ux + d.y*uy, m = {x:d.x - ux*dp, y:d.y - uy*dp};
+      if (Math.hypot(m.x, m.y) < 1e-9) continue;
       D.set(j, m); Qu.push(j);
     }
   }
   const prev = [];
   D.forEach((d, i) => { const p = state.points[i]; if (p && (d.x || d.y)) { prev.push([p, p.x, p.y]); p.x += d.x; p.y += d.y; } });
   return prev;
-}
-function keepBack(prev) { prev.forEach(([p, x, y]) => { p.x = x; p.y = y; }); }
-// 2.55: keepMove resta SOLO per Imposta misura (setWallLength); il trascinamento dei punti non la usa piu'.
-// Dopo Imposta misura nessuna linea si sovrappone o coincide con un'altra, ne' si annulla: prima coppia nuova [g, h] (h null = g si annulla), o null.
-// Le sovrapposizioni che c'erano gia' prima (es. linee in comune duplicate dal parametrico) non contano
-function lineOverlap(prev) {
-  if (!prev || !prev.length) return null;
-  const old = new Map(prev.map(([p, x, y]) => [p, {x, y}])), at = (p, o) => o && old.has(p) ? old.get(p) : p;
-  const len = (g, o) => { const A = at(state.points[g.a], o), B = at(state.points[g.b], o); return Math.hypot(B.x-A.x, B.y-A.y); };
-  const ov = (g, h, o) => {
-    const A = at(state.points[g.a], o), B = at(state.points[g.b], o), C = at(state.points[h.a], o), D = at(state.points[h.b], o);
-    const L = Math.hypot(B.x-A.x, B.y-A.y); if (L < 0.005) return false;
-    const ux = (B.x-A.x)/L, uy = (B.y-A.y)/L, off = Q => Math.abs((Q.x-A.x)*uy - (Q.y-A.y)*ux), t = Q => (Q.x-A.x)*ux + (Q.y-A.y)*uy;
-    if (off(C) > 0.003 || off(D) > 0.003) return false;
-    return Math.min(L, Math.max(t(C), t(D))) - Math.max(0, Math.min(t(C), t(D))) > 0.005;
-  };
-  const segs = state.segments.filter(g => g.a!==g.b && state.points[g.a] && state.points[g.b] && !hid(g));
-  for (const g of segs) {
-    if (!old.has(state.points[g.a]) && !old.has(state.points[g.b])) continue;
-    if (len(g, false) < 0.005 && len(g, true) >= 0.005) return [g, null];
-    for (const h of segs) {
-      if (h===g || (g.fase==='nuovo')!==(h.fase==='nuovo')) continue;
-      if (ov(g, h, false) && !ov(g, h, true)) return [g, h];
-    }
-  }
-  return null;
-}
-function lineOverlapMsg(v) {
-  const lb = g => { const A = state.points[g.a], B = state.points[g.b]; return (A ? A.label : '')+' - '+(B ? B.label : ''); };
-  return v[1] ? 'la linea '+lb(v[0])+' si sovrapporrebbe a '+lb(v[1]) : 'la linea '+lb(v[0])+' si annullerebbe';
-}
-// 2.55 Imposta misura su un muro esterno: resta fermo l'estremo esterno (spigolo dell'edificio) e si muove quello verso l'interno.
-// Muro esterno = da un lato, a 60 cm dal centro del muro, non c'e' nessun ambiente. Estremo esterno = prolungando il muro di 60 cm oltre
-// quell'estremo non si entra in nessun ambiente; l'altro invece entra nella stanza accanto. Ritorna 'a' o 'b' (l'estremo che resta fermo) o null = come prima
-function wallExtEnd(g) {
-  const A = state.points[g.a], B = state.points[g.b]; if (!A || !B) return null;
-  const L = Math.hypot(B.x-A.x, B.y-A.y); if (L < 1e-6) return null;
-  const ux = (B.x-A.x)/L, uy = (B.y-A.y)/L, d = 0.6, Mx = (A.x+B.x)/2, My = (A.y+B.y)/2;
-  const polys = state.ambienti.filter(a => live(a) && !hid(a) && a.indices.length >= 3).map(a => a.indices.map(i => state.points[i]).filter(Boolean)).filter(p => p.length >= 3);
-  const inAny = (x, y) => polys.some(p => inPoly(p, x, y));
-  if (inAny(Mx - uy*d, My + ux*d) && inAny(Mx + uy*d, My - ux*d)) return null;      // ambienti dai due lati: muro interno
-  const ea = !inAny(A.x - ux*d, A.y - uy*d), eb = !inAny(B.x + ux*d, B.y + uy*d);
-  return ea && !eb ? 'a' : eb && !ea ? 'b' : null;
-}
-// 2.55: punti nello stesso posto del punto trascinato (entro 1 mm) che si muovono con lui; mai quelli degli ambienti parametrici (restano come prima)
-function dragCo(i) {
-  const P = state.points[i], par = new Set(); if (!P) return [];
-  state.ambienti.forEach(a => { if (a.wt && !a.wpx) a.indices.forEach(k => par.add(k)); });
-  if (par.has(i)) return [];
-  const r = []; state.points.forEach((Q, k) => { if (k!==i && Q && !hid(Q) && !locked(Q) && !par.has(k) && Math.abs(Q.x-P.x) < 0.001 && Math.abs(Q.y-P.y) < 0.001) r.push(k); });
-  return r;
-}
-// 2.52: gli angoli a 90 gradi degli ambienti ortogonali (non `no90`) fotografati prima di un'operazione: [o, p, q, cos] = angolo in o tra o-p e o-q.
-// orthoBroken dice il primo che non e' piu' a 90 (skip = punto mosso a mano: gli angoli dei muri che lo toccano possono cambiare, come prima)
-function orthoRecs() {
-  const r = [];
-  state.ambienti.forEach(a => {
-    if (!or90(a)) return;                                       // 2.55: solo gli ambienti con "Mantieni angoli a 90"
-    const I = a.indices, n = I.length;
-    for (let k = 0; k < n; k++) { const o = I[k], p = I[(k+n-1)%n], q = I[(k+1)%n], c = orthoAng(state.points[o], state.points[p], state.points[q]); if (c <= ORTHO_COS) r.push([o, p, q, c]); }
-  });
-  return r;
-}
-function orthoBroken(recs, skip) {
-  for (const [o, p, q, c0] of recs) {
-    if (skip!==undefined && (p===skip || q===skip)) continue;
-    const c = orthoAng(state.points[o], state.points[p], state.points[q]);
-    if (c > ORTHO_COS || (c0 < 1e-4 && c > 5e-4)) return o;
-  }
-  return null;
-}
-function orthoMsg(o, short) {
-  const P = state.points[o], nm = P ? P.label : '';
-  return short ? 'Bloccato: l\'angolo in '+nm+' non resterebbe a 90 gradi' : 'L\'angolo in '+nm+' non resterebbe a 90 gradi (se l\'ambiente non è ortogonale: menu dell\'ambiente, spegni "Mantieni angoli a 90").';
 }
 function quotaInfo(i) {
   const g = state.segments[i]; if (!xqOn('qint', QINT) || !g || hid(g) || g.layer==='MURI_EST') return null;     // i muri esterni non hanno quota; spente da Vista (o non scelte all'esportazione) = nessuna quota
@@ -2887,12 +2835,10 @@ function ambMenuAction(action) {
   const s = state.sel; if (!s || s.kind!=='ambiente') return;
   const amb = state.ambienti[s.idx]; if (!amb) return;
   if (action==='demo') { setDemo([], [], [s.idx], amb.fase!=='demo'); return; }
-  if (action==='wpon') { wpMakeOne(s.idx); return; }
   if (action==='move') { moveRoomStart(s.idx); return; }
-  if (action==='or90') {                                   // 2.55: interruttore, campo facoltativo `or90` (il vecchio `no90` si toglie)
-    saveHistory(); const on = !or90(amb); delete amb.no90; if (on) amb.or90 = true; else delete amb.or90;
-    commit(on ? amb.name+': angoli a 90 mantenuti quando imposti una misura (il trascinamento dei punti resta libero).'
-              : amb.name+': angoli liberi, non si mantengono a 90 quando cambi le misure.');
+  if (action==='or90') {                                   // 2.57: interruttore; il campo e' solo `no90` (acceso di norma se gli angoli sono retti)
+    saveHistory(); const on = !!amb.no90; if (on) delete amb.no90; else amb.no90 = true;
+    commit(on ? amb.name+': angoli retti mantenuti quando cambi la misura di un muro.' : amb.name+': angoli liberi, non si mantengono a 90 quando cambi le misure.');
     return;
   }
   if (action==='volta') { voltaDialog(s.idx); return; }
@@ -3490,7 +3436,12 @@ function snapResolve(sx, sy, w, angCons, excl) {
 function dragPointTo(i, w, sx, sy) {
   const P = state.points[i], si = document.getElementById('snap-indicator');
   let x=w.x, y=w.y, guides=null, marks=null, corner=null, text=null;
-  const dr = state.drag; if (dr && dr.kind==='point' && dr.idx===i && !dr.co) dr.co = dragCo(i);          // 2.55: punti nello stesso posto, si muovono insieme
+  const dr = state.drag;
+  if (dr && dr.kind==='point' && dr.idx===i && !dr.co) {
+    const sk = state.sel && state.sel.kind==='ambiente' ? state.sel.idx : -1;
+    ambDetachPoint(i, sk);                                   // 2.57: se il punto e' di piu' ambienti, si muove solo quello scelto (selezionato, o il primo): gli altri restano fermi
+    dr.co = dragCo(i);                                       // punti nello stesso posto dello stesso ambiente, si muovono insieme
+  }
   const co = dr && dr.idx===i && dr.co ? dr.co : [];
   const bs = baseSnap(sx,sy);
   if (bs) { x=bs.x; y=bs.y; corner=bs; text='\u25c8 angolo della base'; }
@@ -3501,28 +3452,9 @@ function dragPointTo(i, w, sx, sy) {
     if (r) { x=r.x; y=r.y; guides=r.guides; marks=r.marks; text=r.text; }
   }
   const js = jointSlide(i, x, y); if (js) { x = js.x; y = js.y; text = 'scorre lungo il muro esistente'; }
-  // 2.55 TRASCINAMENTO LIBERO: si muove solo il punto (con i punti nello stesso posto): i vicini restano dove sono e nessun angolo a 90 si mantiene.
-  // Unico vincolo: un muro convalidato che tocca DIRETTAMENTE il punto non cambia lunghezza (il punto gira attorno all'altro estremo, la spinta
-  // lungo il muro si ferma con "Bloccato"); con due o piu' muri convalidati sul punto resta fermo. Le quote convalidate non collegate non contano
-  const M = new Set([i].concat(co)), cons = [];
-  state.segments.forEach(g => {
-    if (M.has(g.a)===M.has(g.b)) return;
-    const A = state.points[g.a], B = state.points[g.b], Q = M.has(g.a) ? B : A; if (!A || !B) return;
-    const L = Math.hypot(B.x-A.x, B.y-A.y); if (L > 1e-6 && segOk(g, L)) cons.push({g, Q, L});
-  });
-  let nx = x, ny = y, blk = null;
-  if (cons.length===1) {
-    const c = cons[0], vx = x-c.Q.x, vy = y-c.Q.y, l = Math.hypot(vx, vy);
-    if (l > 1e-6) { nx = c.Q.x + vx/l*c.L; ny = c.Q.y + vy/l*c.L; } else { nx = P.x; ny = P.y; }
-    if (Math.hypot(x-nx, y-ny)*state.zoom > 8) blk = c.g;
-  } else if (cons.length > 1) {                                  // fermo; il messaggio dice il muro che la spinta allungherebbe o accorcerebbe di piu'
-    nx = P.x; ny = P.y;
-    if (Math.hypot(x-P.x, y-P.y)*state.zoom > 4) { const rad = c => Math.abs((x-P.x)*(P.x-c.Q.x) + (y-P.y)*(P.y-c.Q.y))/c.L; blk = cons.reduce((m, c) => rad(c) > rad(m) ? c : m).g; }
-  }
-  const mx = nx-P.x, my = ny-P.y;
-  if (mx || my) M.forEach(k => { const p = state.points[k]; if (p) { p.x += mx; p.y += my; } });
-  if (blk) text = okMsg(blk, true);
-  x = P.x; y = P.y;
+  // trascinamento libero: si muove il punto (con i punti nello stesso posto), nessun vincolo e nessun vicino che segue
+  const mx = x-P.x, my = y-P.y; P.x = x; P.y = y;
+  co.forEach(k => { const p = state.points[k]; if (p) { p.x += mx; p.y += my; } });
   if (text) { si.textContent=text; si.style.display='block'; } else si.style.display='none';
   const t=w2s(x,y); setAssist(sx,sy,{corner,guides,marks,tx:t.x,ty:t.y});
 }
@@ -4706,7 +4638,6 @@ function wpWatch() {
     });
     state.ambienti.forEach(a => {                          // ambiente non piu' parametrico con gli spigoli cambiati: spessori riallineati ai lati di adesso
       if (!Array.isArray(a.wt) || !a.wpx) return;
-      if (a.lk) delete a.lk;                               // 2.50: i lucchetti valgono solo da parametrico (le quote convalidate restano e li rifanno con "Rendi parametrico")
       const R = wpRing(a); if (!R) return;
       if (a.wt.length!==R.m) { const v = a.wt.find(t => t > 0) || wpStd().ext; a.wt = R.S.map(() => v); delete a.ext; }
       a.wsg = wpSig(R);
@@ -4717,204 +4648,9 @@ function wpWatch() {
     else if (wpGenSig()!==_wpGen && !busy) { rebuildWalls(wpFase()); autoWallThick(); draw(); }
     wpSync(); wpAnchor();
     if (state.wpSel && !wpWall()) state.wpSel = null;
-    if (lost.length) setTimeout(() => setTip((lost.length===1 ? lost[0]+' non è più parametrico' : lost.join(', ')+' non sono più parametrici')+': la forma è stata cambiata a mano. I muri restano disegnati, ma l\'app non lo sposta più e non ne garantisce le misure (segno ⚠ sull\'ambiente; a modifiche finite, dal suo menu "Rendi parametrico").', 'warn'), 0);
+    if (lost.length) setTimeout(() => setTip((lost.length===1 ? lost[0]+' non è più parametrico' : lost.join(', ')+' non sono più parametrici')+': la forma è stata cambiata a mano. I muri restano disegnati, ma l\'app non lo sposta più e non ne garantisce le misure (segno ⚠ sull\'ambiente).', 'warn'), 0);
   } catch (err) { console.error('muri parametrici', err); }
 }
-// ── 2.50 RENDI PARAMETRICO (dopo il rilievo, SOLO dal pulsante: menu dell'ambiente, oppure "Rendi parametrici tutti" in Disegna e nella barra In loco).
-// Vale per l'ambiente disegnato a linee e per quello non piu' parametrico (modificato a mano). Le misure di adesso valgono come nette; le quote
-// convalidate (g.ok) che misurano una misura netta diventano lucchetti (a.lk); spessori dei lati: dalla linea gia' disegnata fuori dal lato se coerente
-// (5-80 cm), altrimenti lo standard del tipo di lato (wpStdOf). Nessun ambiente si sposta, salvo le stanze che si toccano (linea in comune, separata
-// da wpSplitShared, o lati sovrapposti entro 2 cm): tra loro nasce la tramezza standard e il risolutore le separa, il piu' grande del gruppo resta fermo.
-// Ambienti non ortogonali: angoli come disegnati (nessun vincolo a 90); lati e diagonali convalidati restano bloccati dalle quote (2.49).
-function wpShareNames(a) { const set = new Set(a.indices); return state.ambienti.filter(b => b!==a && b.indices.some(i => set.has(i))).map(b => b.name).join(', '); }
-function wpSideRun(a, R, k, fn) {                          // le linee del lato vero k, una per una (il lato puo' avere punti in piu')
-  const n = a.indices.length, end = R.ci[(k+1)%R.m];
-  for (let i = R.ci[k], c = 0; c < n; i = (i+1)%n, c++) { const j = (i+1)%n; if (fn(a.indices[i], a.indices[j])===false) return false; if (j===end) break; }
-  return true;
-}
-const wpSegOf = (u, v) => state.segments.findIndex(g => (g.a===u && g.b===v) || (g.a===v && g.b===u));
-function wpSideSeg(a, R, k) {                              // la linea piu' lunga del lato
-  let best = -1, bl = 0;
-  wpSideRun(a, R, k, (u, v) => { const si = wpSegOf(u, v), A = state.points[u], B = state.points[v]; if (si >= 0 && A && B) { const l = Math.hypot(B.x-A.x, B.y-A.y); if (l > bl) { bl = l; best = si; } } });
-  return best;
-}
-function wpSideOk(a, R, k) {                               // lunghezza del lato se tutte le sue linee hanno la quota convalidata, altrimenti null
-  let tot = 0;
-  const ok = wpSideRun(a, R, k, (u, v) => { const g = state.segments[wpSegOf(u, v)], A = state.points[u], B = state.points[v]; if (!g || !A || !B) return false; const l = Math.hypot(B.x-A.x, B.y-A.y); if (!segOk(g, l)) return false; tot += l; });
-  return ok ? tot : null;
-}
-// quote convalidate -> lucchetti: la misura netta tra il lato k e quello di fronte e' bloccata se un lato che li unisce e' convalidato e lungo quanto lei
-function wpLkFromLines(a) {
-  const R = wpRing(a); if (!R) return 0; const m = R.m; let n = 0;
-  R.S.forEach((s, k) => {
-    const j = wpOpp(R, k); if (j < 0 || wpLkHas(a, k, j) || Math.abs(s.ux*R.S[j].uy - s.uy*R.S[j].ux) > 0.087) return;     // come la scheda: solo lati paralleli
-    const v = wpNet(R, k); if (v===null) return;
-    if ([(k+1)%m, (k+m-1)%m, (j+1)%m, (j+m-1)%m].some(q => { const L = wpSideOk(a, R, q); return L!==null && Math.abs(L - v) < 0.005; })) { a.lk = wpLk(a).concat([[k, j, wpR4(v)]]); n++; }
-  });
-  return n;
-}
-// spessori di un ambiente reso parametrico adesso: la linea disegnata fuori dal lato (non generata, non di un altro ambiente) se a 5-80 cm, altrimenti lo standard
-function wpMakeThick(R, per, fc) {                         // fc (2.52): qui si annotano le linee disegnate da cui si e' letto lo spessore {a, k, si, nx, ny}
-  const a = R.a, other = new Set(); state.ambienti.forEach(b => { if (b!==a) b.indices.forEach(i => other.add(i)); });
-  a.wt = R.S.map((s, k) => {
-    const c = wpCls(R, k, per), std = wpStdOf(c); if (!c) return std;
-    const si = wpSideSeg(a, R, k); if (si < 0) return std;
-    const g = state.segments[si], A = state.points[g.a], B = state.points[g.b], M = {x:(A.x+B.x)/2, y:(A.y+B.y)/2};
-    const r = oppositeFace(si, M, M), h = r && state.segments[r.k];
-    const ok = h && !h.mo && !other.has(h.a) && !other.has(h.b) && r.d >= 0.05 && r.d <= 0.80;
-    if (ok && fc) fc.push({a, k, si:r.k, nx:s.nx, ny:s.ny});
-    return ok ? wpR4(r.d) : std;
-  });
-}
-// 2.52: le stanze spostate per far posto alla tramezza portano con se' le linee esterne disegnate da cui si e' letto il loro spessore (solo di traverso
-// alla linea, cosi' le linee attaccate si allungano e restano dritte): lo spessore letto resta quello e la faccia generata coincide con la linea
-// disegnata (nessun doppione). Le linee usate anche da una stanza ferma non si muovono; se cosi' cambierebbe una quota convalidata non si muove nulla.
-function wpMakeFollow(fc, fixA, P0) {
-  const fixSeg = new Set(fc.filter(f => fixA.has(f.a)).map(f => f.si)), mv = new Map();
-  fc.forEach(f => {
-    if (fixA.has(f.a) || fixSeg.has(f.si)) return;
-    const q = P0.get(f.a), p = state.points[f.a.indices[0]], g = state.segments[f.si]; if (!q || !p || !g) return;
-    const dn = (p.x-q.x)*f.nx + (p.y-q.y)*f.ny; if (Math.abs(dn) < 1e-6) return;
-    [g.a, g.b].forEach(i => {
-      const P = state.points[i]; if (!P || locked(P) || hid(P)) return;
-      const L = mv.get(i) || []; if (L.some(e => Math.abs(e.nx*f.nx + e.ny*f.ny) > 0.99)) return;     // stessa direzione gia' contata
-      L.push({nx:f.nx, ny:f.ny, dn}); mv.set(i, L);
-    });
-  });
-  const prev = [];
-  mv.forEach((L, i) => { const P = state.points[i]; prev.push([P, P.x, P.y]); L.forEach(e => { P.x = wpR4(P.x + e.nx*e.dn); P.y = wpR4(P.y + e.ny*e.dn); }); });
-  if (prev.length && _okBase && okBroken(_okBase.r)) keepBack(prev);
-}
-function wpMakePrep(a) {
-  const R = wpRing(a); if (!R) return {err:'forma non valida'};
-  if (!wpOwn(a)) return {err:'punti in comune con '+wpShareNames(a)};
-  const n = a.indices.length;
-  for (let k = 0; k < n; k++) { const i = a.indices[k], j = a.indices[(k+1)%n]; if (!segExists(i, j)) state.segments.push({a:i, b:j, fase:a.fase}); }
-  const neu = !(a.wpx && Array.isArray(a.wt) && a.wt.length===R.m);     // di nuovo parametrico con gli stessi lati: spessori e tipi dei lati come prima
-  delete a.wpx; delete a.lk; if (neu) { a.wt = R.S.map(() => wpStd().ext); delete a.ext; }
-  a.wsg = wpSig(R);
-  return {neu};
-}
-// list = ambienti da rendere parametrici (saveHistory gia' fatto da chi chiama), skip = saltati con il motivo
-function wpMakeGo(list, skip) {
-  const old = wpRooms(false).map(R => R.rid), made = [];
-  list.forEach(a => { const r = wpMakePrep(a); if (r.err) skip.push(a.name+': '+r.err); else made.push({a, neu:r.neu}); });
-  if (!made.length) { restore(state.history.pop()); _okBase = null; draw(); setTip('Nessun ambiente reso parametrico. '+skip.join('; ')+'.', 'warn'); return; }
-  wpIds();
-  const st = wpStd(), rooms = wpRooms(false), per = wpPerim(rooms), mk = new Set(made.map(m => m.a));
-  const fc = [];                                           // 2.52: linee disegnate da cui si legge lo spessore (seguono la stanza se si sposta)
-  rooms.forEach(R => { const m = made.find(x => x.a===R.a); if (m && m.neu) wpMakeThick(R, per, fc); });
-  // stanze che si toccano (lati affacciati a meno di 2 cm): tramezza standard, poi il risolutore le separa
-  const seeds = []; if (!state.wlinks) state.wlinks = [];
-  rooms.forEach(A => rooms.forEach(B => {
-    if (!(A.rid < B.rid) || (!mk.has(A.a) && !mk.has(B.a)) || (A.a.fase || 'es')!==(B.a.fase || 'es')) return;
-    for (let ka = 0; ka < A.m; ka++) for (let kb = 0; kb < B.m; kb++) {
-      const f = wpFace(A, ka, B, kb, -0.6); if (!f || Math.abs(f.g) >= 0.02) continue;
-      if (!state.wlinks.some(o => o.a===A.rid && o.b===B.rid && o.ka===ka && o.kb===kb)) state.wlinks.push({a:A.rid, b:B.rid, ka, kb, t:st.int});
-      seeds.push([A, B]);
-    }
-  }));
-  let fixed = rooms.map(R => R.rid);                       // di norma nessuno si muove
-  if (seeds.length) {                                      // per ogni gruppo di stanze che si toccano resta fermo un ambiente gia' parametrico, altrimenti il piu' grande
-    const up = new Map(), root = r => { while (up.has(r)) r = up.get(r); return r; }, best = new Map();
-    seeds.forEach(([A, B]) => { const x = root(A.rid), y = root(B.rid); if (x!==y) up.set(x, y); });
-    seeds.forEach(([A, B]) => [A, B].forEach(R => { const g = root(R.rid), w = old.includes(R.rid) ? Infinity : Math.abs(wpArea(R.C)), b = best.get(g); if (!b || w > b.w) best.set(g, {w, rid:R.rid}); }));
-    fixed = old.concat([...best.values()].map(b => b.rid));
-  }
-  let nl = 0; const no90 = [];
-  made.forEach(m => { nl += wpLkFromLines(m.a); if (m.a.no90 || !roomOrtho(m.a)) no90.push(m.a.name); });
-  const P0 = new Map(made.map(m => { const p = state.points[m.a.indices[0]]; return [m.a, {x:p.x, y:p.y}]; }));
-  wpSolve(fixed, null, seeds.length ? [] : undefined);     // G0 vuoto = nessun filo, ma il risolutore separa le stanze anche nel Rilievo in loco
-  if (seeds.length && fc.length) { const fx = new Set(fixed); wpMakeFollow(fc, new Set(rooms.filter(R => fx.has(R.rid)).map(R => R.a)), P0); }
-  const bad = _okBase && okBroken(_okBase.r);             // controllo prima di rebuildWalls (che rifa' gli oggetti linea): una quota convalidata cambiata = si annulla tutto
-  if (bad) { restore(state.history.pop()); _okBase = null; _okFree.clear(); draw(); setTip(okMsg(bad)+' Rendi parametrico annullato: separando le stanze per la tramezza questa quota cambierebbe.', 'warn'); return; }
-  rebuildWalls(wpFase());
-  const mv = made.filter(m => { const p = state.points[m.a.indices[0]], q = P0.get(m.a); return p && Math.hypot(p.x-q.x, p.y-q.y) > 0.001; }).map(m => m.a.name);
-  let msg = (made.length===1 ? made[0].a.name+' è parametrico' : made.length+' ambienti parametrici')+': le misure di adesso valgono come nette, muri esterni e tramezze generati'
-    +(nl ? ', '+nl+(nl===1 ? ' quota convalidata diventata lucchetto' : ' quote convalidate diventate lucchetti') : '')+'. Spessori: dalle linee già disegnate se coerenti, altrimenti '+Math.round(st.ext*100)+' cm verso l\'esterno, '+Math.round(st.sc*100)+' cm verso vano scala o non riscaldati, '+Math.round(st.int*100)+' cm le tramezze verso altri ambienti (bollini E/S/A nel Rilievo in loco).';
-  if (seeds.length) msg += ' Tramezza di '+Math.round(st.int*100)+' cm tra le stanze che si toccavano'+(mv.length ? ': spostate per farle posto '+mv.join(', ')+' (misure nette invariate, controlla i muri disegnati a mano attorno)' : '')+'.';
-  if (no90.length) msg += ' Non ortogonali ('+no90.join(', ')+'): angoli come disegnati, nessun vincolo a 90 gradi; per aprirli sposta i punti, poi di nuovo Rendi parametrico.';
-  if (skip.length) msg += ' Saltati, lasciati come sono: '+skip.join('; ')+'.';
-  const h0 = state.history.length;
-  commit(msg + wpResText(), true);
-  if (skip.length && state.history.length===h0) setTimeout(() => setTip(msg, 'warn'), 0);
-}
-function wpMakeOne(idx) {
-  const a = state.ambienti[idx]; if (!a) return;
-  if (locked(a)) { lockTip(); return; }
-  if (a.wt && !a.wpx) { setTip(a.name+' è già parametrico.'); return; }
-  if (!wpRing(a)) { setTip('Forma non valida.', 'warn'); return; }
-  if (!wpOwn(a)) { setTip(a.name+' ha punti in comune con '+wpShareNames(a)+': usa "Rendi parametrici tutti" (Disegna > Avanzate), che separa le stanze con la tramezza.', 'warn'); return; }
-  state.sel = null; saveHistory(); wpMakeGo([a], []);
-}
-function wpMakeAll() {
-  hideAllMenus();
-  const cand = state.ambienti.filter(a => live(a) && !hid(a) && !locked(a) && (!a.wt || a.wpx));
-  if (!cand.length) { setTip(wpRooms(false).length ? 'Tutti gli ambienti visibili sono già parametrici.' : 'Non ci sono ambienti da rendere parametrici: disegnali a linee (Ambiente da area o da punti), poi Rendi parametrici tutti.', 'warn'); return; }
-  state.sel = null; saveHistory(); const skip = [];
-  wpMakeGo(wpSplitShared(cand, skip), skip);
-}
-// punti in comune tra ambienti (una linea sola tra due stanze = tramezza): ogni ambiente prende punti suoi. Si separano solo coppie i cui punti
-// in comune stanno su un lato solo di tutti e due, affacciati (o un punto solo, spigolo contro spigolo); gli altri si saltano con il motivo.
-// Il punto resta al piu' grande, gli altri ne prendono una copia; la linea in comune resta a chi ha i punti di prima, l'altro ne prende una uguale (anche convalidata).
-function wpSplitShared(cand, skip) {
-  const ok = new Set(); cand.forEach(a => { if (wpRing(a)) ok.add(a); else skip.push(a.name+': forma non valida'); });
-  const users = new Map(); state.ambienti.forEach(b => new Set(b.indices).forEach(i => { if (!users.has(i)) users.set(i, []); users.get(i).push(b); }));
-  const drop = (a, why) => { if (ok.delete(a)) { skip.push(a.name+': '+why); return true; } return false; };
-  const onSide = (a, S) => { const R = wpRing(a); return R && R.S.find(s => S.every(i => { const p = state.points[i], al = (p.x-s.p.x)*s.ux + (p.y-s.p.y)*s.uy; return Math.abs((p.x-s.p.x)*s.nx + (p.y-s.p.y)*s.ny) <= WP_COL && al >= -WP_COL && al <= s.L + WP_COL; })); };
-  for (let ch = true; ch; ) {
-    ch = false;
-    users.forEach(U => { if (U.length < 2) return; const bad = U.find(b => !ok.has(b)); if (bad) U.forEach(b => { if (b!==bad && drop(b, 'punti in comune con '+bad.name+', che resta com\'è')) ch = true; }); });
-    const L = [...ok];
-    for (let x = 0; x < L.length; x++) for (let y = x+1; y < L.length; y++) {
-      const A = L[x], B = L[y]; if (!ok.has(A) || !ok.has(B)) continue;
-      const sB = new Set(B.indices), S = [...new Set(A.indices.filter(i => sB.has(i)))]; if (S.length < 2) continue;
-      const s = onSide(A, S), t = onSide(B, S);
-      if (s && t && s.nx*t.nx + s.ny*t.ny < -0.99) continue;
-      drop(A, 'punti in comune con '+B.name+' non su una linea sola'); drop(B, 'punti in comune con '+A.name+' non su una linea sola'); ch = true;
-    }
-  }
-  const orig = new Map(), changed = new Set(), area = b => Math.abs(wpArea(b.indices.map(i => state.points[i])));
-  users.forEach((U, i) => {
-    const V = U.filter(b => ok.has(b)); if (V.length < 2) return;
-    V.sort((p, q) => area(q) - area(p));
-    V.slice(1).forEach(b => { const P = state.points[i], c = newPoint(P.x, P.y); if (P.fase) state.points[c].fase = P.fase; orig.set(c, i); b.indices = b.indices.map(j => j===i ? c : j); changed.add(b); });
-  });
-  const O = i => orig.has(i) ? orig.get(i) : i;
-  const edge = (b, u, v) => b.indices.some((x, k) => { const y = b.indices[(k+1)%b.indices.length]; return (x===u && y===v) || (x===v && y===u); });
-  changed.forEach(b => b.indices.forEach((x, k) => {
-    const y = b.indices[(k+1)%b.indices.length]; if ((!orig.has(x) && !orig.has(y)) || segExists(x, y)) return;
-    const g = state.segments[wpSegOf(O(x), O(y))]; if (!g) return;
-    if (!state.ambienti.some(c => edge(c, g.a, g.b))) { const f = g.a===O(x); g.a = f ? x : y; g.b = f ? y : x; }      // la linea non serve piu' a nessun altro: passa a questo ambiente, con i suoi serramenti
-    else { const h = {a:x, b:y}; if (g.fase) h.fase = g.fase; if (g.ok) { h.ok = g.ok; h.okLen = g.okLen; } state.segments.push(h); }
-  }));
-  return [...ok];
-}
-// 2.50: non piu' chiamata in automatico alla registrazione dell'ambiente (si passa dal pulsante Rendi parametrico); resta per riferimento.
-// Un ambiente nasceva parametrico se stava da solo: punti suoi e nessun muro gia' disegnato attorno
-// (una linea parallela entro 1 m oltre un suo lato che non sia di un ambiente parametrico). Sui disegni a linee e sui ricalchi resta com'e'.
-function wpTryParam(a) {
-  try {
-    if (!a || a.wt || !wpOwn(a)) return false;
-    const R = wpRing(a); if (!R) return false;
-    const par = new Set(); wpRooms(true).forEach(r => r.a.indices.forEach(i => par.add(i)));
-    const n = a.indices.length, edges = [];
-    for (let k = 0; k < n; k++) {
-      const i = a.indices[k], j = a.indices[(k+1)%n];
-      edges.push([i, j, state.segments.findIndex(g => (g.a===i && g.b===j) || (g.a===j && g.b===i))]);
-    }
-    for (const [i, j, si] of edges) {
-      if (si < 0) continue;
-      const A = state.points[i], B = state.points[j]; if (Math.hypot(B.x-A.x, B.y-A.y) < 0.3) continue;
-      const M = {x:(A.x+B.x)/2, y:(A.y+B.y)/2}, r = oppositeFace(si, M, M), h = r && state.segments[r.k];
-      if (h && !h.mo && !(par.has(h.a) && par.has(h.b))) return false;
-    }
-    edges.forEach(([i, j, si]) => { if (si < 0) state.segments.push({a:i, b:j, fase:a.fase}); });
-    a.wt = R.S.map(() => wpStd().ext); a.wsg = wpSig(R); wpIds();
-    return true;
-  } catch (err) { console.error('muri parametrici', err); return false; }
-}
-
 // ── IL MURO SELEZIONATO: un lato di un ambiente parametrico; se di fronte c'e' il lato di un altro ambiente e' una tramezza ──
 function wpWall() {
   const s = state.wpSel; if (!s) return null;
@@ -4998,22 +4734,6 @@ function wpThickAfter() {
   const f = _wpAfter; _wpAfter = null; if (!f) return;
   try { wpSolve(f); rebuildWalls(wpFase()); } catch (err) { console.error('muri parametrici', err); }
 }
-// "Imposta misura" sulla quota di un lato intero di un ambiente parametrico: la lunghezza cambia spostando il lato accanto (dalla parte della fine
-// del lato), l'ambiente resta parametrico e i vicini si spostano. false = non e' il caso, vale la vecchia maniera
-function wpLenFromQuota(si, m) {
-  try {
-    const so = wpSideOf(si); if (!so || !so.whole) return false;
-    saveHistory();
-    const g = state.segments[si]; if (g) _okFree.add(g);   // 2.49: la quota che si imposta puo' cambiare; se il lato accanto (fine del lato) non si puo' muovere si prova quello all'inizio
-    let txt = wpDo({R:so.R, k:so.k, sd:so.R.S[so.k], e:null, skip:g}, 'e1', m), er = _wpLocoErr;
-    if (txt===null) { txt = wpDo({R:so.R, k:so.k, sd:so.R.S[so.k], e:null, skip:g}, 'e0', m); if (txt===null) er = er || _wpLocoErr; }
-    _wpLocoErr = null;
-    if (txt===null) { state.history.pop(); _okBase = null; _okFree.clear(); if (er && er.err) { setTip(er.err, 'warn'); draw(); return true; } return false; }
-    if (g) { g.ok = true; g.okLen = m; }
-    wpApply([so.R.rid], txt+', validato.');
-    return true;
-  } catch (err) { console.error('muri parametrici', err); return false; }
-}
 function wpHitHandle(sx, sy) {
   const W = wpWall(); if (!W || !wpHandlesOn(W)) return null;
   let best = null, bd = HIT_HANDLE_PX;
@@ -5064,22 +4784,12 @@ function wpDo(W, h, v) {
       const R1 = wpRing(W.R.a); return W.R.a.name+': misura netta '+num(v)+' m (si sposta la parete '+wpDirName(R1.S[r.mv])+')';
     }
     const m0 = wpNet(W.R, W.k); if (m0===null) return null;
-    const jo = wpOpp(W.R, W.k);
-    if (wpLkHas(W.R.a, W.k, jo)) { _wpLocoErr = {err:'Misura validata (lucchetto): per cambiarla togli prima il lucchetto dalla scheda della stanza (Rilievo in loco).'}; return null; }
-    const qg = wpQBlock(W.R, W.k);                         // 2.49: il lato cambierebbe una quota convalidata: si sposta il lato di fronte, se si puo'
-    if (qg) {
-      if (jo < 0 || wpQBlock(W.R, jo) || wpLkSide(W.R.a, jo)) { _wpLocoErr = {err:okMsg(qg)}; return null; }
-      if (!wpOffset(W.R, jo, v - m0)) return null;
-      wpStamp(W.R.a); return W.R.a.name+': misura netta '+num(v)+' m (si è spostato il lato di fronte: una quota convalidata non cambia)';
-    }
     if (!wpOffset(W.R, W.k, v - m0)) return null;
     wpStamp(W.R.a); return W.R.a.name+': misura netta '+num(v)+' m';
   }
   if (h==='out') { const t = wpSetT(W, v); return 'Spessore '+num(t*100, 1).replace(',0', '')+' cm'; }
   if (h==='mid') {
     if (!W.e) return null;
-    if (wpLkSide(W.R.a, W.k) || wpLkSide(W.O.a, W.ko)) { _wpLocoErr = {err:'Una delle due stanze ha una misura validata su questa tramezza (lucchetto): per spostarla togli prima il lucchetto.'}; return null; }
-    const qm = wpQBlock(W.R, W.k) || wpQBlock(W.O, W.ko); if (qm) { _wpLocoErr = {err:okMsg(qm)}; return null; }      // 2.49
     if (!wpOffset(W.R, W.k, v)) return null;
     const O = wpRing(W.O.a); if (!O || !wpOffset(O, W.ko, -v)) { const R = wpRing(W.R.a); if (R) wpOffset(R, W.k, -v); return null; }
     const R1 = wpStamp(W.R.a), O1 = wpStamp(W.O.a), a = R1 && wpNet(R1, W.k), b = O1 && wpNet(O1, W.ko);
@@ -5087,7 +4797,6 @@ function wpDo(W, h, v) {
   }
   const m = W.R.m, adj = h==='e1' ? (W.k+1)%m : (W.k+m-1)%m, na = W.R.S[adj], dot = W.sd.ux*na.nx + W.sd.uy*na.ny;      // gialle: si allunga il lato muovendo il lato accanto
   if (Math.abs(dot) < 0.2) return null;
-  const qe = wpQBlock(W.R, adj, W.skip); if (qe) { _wpLocoErr = {err:okMsg(qe)}; return null; }      // 2.49: W.skip = la quota che si sta impostando
   const mv = (h==='e1' ? 1 : -1)*(v - W.sd.L);
   if (!wpOffset(W.R, adj, mv*dot)) return null;
   wpStamp(W.R.a); return W.R.a.name+': lato '+num(v)+' m';
@@ -5104,8 +4813,7 @@ function wpDragTo(sx, sy, ev) {
     else if (d.h==='out') txt = wpDo(W, 'out', d.t0 + dn);
     else if (d.h==='mid') txt = wpDo(W, 'mid', wpR2(dn));
     else txt = wpDo(W, d.h, Math.max(0.1, wpR2(d.len0 + (d.h==='e1' ? du : -du))));
-    d.err = null;                                          // 2.52: ultimo passo non riuscito = niente cambiato, al rilascio si dice perche'
-    if (txt===null) { wpDragBack(d); const er = _wpLocoErr; _wpLocoErr = null; txt = er && er.ask ? 'Due pareti esterne: tocca la maniglia e scrivi la misura, l\'app chiede quale tenere ferma' : er && er.err ? er.err : 'Fin qui non si può'; d.err = txt; }
+    if (txt===null) { wpDragBack(d); const er = _wpLocoErr; _wpLocoErr = null; txt = er && er.ask ? 'Due pareti esterne: tocca la maniglia e scrivi la misura, l\'app chiede quale tenere ferma' : er && er.err ? er.err : 'Fin qui non si può'; }
     wpSolve([W.R.rid]); rebuildWalls(wpFase());
     showTooltip(txt, ev.clientX, ev.clientY); draw();
   } catch (err) { console.error('muri parametrici', err); }
@@ -5113,13 +4821,7 @@ function wpDragTo(sx, sy, ev) {
 function wpUp() {
   const d = state.wpDrag; state.wpDrag = null; hideTooltip(); if (!d) return;
   try {
-    if (state.moved) {
-      // 2.52: niente "Muro modificato" se nulla e' cambiato (maniglia su una misura bloccata da lucchetto o quota convalidata): si dice perche'
-      const W0 = wpWall(), same = d.snap.every(([p, x, y]) => Math.abs(p.x-x) < 1e-6 && Math.abs(p.y-y) < 1e-6)
-        && (!W0 || ((W0.R.a.wt || []).every((t, k) => t===d.wt0[k]) && (!W0.e || (W0.e.l.t===d.lt0 && !!W0.e.l.lk===d.lk0))));
-      if (same) { const er = d.err; dragEnd(false); persist(); draw(); if (er) setTip(er, 'warn'); return; }
-    }
-    if (state.moved) { if (dragEnd(true)) commit('Muro modificato: le misure nette degli altri ambienti non sono cambiate.'+wpResText(), true); else { persist(); draw(); } return; }
+    if (state.moved) { dragEnd(true); commit('Muro modificato: le misure nette degli altri ambienti non sono cambiate.'+wpResText(), true); return; }
     wpDragBack(d); dragEnd(false); wpAsk(d.h);              // tocco senza trascinare: il numero si scrive
   } catch (err) { console.error('muri parametrici', err); dragEnd(false); draw(); }
 }
@@ -5154,7 +4856,6 @@ function wpAsk(h) {
   }
   if (h==='in') {
     const m0 = wpNet(W.R, W.k); if (m0===null) { setTip('Su questo lato non trovo un lato di fronte da cui misurare.'); return; }
-    if (wpLkHas(W.R.a, W.k, wpOpp(W.R, W.k))) { setTip('Misura validata (lucchetto): per cambiarla togli prima il lucchetto dalla scheda della stanza (Rilievo in loco).', 'warn'); return; }
     askDialog('Misura netta di '+W.R.a.name, [{label:'Misura netta (m), dal centro di questo lato al lato di fronte', id:'m', value:m0.toFixed(2), type:'number'}], locoOn() ? 'Rilievo in loco: si sposta un lato solo (la parete esterna resta ferma) e le stanze vicine restano ferme; le tramezze mostrano lo scostamento.' : 'Si sposta questo lato; il resto dell\'ambiente resta fermo e gli ambienti oltre il muro si spostano. Gli spessori restano.', v => {
       const m = parseFloat(v.m); if (!(m > 0)) { draw(); return; }
       run(m);
@@ -5328,41 +5029,17 @@ function wpCls(R, k, per) {
   const e = R.a.ext, v = Array.isArray(e) && e.length===R.m ? e[k] : null;
   return v===2 || v===3 ? v : 1;
 }
-function wpLk(a, m) { return Array.isArray(a.lk) ? a.lk.filter(p => Array.isArray(p) && (m===undefined || (p[0] < m && p[1] < m))) : []; }
-function wpLkHas(a, k, j) { return wpLk(a).some(p => (p[0]===k && p[1]===j) || (p[0]===j && p[1]===k)); }
-function wpLkSide(a, s) { return wpLk(a).some(p => p[0]===s || p[1]===s); }
-// 2.49: spostare il lato k cambia la lunghezza delle due linee che lo toccano sui lati accanto: la prima con la quota convalidata, o null (skip = non conta)
-function wpQBlock(R, k, skip) {
-  if (!R || !(k >= 0) || k >= R.m) return null;
-  const ix = R.a.indices, n = ix.length, i0 = R.ci[k], i1 = R.ci[(k+1)%R.m], L = [[ix[(i0+n-1)%n], ix[i0]], [ix[i1], ix[(i1+1)%n]]];
-  // 2.52: con un lato accanto non a 90 gradi (trapezio) spostando il lato k cambia anche la lunghezza del lato stesso (le sue linee agli estremi)
-  const s = R.S[k], pv = R.S[(k+R.m-1)%R.m], nx = R.S[(k+1)%R.m];
-  if (s && pv && Math.abs(s.ux*pv.ux + s.uy*pv.uy) > ORTHO_COS) L.push([ix[i0], ix[(i0+1)%n]]);
-  if (s && nx && Math.abs(s.ux*nx.ux + s.uy*nx.uy) > ORTHO_COS) L.push([ix[(i1+n-1)%n], ix[i1]]);
-  for (const [u, v] of L) {
-    const g = state.segments.find(h => (h.a===u && h.b===v) || (h.a===v && h.b===u)), A = g && state.points[g.a], B = g && state.points[g.b];
-    if (g && g!==skip && A && B && segOk(g, Math.hypot(B.x-A.x, B.y-A.y))) return g;
-  }
-  return null;
-}
 // quale lato si muove quando cambia la misura netta dal lato k (keep = lato da tenere fermo, scelto da chi misura)
 function wpLocoSide(R, k, per, keep) {
   const j = wpOpp(R, k), a = R.a;
   if (j < 0) return {err:'Su questo lato non trovo un lato di fronte da cui misurare.'};
-  if (wpLkHas(a, k, j)) return {j, err:'Misura validata (lucchetto): per cambiarla togli prima il lucchetto.'};
   const cl = s => { const c = wpCls(R, s, per); return c===3 ? 0 : c; };                  // 2.50: verso altro ambiente = lato interno
-  const ck = cl(k), cj = cl(j), bq = s => wpQBlock(R, s), bl = s => wpLkSide(a, s) || !!bq(s); let mv;   // 2.49: anche le quote convalidate bloccano
-  if (bl(k) && bl(j)) { const g = bq(k) || bq(j); return {j, err: g ? okMsg(g) : 'Tutti e due i lati appartengono a misure validate: togli prima un lucchetto.'}; }   // 2.52: nessuno dei due si muove, senza chiedere quale
+  const ck = cl(k), cj = cl(j); let mv;
   if (keep===k || keep===j) mv = keep===k ? j : k;
   else if (ck && !cj) mv = j;
   else if (cj && !ck) mv = k;
-  else if (ck && cj) { if (ck===2 && cj===1) mv = k; else if (cj===2 && ck===1) mv = j; else if (bl(k)!==bl(j)) mv = bl(k) ? j : k; else return {j, ask:[k, j]}; }
+  else if (ck && cj) { if (ck===2 && cj===1) mv = k; else if (cj===2 && ck===1) mv = j; else return {j, ask:[k, j]}; }
   else mv = j;
-  if (bl(mv)) {                                            // il lato di una misura validata (o che cambierebbe una quota convalidata) non si muove: si sposta l'altro
-    const o = mv===j ? k : j;
-    if (bl(o) || keep===o) { const g = bq(mv) || bq(o); return {j, err: g ? okMsg(g) : 'Tutti e due i lati appartengono a misure validate: togli prima un lucchetto.'}; }
-    mv = o;
-  }
   return {j, mv};
 }
 // misura netta in loco: si sposta un solo lato (wpLocoSide), le stanze vicine non si muovono
@@ -5472,21 +5149,20 @@ function wpSnapAndApply(rid, fixed, msg) {
   wpApply(fixed, msg+(r && r.moved ? ' Agganciata a '+r.to+': tramezza '+Math.round(wpStd().int*100)+' cm'+(r.filo ? ' e a filo' : '')+'.' : ''), rid);
   snapUndoShow(!!(r && r.moved));
 }
-// SPOSTA AMBIENTE: tocco sull'ambiente -> Sposta -> trascina; la selezione resta (si puo' trascinare di nuovo), al rilascio l'aggancio
+// SPOSTA AMBIENTE (per ogni ambiente): tocco sull'ambiente -> Sposta -> trascina; la selezione resta (si puo' trascinare di nuovo).
+// Si muovono tutti i suoi punti, quindi i suoi muri, linee e serramenti; nessun vincolo, nessun aggancio, nessun ricalcolo. state.moveRoom = {idx}
 function moveRoomStart(idx) {
   const a = state.ambienti[idx]; if (!a) return;
   if (locked(a)) { lockTip(); return; }
-  if (!a.wt || a.wpx) { setTip('Sposta ambiente vale per gli ambienti parametrici. Per gli altri: seleziona le linee con un riquadro e usa Sposta nella barra della selezione.', 'warn'); return; }
-  state.moveRoom = a.rid; state.sel = {kind:'ambiente', idx};
-  setTip('Trascina in un punto qualsiasi: '+a.name+' si sposta con i suoi muri e i serramenti; al rilascio si aggancia alla stanza vicina. Tocca il pulsante verde per finire.');
+  state.moveRoom = {idx}; state.sel = {kind:'ambiente', idx};
+  setTip('Trascina in un punto qualsiasi: '+a.name+' si sposta con i suoi muri e i serramenti, liberamente. Tocca il pulsante verde per finire.');
   draw();
 }
-function moveRoomEnd(rid) {
-  const a = state.ambienti.find(x => x.rid===rid); if (!a) { draw(); return; }
-  wpStamp(a);
-  const others = wpRooms(false).filter(R => R.rid!==rid).map(R => R.rid);
-  wpSnapAndApply(rid, others, a.name+' spostato.');
-  const k = state.ambienti.indexOf(state.ambienti.find(x => x.rid===rid)); if (k >= 0) state.sel = {kind:'ambiente', idx:k};
+function moveRoomEnd(idx) {
+  const a = state.ambienti[idx]; if (!a) { draw(); return; }
+  if (a.rid) state.wlinks = (state.wlinks || []).filter(l => l.a!==a.rid && l.b!==a.rid);       // i legami del vecchio posto non riportano la stanza indietro
+  commit(a.name+' spostato.', true);
+  state.sel = {kind:'ambiente', idx};
 }
 function moveRoomStop() { state.moveRoom = null; setTip('Spostamento finito.'); draw(); }
 // RIASSEMBLA: le stanze traslano (le misure nette non cambiano), i fili esterni tornano dritti, il residuo va sulle tramezze
@@ -5528,7 +5204,7 @@ function locoEnter() {
   setTool('select'); state.loco = true; state.locoF = null; state.wpSel = null;
   updateLocoUI(); draw();
   const n = wpRooms(false).length, old = state.ambienti.filter(a => live(a) && !hid(a) && (!a.wt || a.wpx)).length;
-  if (!n && old) { listDialog('Rilievo in loco', ['Questo progetto non ha ambienti parametrici: il rilievo in loco non agisce sugli ambienti che ci sono (non li sposta e non li cambia).', 'Con il disegno già preparato non serve: tocca la quota di un muro e scegli "Imposta misura". Se vuoi comunque gli ambienti parametrici: "Rendi parametrico" dal menu dell\'ambiente (o Disegna > Avanzate > Rendi parametrici tutti).']); return; }
+  if (!n && old) { listDialog('Rilievo in loco', ['Questo progetto non ha ambienti parametrici: il rilievo in loco non agisce sugli ambienti che ci sono (non li sposta e non li cambia).', 'Con il disegno già preparato non serve: tocca la quota di un muro e scegli "Imposta misura". Per ambienti nuovi usa Disegna > Stanza.']); return; }
   setTip(n ? 'Rilievo in loco: tocca una stanza e scrivi le misure nette, un campo alla volta. Le stanze vicine restano ferme e le tramezze mostrano lo scostamento (es. 10-3); alla fine "Riassembla". Bollini sul perimetro: E esterno, S vano scala (un tocco li cambia).'
     : 'Rilievo in loco da zero: Disegna > Stanza, poi tocca il disegno (o la foto) dove sta la stanza e scrivi le misure nette. Le stanze si agganciano da sole.', 'ok');
 }
@@ -5546,7 +5222,7 @@ function locoFields(R) {
     const t = R.S[j]; if (Math.abs(s.ux*t.uy - s.uy*t.ux) > 0.087) return;                // 2.50: solo tra lati paralleli (entro 5 gradi), la misura del laser; i lati inclinati si misurano dalla quota
     seen.add(key); F.push({t:'net', k, j});
   });
-  if (R.m===4 && F.length===2 && F.every(f => Math.abs(R.S[f.k].nx) > ORTHO_COL || Math.abs(R.S[f.k].ny) > ORTHO_COL)) {      // 2.50: Larghezza/Lunghezza solo se i lati sono dritti entro 2 gradi (prima circa 25)
+  if (R.m===4 && F.length===2 && F.every(f => Math.abs(R.S[f.k].nx) > 0.9994 || Math.abs(R.S[f.k].ny) > 0.9994)) {      // 2.50: Larghezza/Lunghezza solo se i lati sono dritti entro 2 gradi (prima circa 25)
     F.forEach(f => { f.hz = Math.abs(R.S[f.k].nx) > Math.abs(R.S[f.k].ny); f.lab = f.hz ? 'Larghezza' : 'Lunghezza'; });
     F.sort((p, q) => (q.hz ? 1 : 0) - (p.hz ? 1 : 0));
   } else F.forEach((f, i) => { f.lab = 'Misura '+(i+1)+' di '+F.length; });
@@ -5568,14 +5244,14 @@ function locoVal(R, f) {
 }
 const LOCO_C = '<div class="lb-r"><span class="lb-g" id="lb-hint">Rilievo in loco: tocca una stanza per le misure</span><button id="lb-ria">Riassembla</button><button id="lb-out" title="Esci dal rilievo in loco">Esci</button></div>';
 const LOCO_R = '<div class="lb-r"><b class="lb-g" id="lb-name"></b><span id="lb-pos"></span><button id="lb-menu" title="Menu dell\'ambiente">⋯</button><button id="lb-ria">Riassembla</button><button id="lb-x" title="Chiudi la scheda">✖</button></div>'
-  + '<div class="lb-r"><span class="lb-g" id="lb-lab"></span><input id="lb-in" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false"><button id="lb-lock"></button></div>'
+  + '<div class="lb-r"><span class="lb-g" id="lb-lab"></span><input id="lb-in" type="text" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false"></div>'
   + '<div class="lb-r"><button class="lb-g" id="lb-prev">‹ Indietro</button><button class="lb-g ok" id="lb-next">Avanti ›</button></div>';
 function locoBind(el) {
   const on = (id, fn) => { const b = el.querySelector('#'+id); if (!b) return; b.addEventListener('pointerdown', e => e.preventDefault()); b.addEventListener('mousedown', e => e.preventDefault()); b.addEventListener('click', e => { e.preventDefault(); fn(); }); };
   on('lb-ria', locoRiassembla); on('lb-out', toggleLoco);          // 2.55: "Parametrici" tolto dalla barra (resta in Disegna > Avanzate)
   on('lb-x', () => { state.locoF = null; locoRender(); draw(); });
   on('lb-menu', () => { const R = locoRoom(); if (!R) return; state.sel = {kind:'ambiente', idx:R.k}; const r = el.getBoundingClientRect(); showMenu('amb-context', r.right - 10, r.top - 6, true); draw(); });
-  on('lb-prev', () => locoStep(-1)); on('lb-next', () => locoStep(1)); on('lb-lock', locoLockTap);
+  on('lb-prev', () => locoStep(-1)); on('lb-next', () => locoStep(1));;
   const inp = el.querySelector('#lb-in');
   if (inp) inp.addEventListener('keydown', e => { if (e.key==='Enter') { e.preventDefault(); locoStep(1); } else if (e.key==='Escape') { e.preventDefault(); inp.blur(); } });
 }
@@ -5588,12 +5264,10 @@ function locoRender() {
   if (el.dataset.mode!==mode) { el.dataset.mode = mode; el.innerHTML = mode==='r' ? LOCO_R : LOCO_C; locoBind(el); }
   if (R) {
     const F = locoFields(R), f = state.locoF; if (f.i >= F.length) f.i = F.length - 1;
-    const fd = F[f.i], lk = fd.t==='net' && locoLocked(R, fd), inp = $id('lb-in'), unit = fd.t==='ext' ? 'cm' : 'm';
+    const fd = F[f.i], inp = $id('lb-in'), unit = fd.t==='ext' ? 'cm' : 'm';
     setTxt($id('lb-name'), R.a.name); setTxt($id('lb-pos'), (f.i+1)+' di '+F.length);
-    setTxt($id('lb-lab'), fd.lab+' ('+unit+')'+(fd.t==='net' ? (lk ? ' 🔒' : '') : ''));
+    setTxt($id('lb-lab'), fd.lab+' ('+unit+')'+'');
     const ph = locoVal(R, fd); if (inp.placeholder!==ph) inp.placeholder = ph;
-    inp.disabled = lk; inp.classList.toggle('lk', lk);
-    const lb = $id('lb-lock'); setDisp(lb, fd.t==='net' ? '' : 'none'); setTxt(lb, lk ? '🔒' : '🔓'); lb.title = lk ? 'Misura validata: tocca per togliere il lucchetto' : 'Valida la misura com\'è (lucchetto)';
     $id('lb-prev').disabled = f.i===0; setTxt($id('lb-next'), f.i===F.length-1 ? 'Fine ✔' : 'Avanti ›');
   }
   if (el.style.display!=='flex') el.style.display = 'flex';
@@ -5631,13 +5305,10 @@ function locoSet(rid, fd, txt, done) {
       const r = wpLocoNet(R1, fd.k, v, keep);
       if (r.ask) { state.history.pop(); wpAskKeep(R1, r.ask, kp => apply(kp)); return; }
       if (r.err) { state.history.pop(); setTip(r.err, 'warn'); draw(); return; }
-      const qb = _okBase && okBroken(_okBase.r);           // 2.52: una quota convalidata cambierebbe (anche il lato spostato stesso): si rifiuta e si dice quale, mai in silenzio
-      if (qb) { restore(state.history.pop()); _okBase = null; _okFree.clear(); setTip(okMsg(qb)+' Misura non impostata.', 'warn'); locoRender(); draw(); return; }
-      a.lk = wpLk(a).filter(p => !((p[0]===fd.k && p[1]===r.j) || (p[0]===r.j && p[1]===fd.k))).concat([[fd.k, r.j, wpR4(v)]]);
       locoValQuotes(a, fd.k, r.j, v);
       rebuildWalls(wpFase());
       const R2 = wpRing(a);
-      commit(a.name+': '+fd.lab.toLowerCase()+' '+num(v)+' m validata (lucchetto); si è spostata la parete '+wpDirName(R2.S[r.mv])+', le stanze vicine restano ferme.'+wpResText(), true);
+      commit(a.name+': '+fd.lab.toLowerCase()+' '+num(v)+' m validata; si è spostata la parete '+wpDirName(R2.S[r.mv])+', le stanze vicine restano ferme.'+wpResText(), true);
       done();
     };
     apply(); return;
@@ -5657,36 +5328,6 @@ function locoSet(rid, fd, txt, done) {
   R.S.forEach((s, k) => { if (wpCls(R, k, per)===c) a.wt[k] = wpR4(v/100); });
   rebuildWalls(wpFase()); commit(a.name+': '+fd.lab.toLowerCase()+' '+num(v, 0)+' cm su tutte le sue pareti di questo tipo.', true); done();
 }
-// lucchetto: valida la misura com'e', oppure lo toglie
-function locoLockTap() {
-  const R = locoRoom(); if (!R) return;
-  const fd = locoFields(R)[state.locoF.i]; if (!fd || fd.t!=='net') return;
-  const a = R.a; saveHistory();
-  if (locoLocked(R, fd)) {                                 // 2.49: il lucchetto tolto toglie anche la convalida delle quote della misura
-    a.lk = wpLk(a).filter(p => !((p[0]===fd.k && p[1]===fd.j) || (p[0]===fd.j && p[1]===fd.k))); if (!a.lk.length) delete a.lk;
-    locoMeasLines(R, fd).forEach(g => { g.ok = false; _okFree.add(g); });     // 2.52: solo le linee che misurano questa misura (a 90 gradi dai due lati), non il lato inclinato
-    const g = locoLocked(R, fd) ? (wpQBlock(R, fd.k) || wpQBlock(R, fd.j)) : null;
-    commit(a.name+': lucchetto tolto (anche dalle quote della misura), la misura si può cambiare.', true);
-    if (g) setTip(a.name+': lucchetto tolto, ma la misura resta bloccata da un\'altra quota convalidata. '+okMsg(g), 'warn');
-  }
-  else { const v = wpNet(R, fd.k); a.lk = wpLk(a).concat([[fd.k, fd.j, wpR4(v)]]); locoValQuotes(a, fd.k, fd.j, v); commit(a.name+': '+fd.lab.toLowerCase()+' '+num(v)+' m validata (lucchetto).', true); }
-  locoRender(); locoFocus();
-}
-// 2.52: le linee convalidate che misurano la misura tra i lati k e j: sui lati accanto, agli estremi di k e di j, a 90 gradi da k
-function locoMeasLines(R, fd) {
-  const ix = R.a.indices, n = ix.length, s = R.S[fd.k], out = []; if (!s) return out;
-  [fd.k, fd.j].forEach(k => {
-    if (!(k >= 0) || k >= R.m) return; const i0 = R.ci[k], i1 = R.ci[(k+1)%R.m];
-    [[ix[(i0+n-1)%n], ix[i0]], [ix[i1], ix[(i1+1)%n]]].forEach(([u, v]) => {
-      const g = state.segments.find(h => (h.a===u && h.b===v) || (h.a===v && h.b===u)), A = g && state.points[g.a], B = g && state.points[g.b]; if (!A || !B) return;
-      const L = Math.hypot(B.x-A.x, B.y-A.y); if (L < 1e-6 || !segOk(g, L) || out.includes(g)) return;
-      if (Math.abs(((B.x-A.x)*s.ux + (B.y-A.y)*s.uy)/L) <= ORTHO_COS) out.push(g);
-    });
-  });
-  return out;
-}
-// 2.49: la misura della scheda e' bloccata dal lucchetto o dalle quote convalidate (nessuno dei due lati si puo' spostare)
-function locoLocked(R, fd) { return wpLkHas(R.a, fd.k, fd.j) || !!(wpQBlock(R, fd.k) && wpQBlock(R, fd.j)); }
 // la misura validata valida anche le quote delle linee che la misurano (lati accanto lunghi quanto la misura)
 function locoValQuotes(a, k, j, v) {
   const R = wpRing(a); if (!R) return; const m = R.m;
@@ -5744,14 +5385,6 @@ function locoDraw() {
     ctx.setLineDash([]);
   }
   ctx.font = 'bold 12px '+FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  rooms.forEach(R => wpLk(R.a, R.m).forEach(p => {          // misure validate: linea del laser con il lucchetto
-    const s = R.S[p[0]], v = wpNet(R, p[0]); if (!s || v===null) return;
-    const M = {x:(s.p.x+s.q.x)/2, y:(s.p.y+s.q.y)/2}, a = w2s(M.x, M.y), b = w2s(M.x - s.nx*v, M.y - s.ny*v);
-    if (Math.hypot(b.x-a.x, b.y-a.y) < 40) return;
-    ctx.strokeStyle = 'rgba(94,243,140,.8)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
-    const t = '🔒 '+num(v), tw = ctx.measureText(t).width + 10, cx = a.x + (b.x-a.x)*0.25, cy = a.y + (b.y-a.y)*0.25;
-    ctx.fillStyle = 'rgba(16,24,44,.92)'; ctx.fillRect(cx-tw/2, cy-9, tw, 18); ctx.fillStyle = '#5ef38c'; ctx.fillText(t, cx, cy);
-  }));
   locoTags(rooms, per).forEach(t => {                       // bollini da toccare
     const r = COARSE ? 13 : 11;
     ctx.fillStyle = t.c===1 ? '#4aa3ff' : t.c===2 ? '#c48cff' : '#aab4c3'; ctx.strokeStyle = '#10182c'; ctx.lineWidth = 2;
@@ -5764,7 +5397,7 @@ function locoDraw() {
 var _locoRia = null;
 function locoSync() {
   const mb = $id('moveroom-btn'); if (mb) setDisp(mb, state.moveRoom && !PRINT ? 'block' : 'none');
-  if (state.moveRoom && !state.ambienti.some(a => a.rid===state.moveRoom && a.wt && !a.wpx)) state.moveRoom = null;
+  if (state.moveRoom && !state.ambienti[state.moveRoom.idx]) state.moveRoom = null;
   locoRender();
 }
 
@@ -6433,10 +6066,8 @@ function askRoom(cycle) {
       h, color: AMB_COLORS[state.ambienti.length%AMB_COLORS.length], category:'utile'    // nasce interno: si cambia solo balcone, cantina, box...
     });
     const am = state.ambienti[state.ambienti.length-1], msg = 'Ambiente registrato: '+area.toFixed(2)+' m², '+(area*h).toFixed(2)+' m³.';
-    or90Init(am);                                    // 2.55: tutti gli angoli a 90 = "Mantieni angoli a 90" acceso (si spegne dal menu dell'ambiente)
     assignFase();
-    // 2.50: niente piu' parametrico automatico. 2.55: il parametrico resta solo come scelta ("Rendi parametrico" nel menu dell'ambiente)
-    commit(msg+(or90(am) ? ' Angoli a 90 mantenuti con Imposta misura (menu dell\'ambiente per lasciarli liberi).' : ''));
+    commit(msg);
   });
   roomNameUI();
 }
@@ -6450,62 +6081,53 @@ function quotaMenuAction(action) {
   const g = state.segments[sl.idx]; if (!g) return;
   const A = state.points[g.a], B = state.points[g.b], len = Math.hypot(B.x-A.x, B.y-A.y);
   if (action==='validate')   { saveHistory(); g.ok = true; g.okLen = len; commit('Misura validata.'); return; }
-  if (action==='unvalidate') { saveHistory(); g.ok = false; _okFree.add(g); commit('Convalida tolta: la misura si può cambiare.'); return; }
+  if (action==='unvalidate') { saveHistory(); g.ok = false; commit('Convalida tolta.'); return; }
   if (action==='reset')      { saveHistory(); delete g.qo; commit('Quota riportata al suo posto.'); return; }
   if (action==='set') {
+    // 2.57: si sceglie da che parte si allunga o si accorcia il muro: si sposta SOLO l'estremo scelto (quello bloccato nel Progetto non si offre)
+    const opts = [];
+    if (!locked(A)) opts.push({value:'a', label:'Estremo '+A.label+' (inizio)'});
+    if (!locked(B)) opts.push({value:'b', label:'Estremo '+B.label+' (fine)'});
+    if (!opts.length) { lockTip(); return; }
     askDialog('Misura del muro '+A.label+' - '+B.label, [
       {label:'Misura rilevata (m)', id:'m', value:len.toFixed(2), type:'number'},
-    ], 'Il muro si adegua e si convalida: gli estremi si spostano in modo uguale (nei muri esterni resta fermo lo spigolo esterno). I punti collegati seguono lungo le quote convalidate e, negli ambienti con "Mantieni angoli a 90", ad angolo retto. Le quote convalidate non cambiano e le linee non si sovrappongono.', v => {
+      {label:'Quale estremo si sposta?', id:'e', type:'select', value:opts[opts.length-1].value, options:opts},
+    ], 'Si sposta solo l\'estremo scelto, lungo il muro; l\'altro resta fermo. I muri collegati seguono e gli angoli retti restano a 90 (se mantenuti dall\'ambiente).', v => {
       const m = parseFloat(v.m); if (!isFinite(m) || m<=0) return;
-      if (wpLenFromQuota(sl.idx, m)) return;         // lato intero di un ambiente parametrico: si sposta il lato accanto, l'ambiente resta parametrico
-      setWallLength(sl.idx, m);
-    });
+      setWallLength(sl.idx, m, v.e==='a' || v.e==='b' ? v.e : opts[0].value);
+    }, () => draw());
   }
 }
-// porta il muro alla misura rilevata allungandolo (o accorciandolo) in modo uguale ai due estremi;
-// i muri collegati seguono perche' condividono i punti, i serramenti restano alla stessa distanza da A
-function setWallLength(si, m) {
+// porta il muro alla misura rilevata spostando UN solo estremo (side 'a' o 'b'; senza side, come prima: meta' per parte);
+// i muri collegati seguono perche' condividono i punti, gli angoli retti degli ambienti con "Mantieni angoli a 90" restano retti (keepMove),
+// i serramenti restano alla stessa distanza da A
+function setWallLength(si, m, side) {
   const g = state.segments[si], A = state.points[g.a], B = state.points[g.b];
   const len = Math.hypot(B.x-A.x, B.y-A.y); if (len < 1e-6) return;
   if (locked(A) && locked(B)) { lockTip(); return; }
-  saveHistory(); _okFree.add(g);                     // 2.49: la quota che si imposta e' l'unica che puo' cambiare
-  const rec = _okBase ? _okBase.r : okRecs(), sl = k => { const h = state.segments[k], P = state.points[h.a], Q = state.points[h.b]; return P && Q ? Math.hypot(Q.x-P.x, Q.y-P.y) : 0; };
-  const l0 = state.segments.map((h, k) => sl(k));
-  // di norma meta' per parte; nel Progetto un estremo del rilievo resta fermo e si muove solo quello nuovo.
-  // 2.49: i muri collegati ad angolo retto traslano (la stanza resta ortogonale, keepMove); se cosi' cambierebbe una quota convalidata
-  // si prova a muovere un estremo solo, poi l'altro; se non basta la misura non si imposta e si dice quale quota blocca
-  // 2.55: muro esterno = resta fermo l'estremo esterno (spigolo dell'edificio), si muove quello verso l'interno (wallExtEnd); altrimenti come prima
-  const ee = locked(A) || locked(B) ? null : wallExtEnd(g);
-  const ux = (B.x-A.x)/len, uy = (B.y-A.y)/len, fr = locked(B) ? [1] : locked(A) ? [0] : ee==='a' ? [0] : ee==='b' ? [1] : [0.5, 1, 0];
-  // 2.52: un tentativo vale solo se nessuna quota convalidata cambia E gli angoli a 90 degli ambienti restano a 90 (prima il tentativo con un estremo
-  // solo passava anche se il muro accanto si inclinava: stanza a trapezio). Se nessun tentativo va bene si rifiuta dicendo la quota (o l'angolo) che blocca.
-  // 2.55: gli angoli a 90 contano solo negli ambienti con "Mantieni angoli a 90"; e nessuna linea deve sovrapporsi o annullarsi (lineOverlap)
-  const orec = orthoRecs();
-  let bad = null, ob = null, ovl = null, done = false;
-  for (const f of fr) {
-    const dA = (m-len)*f, dB = (m-len) - dA, prev = keepMove([[g.a, -ux*dA, -uy*dA], [g.b, ux*dB, uy*dB]]);
-    const b = okBroken(rec), o = b ? null : orthoBroken(orec), v = b || o!==null ? null : lineOverlap(prev);
-    if (!b && o===null && !v) { done = true; break; }
-    if (b && !bad) bad = b; if (o!==null && ob===null) ob = o; if (v && !ovl) ovl = v;
-    keepBack(prev);
-  }
-  if (!done) {
-    state.history.pop(); _okBase = null; _okFree.clear();
-    const nm = 'La misura di '+A.label+' - '+B.label+' non si può impostare così';
-    setTip(bad ? okMsg(bad)+' '+nm+(ob!==null ? ' (e muovendo un estremo solo un angolo non resterebbe a 90 gradi)' : '')+'.'
-         : ob!==null ? nm+': '+orthoMsg(ob).replace(/^L/, 'l') : nm+': '+lineOverlapMsg(ovl)+'.', 'warn');
-    draw(); return;
-  }
-  state.segments.forEach((h, k) => {                  // i serramenti restano alla stessa distanza dall'inizio delle linee che cambiano lunghezza
-    const l1 = sl(k); if (l1 < 1e-6 || Math.abs(l1 - l0[k]) < 1e-9) return;
+  if (side==='a' && locked(A)) side = 'b'; else if (side==='b' && locked(B)) side = 'a';
+  saveHistory();
+  // 2.57 punti propri: un ambiente che condivide l'estremo che si sposta ne prende una copia, resta fermo. Resta con i punti originali l'ambiente del muro
+  const keep = state.ambienti.findIndex(r => { const n = r.indices.length; return r.indices.some((x, q) => { const y = r.indices[(q+1)%n]; return (x===g.a && y===g.b) || (x===g.b && y===g.a); }); });
+  if (side!=='b') ambDetachPoint(g.a, keep);
+  if (side!=='a') ambDetachPoint(g.b, keep);
+  const l0 = state.segments.map((h, k) => segLength(k)), ok0 = state.segments.map((h, k) => segOk(h, l0[k]));
+  // di norma meta' per parte; nel Progetto un estremo del rilievo resta fermo e si muove solo quello nuovo
+  const ux = (B.x-A.x)/len, uy = (B.y-A.y)/len, dA = (m-len)*(side==='b' ? 0 : side==='a' ? 1 : locked(B) ? 1 : locked(A) ? 0 : 0.5), dB = (m-len) - dA;
+  keepMove([[g.a, -ux*dA, -uy*dA], [g.b, ux*dB, uy*dB]]);              // muove gli estremi e fa seguire i punti ad angolo retto
+  let lost = 0;
+  state.segments.forEach((h, k) => {
+    const l1 = segLength(k); if (l1 < 1e-6 || Math.abs(l1 - l0[k]) < 1e-9) return;
     state.openings.forEach(op => {
       if (op.segIdx!==k) return;
       const hw = Math.min(op.width/l1/2, 0.49);
       op.t = Math.min(Math.max(op.t*l0[k]/l1, hw), 1-hw);
     });
+    if (k!==si && ok0[k] && !segOk(h, l1)) lost++;
   });
   g.ok = true; g.okLen = m;
-  commit('Muro '+A.label+' - '+B.label+' = '+m.toFixed(2)+' m, validato.');
+  commit('Muro '+A.label+' - '+B.label+' = '+m.toFixed(2)+' m, validato.'+
+         (lost ? ' Attenzione: '+lost+(lost===1?' muro già validato è cambiato':' muri già validati sono cambiati')+' di oltre 1 cm e tornano da validare (fucsia).' : ''));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -6534,11 +6156,11 @@ function showMenu(id, x, y, above, avoid) {
   if (id==='amb-context') {
     const a = state.sel && state.sel.kind==='ambiente' && state.ambienti[state.sel.idx], has = !!(a && a.volta);
     document.getElementById('am-novolta').style.display = has && !lk ? '' : 'none';
-    document.getElementById('am-wpon').style.display = a && (!a.wt || a.wpx) && !lk ? '' : 'none';
-    document.getElementById('am-move').style.display = a && a.wt && !a.wpx && !lk ? '' : 'none';
-    const n9 = document.getElementById('am-or90'), o9 = or90(a);          // 2.55: interruttore "Mantieni angoli a 90" (campo `or90`)
+    document.getElementById('am-move').style.display = a && !lk ? '' : 'none';
+    const n9 = document.getElementById('am-or90'), o9 = or90(a), r9 = !!a && !a.wt && roomOrtho(a);          // 2.57: "Mantieni angoli a 90" solo per gli ambienti a linee con angoli retti
+    n9.style.display = r9 && !lk ? '' : 'none';
     n9.firstChild.textContent = (o9 ? '✔ ' : '')+'∠ Mantieni angoli a 90';
-    n9.lastChild.textContent = o9 ? 'Acceso: con Imposta misura gli angoli retti restano a 90. Tocca per lasciarli liberi' : 'Spento: angoli liberi. Tocca per mantenerli a 90 con Imposta misura';
+    n9.lastChild.textContent = o9 ? 'Acceso: cambiando la misura di un muro gli angoli retti restano a 90. Tocca per lasciarli liberi' : 'Spento: angoli liberi. Tocca per mantenerli a 90 quando cambi una misura';
     document.getElementById('am-volta').firstChild.textContent = has ? '⌒ Modifica volta (finestra)' : '⌒ Volta (finestra)';
     document.getElementById('am-vgraf').firstChild.textContent = has ? '⌒ Rifai i punti sul disegno' : '⌒ Volta sul disegno';
   }
@@ -7451,10 +7073,10 @@ canvas.addEventListener('pointerdown', e => {
   if (state.inherit) { startPan(e.clientX, e.clientY); return; }          // eredita proprieta': il tocco applica, il trascinamento sposta la vista
   // sposta base o selezione: il trascinamento sposta, non disegna
   if (state.moveBase && state.underlay) { const w=s2w(sx,sy); state.drag={kind:'base', x0:w.x, y0:w.y, ux:state.underlay.x, uy:state.underlay.y}; return; }
-  if (state.moveRoom) {                     // Sposta ambiente: l'ambiente parametrico con i suoi punti (i muri generati si rifanno al rilascio)
+  if (state.moveRoom) {                     // Sposta ambiente (qualunque ambiente): l'ambiente con tutti i suoi punti, libero
     if (_snapUndo) snapUndoShow(false);
-    const a = state.ambienti.find(x => x.rid===state.moveRoom && x.wt && !x.wpx);
-    if (a && !locked(a)) { const w=s2w(sx,sy); state.drag={kind:'room', rid:a.rid, x0:w.x, y0:w.y, pts:[...new Set(a.indices)].filter(i => state.points[i]).map(i => ({i, x:state.points[i].x, y:state.points[i].y}))}; return; }
+    const a = state.ambienti[state.moveRoom.idx];
+    if (a && !locked(a)) { const w=s2w(sx,sy); state.drag={kind:'room', idx:state.moveRoom.idx, x0:w.x, y0:w.y, pts:[...new Set(a.indices)].filter(i => state.points[i]).map(i => ({i, x:state.points[i].x, y:state.points[i].y}))}; return; }
     state.moveRoom = null;
   }
   if (_snapUndo && Date.now() - _snapUndo.t > 1500) snapUndoShow(false);
@@ -7597,17 +7219,19 @@ canvas.addEventListener('pointermove', e => {
     const d = state.drag;
     if (d.kind!=='base') dragSnap();                           // la base non entra nell'annulla
     if (d.kind==='point')    dragPointTo(d.idx, w, sx, sy);
-    if (d.kind==='multi')    { const m = alignMulti(d, w.x-d.x0, w.y-d.y0, sx, sy), dx=m.dx, dy=m.dy, pv = d.pts.map(p => [state.points[p.i], state.points[p.i].x, state.points[p.i].y]);
+    if (d.kind==='multi')    { const m = alignMulti(d, w.x-d.x0, w.y-d.y0, sx, sy), dx=m.dx, dy=m.dy;
       d.pts.forEach(p => { state.points[p.i].x=p.x; state.points[p.i].y=p.y; });                      // gli attacchi scorrono sul loro muro: lo si legge dalla posizione di partenza
       if (!d.mv) { const ps = new Set(d.pts.map(p => p.i)), sg = new Set(); state.segments.forEach((g, k) => { if (ps.has(g.a) && ps.has(g.b)) sg.add(k); }); d.mv = {segs:sg, pts:ps}; }
       const to = d.pts.map(p => jointSlide(p.i, p.x+dx, p.y+dy, d.mv) || {x:p.x+dx, y:p.y+dy});
       d.pts.forEach((p, k) => { state.points[p.i].x=to[k].x; state.points[p.i].y=to[k].y; });
-      const okb = okBroken(_okDrag || okRecs());                  // 2.49: una quota convalidata non cambia, la selezione resta dove era
-      if (okb) { keepBack(pv); showTooltip(okMsg(okb, true), e.clientX, e.clientY); draw(); return; }
       const rooms = state.ambienti.filter(am => live(am) && am.indices.some(x => d.mv.pts.has(x)));
       if (rooms.length) showTooltip(rooms.map(am => am.name+': '+Math.abs(shoelace(am.indices.map(x => state.points[x]))).toFixed(2)+' m²').join('  |  '), e.clientX, e.clientY);
       d.pen.forEach(q => { state.pencilLines[q.i].pts = q.o.map(p => ({x:p.x+dx, y:p.y+dy})); }); }
     if (d.kind==='base')     { state.underlay.x=d.ux+w.x-d.x0; state.underlay.y=d.uy+w.y-d.y0; }
+    if (d.kind==='room' && !d.det) {                           // 2.57: al primo movimento l'ambiente prende punti suoi al posto di quelli in comune con altri ambienti (che restano fermi)
+      d.det = true;
+      if (ambDetach(d.idx) && state.ambienti[d.idx]) { const a = state.ambienti[d.idx]; d.pts = [...new Set(a.indices)].filter(i => state.points[i]).map(i => ({i, x:state.points[i].x, y:state.points[i].y})); }
+    }
     if (d.kind==='room')     { const dx = w.x-d.x0, dy = w.y-d.y0; d.pts.forEach(p => { const q = state.points[p.i]; if (q) { q.x = wpR4(p.x+dx); q.y = wpR4(p.y+dy); } }); }
     if (d.kind==='quota') {
       const g = state.segments[d.idx], A = g && state.points[g.a], B = g && state.points[g.b];
@@ -7692,7 +7316,7 @@ function endPointer(e) {
     if (!state.moved) handleClick(sx, sy, e.clientX, e.clientY);
     draw(); return;
   }
-  if (state.drag && state.drag.kind==='room') { const d = state.drag, mv = state.moved; state.drag = null; hideTooltip(); const ok = dragEnd(mv); if (mv && ok) moveRoomEnd(d.rid); else draw(); return; }
+  if (state.drag && state.drag.kind==='room') { const d = state.drag, mv = state.moved; state.drag = null; hideTooltip(); dragEnd(mv); if (mv) moveRoomEnd(d.idx); else draw(); return; }
   if (state.drag && (state.drag.kind==='multi' || state.drag.kind==='base')) { hideTooltip(); state.drag=null; dragEnd(true); persist(); draw(); return; }
   if (state.drag) {
     const wasMoved = state.moved, dk = state.drag.kind, di = state.drag.idx;
@@ -7708,17 +7332,10 @@ function endPointer(e) {
 
 // annulla dei trascinamenti: la foto dello stato si prende al primo movimento, PRIMA di spostare,
 // e va nella storia solo se il trascinamento e' stato vero (non un clic)
-function dragSnap() { if (!state.dragSnap) { state.dragSnap = snapshot(); _okDrag = okRecs(); } }
-// 2.49: false = il trascinamento cambiava una quota convalidata ed e' stato annullato (messaggio gia' dato)
+function dragSnap() { if (!state.dragSnap) state.dragSnap = snapshot(); }
 function dragEnd(keep) {
-  const rec = _okDrag; _okDrag = null;
-  if (keep && state.dragSnap) {
-    const bad = okBroken(rec);
-    if (bad) { const t = okMsg(bad); restore(state.dragSnap); state.dragSnap = null; setTip(t+' Spostamento annullato.', 'warn'); return false; }
-    state.redo = []; state.history.push(state.dragSnap); if (state.history.length>60) state.history.shift();
-  }
+  if (keep && state.dragSnap) { state.redo = []; state.history.push(state.dragSnap); if (state.history.length>60) state.history.shift(); }
   state.dragSnap = null;
-  return true;
 }
 
 canvas.addEventListener('dblclick', e => { const p=evtPos(e); handleDoubleClick(p.x,p.y); });
@@ -7975,14 +7592,14 @@ function restore(o) {
   state.multi=false; state.moveSel=false;
 }
 function saveHistory() {
-  const snp = snapshot(); state.history.push(snp); state.redo = []; _okBase = {r:okRecs(), s:snp};          // 2.49: le quote convalidate di adesso, che commit controlla
+  state.history.push(snapshot()); state.redo = [];
   if (state.history.length>60) state.history.shift();
 }
 function undo() {
   hideAllMenus();
   if (!state.history.length) { setTip('Niente da annullare.'); return; }
   const s = state.history.pop(); state.redo.push(snapshot()); if (state.redo.length>60) state.redo.shift();
-  restore(s); _okBase = null; _okFree.clear();
+  restore(s);
   if (state.tool!=='wall') { commit('Annullato.'); return; }
   // dentro un muro, come nei CAD: sparisce l'ultimo tratto e si riparte dal vertice da cui partiva; lo strumento resta Muro
   if (s.wo!==undefined) state.wallOrigin = s.wo;
@@ -7991,14 +7608,10 @@ function undo() {
 }
 // commit = aggiorna barra di stato, ridisegna e salva
 function commit(msg, keepTool){
-  // 2.49: l'operazione appena fatta (dall'ultimo saveHistory) ha cambiato una quota convalidata: si annulla e si dice quale
-  const rec = _okBase; _okBase = null; let okw = null;
-  const top = state.history[state.history.length-1], bad = rec && rec.s===top ? okBroken(rec.r) : null; _okFree.clear();
-  if (bad) { okw = okMsg(bad)+' Operazione annullata.'; restore(state.history.pop()); msg = null; }
   assignFase(); roomRenum(); autoWallThick();
   if (state.wallOrigin!==null && !state.points[state.wallOrigin]) state.wallOrigin = null;    // vertice sparito (annulla, cancella tutto): niente muro appeso
   if (!keepTool && state.tool!=='select' && state.tool!=='point' && !(state.tool==='wall' && state.wallOrigin!==null)) setTool('select');
-  updateStatus(); draw(); persist(); if (msg) setTip(msg, 'ok'); if (okw) setTip(okw, 'warn'); DIRTY = true; fileFlag();
+  updateStatus(); draw(); persist(); if (msg) setTip(msg, 'ok'); DIRTY = true; fileFlag();
 }
 
 let _persistTimer=null;
@@ -12196,7 +11809,7 @@ function wallsApply() {
   (P.rooms||[]).filter(r => !r.off).forEach(r => {
     const idx = r.ring.map(np);
     const n = state.ambienti.length;
-    const na = { indices:idx, name:freeAmbName(), h, color:AMB_COLORS[n%AMB_COLORS.length], category:'utile' }; or90Init(na);   // 2.55: angoli tutti a 90 = or90
+    const na = { indices:idx, name:freeAmbName(), h, color:AMB_COLORS[n%AMB_COLORS.length], category:'utile' };
     state.ambienti.push(na);   // il ricalco scarta gia' i balconi
   });
   // muri esterni: spessore letto dal disegno muro per muro, tipo proposto (WALL_TYPES) da validare
@@ -12725,7 +12338,7 @@ function redo() {
   hideAllMenus();
   if (!state.redo.length) { setTip('Niente da ripetere.'); return; }
   const r = state.redo.pop(), keep = state.redo;
-  state.history.push(snapshot()); restore(r); state.redo = keep; _okBase = null; _okFree.clear(); commit('Ripetuto.');
+  state.history.push(snapshot()); restore(r); state.redo = keep; commit('Ripetuto.');
 }
 // F1: dati del rilievo (nel .json come campo facoltativo "meta")
 var META_FIELDS = [['oggetto','Oggetto (titolo della tavola)'], ['indirizzo','Indirizzo e Comune'], ['catasto','Dati catastali (foglio, particella, sub)'], ['piano','Piano'],
@@ -13042,7 +12655,7 @@ const PATH_STEPS = [
   {n:'Ambienti', t:'Pannello Base, "Ricalca ambienti": controlla e conferma. Poi tocca ogni ambiente, "Modifica ambiente", per il nome.', b:'Ricalca o disegna', fn:() => { if (state.underlay) { if (!$id('base-panel').classList.contains('show')) toggleBasePanel(); } else pathMenu('group-draw', 'btn-g-draw', 'Ambiente'); }},
   {n:'Muri', t:'Tipo dei muri: esterno, vano scala o non riscaldato, interno. Spessori standard 40 - 25 - 10 cm; i muri fucsia si confermano da Modifica, "Muri non assegnati".', b:'Spessori standard', fn:() => wpStdDialog()},
   {n:'Serramenti', t:'Inserisci, Finestra, Porta-finestra o Porta, poi tocca il muro dove va. Vanno bene generici: le misure si correggono in loco.', b:'Inserisci', fn:() => pathMenu('group-ins', 'btn-g-ins')},
-  {n:'Misure in loco', t:'Con il metro, muro per muro e in qualsiasi ordine: tocca la quota e scegli "Imposta misura". I punti collegati seguono, le quote già convalidate non cambiano.', b:'Verifica', fn:() => verifyOpen()},
+  {n:'Misure in loco', t:'Con il metro, muro per muro e in qualsiasi ordine: tocca la quota e scegli "Imposta misura". Scegli quale estremo si sposta: l\'altro resta fermo e i muri collegati seguono (gli angoli retti restano a 90).', b:'Verifica', fn:() => verifyOpen()},
   {n:'Verifica', t:'Le quote non verificate e quello che manca prima di esportare; se le misure del disegno sono giuste, "Valida tutte".', b:'Verifica rilievo', fn:() => verifyOpen()},
   {n:'Restituzione', t:'Tabelle, superfici, DXF e Word da File, Esporta. Sul telefono, dopo ogni esportazione, Condividi.', b:'Esporta', fn:() => pathMenu('file-submenu', 'btn-file', 'Esporta')},
 ];
@@ -13089,8 +12702,8 @@ else {
 //  WEBAPP INSTALLABILE (solo se servita da internet, non da file locale)
 // ═══════════════════════════════════════════════════════════
 // versione e novita' vengono scritte da pubblica_app.py leggendo la prima voce di CHANGELOG.md
-const APP_VERSION = '2.55';
-const APP_NOTE = ["Trascinando un punto si muove solo quel punto (con gli eventuali punti nello stesso posto): i punti vicini restano fermi e nessun angolo viene tenuto a 90 gradi. Unico limite: un muro convalidato che tocca il punto non cambia lunghezza (il punto gira attorno all'altro estremo e la spinta lungo il muro si ferma con \"Bloccato\"); dopo \"Togli convalida\" quel muro torna libero. Le quote convalidate lontane dal punto non contano più", "Nuova voce nel menu dell'ambiente \"Mantieni angoli a 90\" (interruttore) al posto di \"Ambiente non ortogonale\": se è accesa, con Imposta misura gli angoli retti dell'ambiente restano a 90. Si accende da sola sugli ambienti nuovi a linee con tutti gli angoli a 90; negli ambienti dei progetti già salvati è spenta (angoli liberi) finché non la accendi", "Imposta misura sul muro: il muro si adegua e si convalida, i punti collegati seguono lungo le quote convalidate (e ad angolo retto negli ambienti con \"Mantieni angoli a 90\"), le quote convalidate non cambiano. Nei muri esterni resta fermo lo spigolo esterno e si sposta l'estremo verso l'interno. Se la misura farebbe sovrapporre due linee (o ne annullerebbe una) l'app non la imposta e dice quale linea", "\"Rendi parametrici tutti\" spostato in Disegna > Avanzate; tolto il pulsante \"Parametrici\" dalla barra In loco. Resta \"Rendi parametrico\" nel menu del singolo ambiente", "In loco: al primo tocco una finestra spiega che serve per il rilievo da zero (poi Riassembla) e che con il disegno già preparato si usa Imposta misura sui muri; pulsanti Continua e Annulla, casella \"Non mostrare più\"", "Sul telefono i punti si prendono col dito anche un po' più lontano (30 px) e, mentre li tieni, un anello giallo grande mostra quale punto hai agganciato. Il tocco semplice seleziona come prima; computer invariato", "Nuovo \"Percorso guidato\" nel menu File (interruttore): una barra in alto con i 7 passi (Base, Ambienti, Muri, Serramenti, Misure in loco, Verifica, Restituzione), 1-2 righe per passo e un pulsante che apre lo strumento giusto. Indietro, Salta e i numeri dei passi sono liberi, la x la chiude, ricorda il passo dove eri; spento non occupa spazio"];
+const APP_VERSION = '2.57';
+const APP_NOTE = ["Mantieni angoli a 90 torna per ogni ambiente a linee: se tutti gli angoli sono retti restano tali quando imposti la misura di un muro (i punti vicini seguono); si toglie dal menu dell'ambiente", "Imposta misura chiede quale estremo del muro si sposta (inizio o fine): l'altro resta fermo e i muri collegati seguono", "Ogni ambiente ha i suoi punti: spostando un ambiente o un punto non si trascina l'angolo di un altro ambiente (i punti in comune dei progetti vecchi si separano quando li muovi)"];
 const IS_LOCAL = APP_VERSION.startsWith('__');
 document.getElementById('menu-version').textContent = IS_LOCAL ? 'Versione locale' : 'ℹ Versione '+APP_VERSION+' - novità';
 // finestra con un elenco puntato (novita', note di aggiornamento del progetto); extra = secondo elenco con titoletto
